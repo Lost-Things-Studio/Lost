@@ -1,0 +1,113 @@
+/**
+* @project: Overload
+* @author: Overload Tech.
+* @licence: MIT
+*/
+
+#pragma once
+
+#include <imgui.h>
+#include <imgui_internal.h>
+
+#include <string>
+
+#include <OvTools/Eventing/Event.h>
+
+#include <OvUI/Plugins/IPlugin.h>
+
+namespace OvUI::Plugins
+{
+	/**
+	* Represents a drag and drop target
+	*/
+	template<typename T>
+	class DDTarget : public IPlugin
+	{
+	public:
+		/**
+		* Create the drag and drop target
+		* @param p_identifier
+		*/
+		DDTarget(const std::string& p_identifier) : identifier(p_identifier)
+		{}
+
+		/**
+		* Execute the drag and drop target behaviour
+		* @param p_context
+		*/
+		virtual void Execute(EPluginExecutionContext p_context) override
+		{
+			bool result = false;
+
+			if (p_context == EPluginExecutionContext::WIDGET)
+			{
+				// If the widget is disabled, don't accept drag-and-drop
+				if ((GImGui->CurrentItemFlags & ImGuiItemFlags_Disabled) != 0)
+					return;
+
+				const ImGuiID itemID = ImGui::GetItemID();
+				const ImGuiID targetSeed = itemID != 0 ? itemID : ImGui::GetID(this);
+				const ImGuiID targetID = ImHashStr(identifier.c_str(), 0, targetSeed);
+
+				result = ImGui::BeginDragDropTargetCustom(
+					ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()),
+					targetID
+				);
+			}
+			else
+			{
+				result = ImGui::BeginDragDropTargetCustom(
+					ImGui::GetCurrentWindow()->WorkRect,
+					ImGui::GetID(identifier.c_str())
+				);
+			}
+
+			if (result)
+			{
+				if (!m_isHovered)
+					HoverStartEvent.Invoke();
+
+				m_isHovered = true;
+
+				ImGuiDragDropFlags target_flags = 0;
+				// target_flags |= ImGuiDragDropFlags_AcceptBeforeDelivery;    // Don't wait until the delivery (release mouse button on a target) to do something
+				
+				if (!showYellowRect)
+					target_flags |= ImGuiDragDropFlags_AcceptNoDrawDefaultRect; // Don't display the yellow rectangle
+
+				if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(identifier.c_str(), target_flags))
+				{
+					T data = *(T*)payload->Data;
+					DataReceivedEvent.Invoke(data);
+				}
+				ImGui::EndDragDropTarget();
+			}
+			else
+			{
+				if (m_isHovered)
+					HoverEndEvent.Invoke();
+
+				m_isHovered = false;
+			}
+		}
+
+		/**
+		* Returns true if the drag and drop target is hovered by a drag and drop source
+		*/
+		bool IsHovered() const
+		{
+			return m_isHovered;
+		}
+
+	public:
+		std::string identifier;
+		OvTools::Eventing::Event<T> DataReceivedEvent;
+		OvTools::Eventing::Event<> HoverStartEvent;
+		OvTools::Eventing::Event<> HoverEndEvent;
+
+		bool showYellowRect = true;
+
+	private:
+		bool m_isHovered;
+	};
+}
