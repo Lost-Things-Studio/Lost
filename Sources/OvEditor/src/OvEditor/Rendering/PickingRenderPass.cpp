@@ -1,0 +1,419 @@
+/**
+* @project: Overload
+* @author: Overload Tech.
+* @licence: MIT
+*/
+
+#include <ranges>
+#include <string>
+
+#include <OvCore/ECS/Components/CMaterialRenderer.h>
+#include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
+#include <OvCore/Rendering/EngineDrawableDescriptor.h>
+#include <OvCore/Rendering/FramebufferUtil.h>
+#include <OvCore/Rendering/SkinningDrawableDescriptor.h>
+#include <OvCore/Rendering/SkinningUtils.h>
+#include <OvCore/Rendering/UIRenderingUtils.h>
+
+#include <OvEditor/Core/EditorActions.h>
+#include <OvEditor/Rendering/DebugModelRenderFeature.h>
+#include <OvEditor/Rendering/DebugSceneRenderer.h>
+#include <OvEditor/Rendering/PickingRenderPass.h>
+#include <OvEditor/Settings/EditorSettings.h>
+
+#include <OvRendering/Utils/Profiling.h>
+
+namespace
+{
+	const std::string kPickingPassName = "PICKING_PASS";
+	const std::string kSkinningFeatureName = std::string{ OvCore::Rendering::SkinningUtils::kFeatureName };
+	constexpr float kDistanceBasedGizmoScale = -1.0f;
+	constexpr float kUIScreenSpaceGizmoScale = 80.0f;
+	constexpr float kUIScreenSpaceGizmoDepth = 1000.0f;
+	constexpr const char* kGizmoScaleUniform = "u_GizmoScale";
+	constexpr const char* kVisibleAxesUniform = "u_VisibleAxes";
+
+	void PreparePickingMaterial(
+		const OvCore::ECS::Actor& p_actor,
+		OvRendering::Data::Material& p_material,
+		const std::string& p_uniformName = "_PickingColor"
+	)
+	{
+		uint32_t actorID = static_cast<uint32_t>(p_actor.GetID());
+
+		auto bytes = reinterpret_cast<uint8_t*>(&actorID);
+		auto color = OvMaths::FVector4{ bytes[0] / 255.0f, bytes[1] / 255.0f, bytes[2] / 255.0f, 1.0f };
+
+		// Set the picking color property if it exists
+		if (p_material.GetProperty(p_uniformName))
+		{
+			p_material.SetProperty(p_uniformName, color, true);
+		}
+	}
+
+	bool TryGetUIActorGizmoTransform(
+		const bool p_includeUI,
+		const OvCore::Rendering::UIRenderingUtils::UIFrameResolver& p_uiFrameResolver,
+		OvCore::ECS::Actor& p_actor,
+		OvMaths::FVector3& p_position,
+		OvMaths::FQuaternion& p_rotation
+	)
+	{
+		if (!p_includeUI)
+		{
+			return false;
+		}
+
+		OvCore::Rendering::UIRenderingUtils::ResolvedUIGizmoTransform resolvedTransform;
+		if (!OvCore::Rendering::UIRenderingUtils::ResolveUIGizmoTransform(
+			p_uiFrameResolver,
+			p_actor,
+			resolvedTransform
+		))
+		{
+			return false;
+		}
+
+		p_position = resolvedTransform.position;
+		p_rotation = resolvedTransform.rotation;
+		return true;
+	}
+
+	bool ShouldPickWorldDebugElements(const OvRendering::Core::CompositeRenderer& p_renderer)
+	{
+		if (!p_renderer.HasDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>())
+		{
+			return true;
+		}
+
+		const auto& sceneDescriptor = p_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
+		return !sceneDescriptor.renderUIInScreenSpace;
+	}
+}
+
+OvEditor::Rendering::PickingRenderPass::PickingRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) :
+	OvRendering::Core::ARenderPass(p_renderer),
+	m_actorPickingFramebuffer("ActorPicking")
+{
+	OvCore::Rendering::FramebufferUtil::SetupFramebuffer(
+		m_actorPickingFramebuffer, 1, 1, true, false, false
+	);
+
+	/* Light Material */
+	m_lightMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Billboard"));
+	m_lightMaterial.SetDepthTest(false);
+
+	/* Gizmo Pickable Material */
+	m_gizmoPickingMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Gizmo"));
+	m_gizmoPickingMaterial.SetGPUInstances(3);
+	m_gizmoPickingMaterial.SetProperty("u_IsBall", false);
+	m_gizmoPickingMaterial.SetProperty("u_IsPickable", true);
+	m_gizmoPickingMaterial.TrySetProperty(kGizmoScaleUniform, kDistanceBasedGizmoScale);
+	m_gizmoPickingMaterial.TrySetProperty(kVisibleAxesUniform, OvEditor::Core::kGizmoAxisAll);
+	m_gizmoPickingMaterial.SetDepthTest(true);
+
+	m_reflectionProbeMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("PickingFallback"));
+	m_reflectionProbeMaterial.SetDepthTest(false);
+
+	/* Picking Material */
+	m_actorPickingFallbackMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("PickingFallback"));
+}
+
+OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Rendering::PickingRenderPass::ReadbackPickingResult(
+	const OvCore::SceneSystem::Scene& p_scene,
+	uint32_t p_x,
+	uint32_t p_y
+)
+{
+	uint8_t pixel[3];
+
+	m_actorPickingFramebuffer.ReadPixels(
+		p_x, p_y, 1, 1,
+		baregl::types::EPixelDataFormat::RGB,
+		baregl::types::EPixelDataType::UNSIGNED_BYTE,
+		pixel
+	);
+
+	uint32_t actorID = (0 << 24) | (pixel[2] << 16) | (pixel[1] << 8) | (pixel[0] << 0);
+	auto actorUnderMouse = p_scene.FindActorByID(actorID);
+
+	if (actorUnderMouse)
+	{
+		return OvTools::Utils::OptRef(*actorUnderMouse);
+	}
+	else if (
+		pixel[0] == 255 &&
+		pixel[1] == 255 &&
+		pixel[2] >= 252 &&
+		pixel[2] <= 254
+		)
+	{
+		return static_cast<OvEditor::Core::GizmoBehaviour::EDirection>(pixel[2] - 252);
+	}
+
+	return std::nullopt;
+}
+
+void OvEditor::Rendering::PickingRenderPass::Draw(OvRendering::Data::PipelineState p_pso)
+{
+	ZoneScoped;
+	TracyGpuZone("PickingRenderPass");
+
+	using namespace OvCore::Rendering;
+
+	OVASSERT(m_renderer.HasDescriptor<SceneRenderer::SceneDescriptor>(), "Cannot find SceneDescriptor attached to this renderer");
+	OVASSERT(m_renderer.HasDescriptor<DebugSceneRenderer::DebugSceneDescriptor>(), "Cannot find DebugSceneDescriptor attached to this renderer");
+
+	auto& sceneDescriptor = m_renderer.GetDescriptor<SceneRenderer::SceneDescriptor>();
+	auto& debugSceneDescriptor = m_renderer.GetDescriptor<DebugSceneRenderer::DebugSceneDescriptor>();
+	auto& frameDescriptor = m_renderer.GetFrameDescriptor();
+	auto& scene = sceneDescriptor.scene;
+	const auto& uiFrameResolver = m_renderer.GetDescriptor<OvCore::Rendering::UIRenderingUtils::UIFrameResolver>();
+
+	m_actorPickingFramebuffer.Resize(frameDescriptor.renderWidth, frameDescriptor.renderHeight);
+
+	m_actorPickingFramebuffer.Bind();
+	
+	auto pso = m_renderer.CreatePipelineState();
+
+	m_renderer.Clear(true, true, true);
+
+	DrawPickableModels(pso, scene);
+
+	if (ShouldPickWorldDebugElements(m_renderer))
+	{
+		DrawPickableCameras(pso, scene);
+		DrawPickableReflectionProbes(pso, scene);
+		DrawPickableLights(pso, scene);
+	}
+
+	// Clear depth, gizmos are rendered on top of everything else
+	m_renderer.Clear(false, true, false);
+
+	if (debugSceneDescriptor.selectedActor)
+	{
+		auto& selectedActor = debugSceneDescriptor.selectedActor.value();
+		auto gizmoPosition = selectedActor.transform.GetWorldPosition();
+		auto gizmoRotation = selectedActor.transform.GetWorldRotation();
+		const bool pickWorldDebugElements = ShouldPickWorldDebugElements(m_renderer);
+		const bool hasUIGizmoTransform = TryGetUIActorGizmoTransform(
+			sceneDescriptor.includeUI,
+			uiFrameResolver,
+			selectedActor,
+			gizmoPosition,
+			gizmoRotation
+		);
+		std::optional<OvMaths::FMatrix4> gizmoViewMatrixOverride;
+		std::optional<OvMaths::FMatrix4> gizmoProjectionMatrixOverride;
+		std::optional<float> gizmoScaleOverride;
+		int gizmoVisibleAxes = OvEditor::Core::kGizmoAxisAll;
+		if (hasUIGizmoTransform)
+		{
+			gizmoVisibleAxes = OvEditor::Core::GetUIGizmoAxes(
+				selectedActor,
+				debugSceneDescriptor.gizmoOperation,
+				uiFrameResolver.IsScreenSpace()
+			);
+
+			if (uiFrameResolver.IsScreenSpace())
+			{
+				gizmoViewMatrixOverride = OvMaths::FMatrix4::Identity;
+				gizmoProjectionMatrixOverride = uiFrameResolver.CreateProjectionMatrix(
+					-kUIScreenSpaceGizmoDepth,
+					kUIScreenSpaceGizmoDepth
+				);
+				gizmoScaleOverride = kUIScreenSpaceGizmoScale;
+			}
+		}
+
+		if (pickWorldDebugElements || hasUIGizmoTransform)
+		{
+			DrawPickableGizmo(
+				pso,
+				gizmoPosition,
+				gizmoRotation,
+				debugSceneDescriptor.gizmoOperation,
+				gizmoViewMatrixOverride,
+				gizmoProjectionMatrixOverride,
+				gizmoScaleOverride,
+				gizmoVisibleAxes
+			);
+		}
+	}
+
+	m_actorPickingFramebuffer.Unbind();
+
+	if (auto output = frameDescriptor.outputBuffer)
+	{
+		output.value().Bind();
+	}
+}
+
+void OvEditor::Rendering::PickingRenderPass::DrawPickableModels(
+	OvRendering::Data::PipelineState p_pso,
+	OvCore::SceneSystem::Scene& p_scene
+)
+{
+	const auto& filteredDrawables = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneFilteredDrawablesDescriptor>();
+
+	auto drawPickableModels = [&](auto drawables) {
+		for (auto& drawable : drawables)
+		{
+			const auto& actor = drawable.template GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDrawableDescriptor>().actor;
+			const auto skinnedRenderer = actor.template GetComponent<OvCore::ECS::Components::CSkinnedMeshRenderer>();
+			const bool hasSkinningDescriptor = drawable.template HasDescriptor<OvCore::Rendering::SkinningDrawableDescriptor>();
+			const bool skinningEnabled = hasSkinningDescriptor &&
+				skinnedRenderer &&
+				m_actorPickingFallbackMaterial.SupportsFeature(kSkinningFeatureName);
+
+			if (skinningEnabled)
+			{
+				auto& targetMaterial = m_actorPickingFallbackMaterial;
+
+				PreparePickingMaterial(actor, targetMaterial);
+
+				OvRendering::Entities::Drawable finalDrawable = drawable;
+				finalDrawable.material = &targetMaterial;
+				finalDrawable.stateMask = targetMaterial.GenerateStateMask();
+				finalDrawable.stateMask.frontfaceCulling = false;
+				finalDrawable.stateMask.backfaceCulling = false;
+				finalDrawable.pass = kPickingPassName;
+
+				OvCore::Rendering::SkinningUtils::ApplyToDrawable(finalDrawable, *skinnedRenderer, &targetMaterial.GetFeatures());
+				m_renderer.DrawEntity(p_pso, finalDrawable);
+				continue;
+			}
+
+			auto& targetMaterial =
+				drawable.material &&
+				drawable.material->IsValid() &&
+				drawable.material->HasPass(kPickingPassName) ?
+				drawable.material.value() :
+				m_actorPickingFallbackMaterial;
+
+			PreparePickingMaterial(actor, targetMaterial);
+
+			OvRendering::Entities::Drawable finalDrawable = drawable;
+			finalDrawable.material = &targetMaterial;
+			finalDrawable.stateMask = targetMaterial.GenerateStateMask();
+			finalDrawable.stateMask.frontfaceCulling = false;
+			finalDrawable.stateMask.backfaceCulling = false;
+			finalDrawable.pass = kPickingPassName;
+			finalDrawable.featureSetOverride = std::nullopt;
+
+			m_renderer.DrawEntity(p_pso, finalDrawable);
+		}
+	};
+
+	drawPickableModels(filteredDrawables.opaques | std::views::values);
+	drawPickableModels(filteredDrawables.transparents | std::views::values);
+	drawPickableModels(filteredDrawables.ui | std::views::values);
+}
+
+void OvEditor::Rendering::PickingRenderPass::DrawPickableCameras(
+	OvRendering::Data::PipelineState p_pso,
+	OvCore::SceneSystem::Scene& p_scene
+)
+{
+	for (auto camera : p_scene.GetFastAccessComponents().cameras)
+	{
+		auto& actor = camera->owner;
+
+		if (actor.IsActive())
+		{
+			PreparePickingMaterial(actor, m_actorPickingFallbackMaterial);
+			auto& cameraModel = *EDITOR_CONTEXT(editorResources)->GetModel("Camera");
+			auto translation = OvMaths::FMatrix4::Translation(actor.transform.GetWorldPosition());
+			auto rotation = OvMaths::FQuaternion::ToMatrix4(actor.transform.GetWorldRotation());
+			auto modelMatrix = translation * rotation;
+
+			m_renderer.GetFeature<DebugModelRenderFeature>()
+				.DrawModelWithSingleMaterial(p_pso, cameraModel, m_actorPickingFallbackMaterial, modelMatrix);
+		}
+	}
+}
+
+void OvEditor::Rendering::PickingRenderPass::DrawPickableReflectionProbes(OvRendering::Data::PipelineState p_pso, OvCore::SceneSystem::Scene& p_scene)
+{
+	for (auto reflectionProbe : p_scene.GetFastAccessComponents().reflectionProbes)
+	{
+		auto& actor = reflectionProbe->owner;
+
+		if (actor.IsActive())
+		{
+			PreparePickingMaterial(actor, m_reflectionProbeMaterial);
+			auto& reflectionProbeModel = *EDITOR_CONTEXT(editorResources)->GetModel("Sphere");
+			const auto translation = OvMaths::FMatrix4::Translation(
+				actor.transform.GetWorldPosition() +
+				reflectionProbe->GetCapturePosition()
+			);
+			const auto rotation = OvMaths::FQuaternion::ToMatrix4(actor.transform.GetWorldRotation());
+			const auto scaling = OvMaths::FMatrix4::Scaling(
+				OvMaths::FVector3::One * OvEditor::Settings::EditorSettings::ReflectionProbeScale
+			);
+			auto modelMatrix = translation * rotation * scaling;
+
+			m_renderer.GetFeature<DebugModelRenderFeature>()
+				.DrawModelWithSingleMaterial(p_pso, reflectionProbeModel, m_reflectionProbeMaterial, modelMatrix);
+		}
+	}
+}
+
+void OvEditor::Rendering::PickingRenderPass::DrawPickableLights(
+	OvRendering::Data::PipelineState p_pso,
+	OvCore::SceneSystem::Scene& p_scene
+)
+{
+	if (Settings::EditorSettings::LightBillboardScale > 0.001f)
+	{
+		m_renderer.Clear(false, true, false);
+
+		m_lightMaterial.SetProperty("u_Scale", Settings::EditorSettings::LightBillboardScale * 0.1f);
+
+		for (auto light : p_scene.GetFastAccessComponents().lights)
+		{
+			auto& actor = light->owner;
+
+			if (actor.IsActive())
+			{
+				PreparePickingMaterial(actor, m_lightMaterial, "u_Diffuse");
+				auto& lightModel = *EDITOR_CONTEXT(editorResources)->GetModel("Vertical_Plane");
+				auto modelMatrix = OvMaths::FMatrix4::Translation(actor.transform.GetWorldPosition());
+
+				m_renderer.GetFeature<DebugModelRenderFeature>()
+					.DrawModelWithSingleMaterial(p_pso, lightModel, m_lightMaterial, modelMatrix);
+			}
+		}
+	}
+}
+
+void OvEditor::Rendering::PickingRenderPass::DrawPickableGizmo(
+	OvRendering::Data::PipelineState p_pso,
+	const OvMaths::FVector3& p_position,
+	const OvMaths::FQuaternion& p_rotation,
+	OvEditor::Core::EGizmoOperation p_operation,
+	std::optional<OvMaths::FMatrix4> p_viewMatrixOverride,
+	std::optional<OvMaths::FMatrix4> p_projectionMatrixOverride,
+	std::optional<float> p_scaleOverride,
+	int p_visibleAxes
+)
+{
+	m_gizmoPickingMaterial.TrySetProperty(kGizmoScaleUniform, p_scaleOverride.value_or(kDistanceBasedGizmoScale));
+	m_gizmoPickingMaterial.TrySetProperty(kVisibleAxesUniform, p_visibleAxes);
+
+	auto modelMatrix =
+		OvMaths::FMatrix4::Translation(p_position) *
+		OvMaths::FQuaternion::ToMatrix4(OvMaths::FQuaternion::Normalize(p_rotation));
+
+	auto arrowModel = EDITOR_CONTEXT(editorResources)->GetModel("Arrow_Picking");
+
+	m_renderer.GetFeature<DebugModelRenderFeature>()
+		.DrawModelWithSingleMaterial(
+			p_pso,
+			*arrowModel,
+			m_gizmoPickingMaterial,
+			modelMatrix,
+			p_viewMatrixOverride,
+			p_projectionMatrixOverride
+		);
+}
