@@ -1,0 +1,112 @@
+/**
+* @project: Overload
+* @author: Overload Tech.
+* @licence: MIT
+*/
+
+#include <atomic>
+#include <format>
+#include <ranges>
+
+#include <tracy/Tracy.hpp>
+
+#include <OvDebug/Assertion.h>
+#include <OvRendering/Resources/Shader.h>
+
+namespace
+{
+	std::atomic<uint64_t> g_shaderGenerationCounter{ 0 };
+
+	void ValidateVariants(const OvRendering::Resources::Shader::Variants& p_variants)
+	{
+		OVASSERT(p_variants.contains({}), "Missing default pass.");
+		OVASSERT(p_variants.at({}).size() > 0 && p_variants.at({}).contains({}), "Missing default program.");
+	}
+}
+
+baregl::ShaderProgram& OvRendering::Resources::Shader::GetVariant(std::optional<const std::string_view> p_pass, const Data::FeatureSet& p_featureSet)
+{
+	ZoneScoped;
+
+	const std::string pass{ p_pass.value_or("") };
+
+	auto passIt = m_variants.find(pass);
+	if (passIt == m_variants.end())
+	{
+		auto defaultPassIt = m_variants.find("");
+		OVASSERT(defaultPassIt != m_variants.end() && defaultPassIt->second.contains({}), "No default program found for the default pass");
+		return *defaultPassIt->second.at({});
+	}
+
+	auto featureIt = passIt->second.find(p_featureSet);
+	if (featureIt == passIt->second.end())
+	{
+		auto defaultFeatureIt = passIt->second.find({});
+		OVASSERT(defaultFeatureIt != passIt->second.end(), std::format("No default program found for pass: {}", pass));
+		return *defaultFeatureIt->second;
+	}
+
+	return *featureIt->second;
+}
+
+const OvRendering::Data::FeatureSet& OvRendering::Resources::Shader::GetFeatures() const
+{
+	return m_features;
+}
+
+const OvRendering::Data::FeatureSet& OvRendering::Resources::Shader::GetEngineFeatures() const
+{
+	return m_engineFeatures;
+}
+
+const std::unordered_set<std::string>& OvRendering::Resources::Shader::GetPasses() const
+{
+	return m_passes;
+}
+
+OvRendering::Resources::Shader::Shader(
+	const std::string p_path,
+	Variants&& p_variants,
+	Data::FeatureSet p_engineFeatures
+) : path(p_path)
+{
+	SetVariants(std::move(p_variants), std::move(p_engineFeatures));
+}
+
+void OvRendering::Resources::Shader::SetVariants(Variants&& p_variants, Data::FeatureSet p_engineFeatures)
+{
+	ValidateVariants(p_variants);
+	m_variants = std::move(p_variants);
+	m_generation = ++g_shaderGenerationCounter;
+	m_engineFeatures = std::move(p_engineFeatures);
+
+	m_passes.clear();
+	m_features.clear();
+
+	// Find all passes & user features based on the compiled variants (engine features are excluded)
+	for (const auto& [pass, featureVariants] : m_variants)
+	{
+		m_passes.insert(pass);
+
+		for (const auto& featureSet : featureVariants | std::views::keys)
+		{
+			for (const auto& feature : featureSet)
+			{
+				if (!m_engineFeatures.contains(feature))
+				{
+					m_features.insert(feature);
+				}
+			}
+		}
+	}
+}
+
+const OvRendering::Resources::Shader::Variants& OvRendering::Resources::Shader::GetVariants() const
+{
+	return m_variants;
+}
+
+uint64_t OvRendering::Resources::Shader::GetGeneration() const
+{
+	return m_generation;
+}

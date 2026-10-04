@@ -1,0 +1,20 @@
+# Make
+Makefile
+
+# Visual Studio
+.vs/
+.vscode/
+*.vcxproj*
+*.sln
+*.vcxitems*
+*.aps
+
+# Overload
+/Releases/
+/Bin/
+/Bin-Int/
+/Build/
+
+# ImGui
+imgui.ini
+
