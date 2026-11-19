@@ -65,8 +65,15 @@ namespace OvCore::Terrain
 	};
 
 	/**
+	* Returns whether a height field's sample is a hole: an infinite height, or the largest float, which the physics
+	* keeps for one. No triangle touching a hole collides, is walked on or is drawn
+	* @param p_height
+	*/
+	bool IsHole(float p_height);
+
+	/**
 	* Returns the height and slope of a field at a point of its own space (x and z from its first sample), on the
-	* triangle under it, or nothing outside the field
+	* triangle under it, or nothing outside the field or where that triangle touches a hole
 	* @param p_heights (row-major, along +X then +Z)
 	* @param p_sampleCount (samples per side)
 	* @param p_spacing

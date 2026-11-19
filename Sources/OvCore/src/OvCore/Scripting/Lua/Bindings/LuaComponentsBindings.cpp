@@ -35,6 +35,7 @@
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>  
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
 #include <OvCore/ECS/Components/CTerrain.h>
+#include <OvCore/Terrain/Heightmap.h>
 #include <OvCore/ECS/Components/CPhysicalMesh.h>
 #include <OvCore/Helpers/DistanceField.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>  
@@ -568,7 +569,18 @@ void BindLuaComponents(sol::state& p_luaState)
 	p_luaState.new_usertype<CPhysicalHeightField>("PhysicalHeightField",
 		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
 		"SetHeights", &SetHeights,
-		"GetHeights", [](CPhysicalHeightField& p_this) { return sol::as_table(p_this.GetHeights()); },
+		"GetHeights", [](CPhysicalHeightField& p_this) {
+			// A hole as math.huge, as SetHeights takes it
+			std::vector<double> heights(p_this.GetHeights().begin(), p_this.GetHeights().end());
+			for (double& height : heights)
+			{
+				if (OvCore::Terrain::IsHole(static_cast<float>(height)))
+				{
+					height = std::numeric_limits<double>::infinity();
+				}
+			}
+			return sol::as_table(std::move(heights));
+		},
 		"GetSampleCount", &CPhysicalHeightField::GetSampleCount,
 		"GetSpacing", &CPhysicalHeightField::GetSpacing,
 		"SetSpacing", [](CPhysicalHeightField& p_this, float p_spacing) {

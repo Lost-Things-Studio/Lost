@@ -17,7 +17,7 @@ PhysicalHeightField = {}
 ---@return string|nil
 function PhysicalHeightField:SetHeights(sampleCount, spacing, heights) end
 
---- Returns the heights, row-major along +X then +Z (empty before any)
+--- Returns the heights, row-major along +X then +Z, a hole as math.huge (empty before any)
 ---@return number[]
 function PhysicalHeightField:GetHeights() end
 
@@ -65,13 +65,13 @@ function PhysicalHeightField:SetHeightOffset(offset) end
 function PhysicalHeightField:GetHeightOffset() end
 
 --- Returns the height (y) of the field's surface under a point of the world, on the triangle the physics uses, or nil
---- outside the field. Exact for an actor turned about Y only
+--- outside the field and over a hole. Exact for an actor turned about Y only
 ---@param x number
 ---@param z number
 ---@return number|nil
 function PhysicalHeightField:GetHeightAt(x, z) end
 
---- Returns the normal of the field's surface under a point of the world, or nil outside the field
+--- Returns the normal of the field's surface under a point of the world, or nil outside the field and over a hole
 ---@param x number
 ---@param z number
 ---@return Vector3|nil
