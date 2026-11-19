@@ -72,7 +72,7 @@ end
 
 ## Cost
 
-Measured on Linux, Release, on the Adventurers World: a terrain height field and its props, about 150000 triangles.
+Measured on Linux, Release, on a generated world of 256 m: a terrain height field and its props, about 150000 triangles.
 
 | Step | Time |
 | --- | --- |
