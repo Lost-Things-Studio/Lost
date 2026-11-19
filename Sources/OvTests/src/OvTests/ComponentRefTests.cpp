@@ -10,10 +10,16 @@
 #include <OvCore/Scripting/Lua/LuaComponentRef.h>
 
 #include <OvCore/ECS/Actor.h>
+#include <OvCore/ECS/Components/CPhysicalBox.h>
+#include <OvCore/ECS/Components/CPhysicalCapsule.h>
+#include <OvCore/ECS/Components/CPhysicalHeightField.h>
+#include <OvCore/ECS/Components/CPhysicalMesh.h>
+#include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/ECS/Components/UI/CHorizontalLayout.h>
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvCore/Scripting/Lua/LuaApi.h>
+#include <OvPhysics/Core/PhysicsEngine.h>
 
 namespace
 {
@@ -118,6 +124,35 @@ TEST_SUITE("Component references")
 		actor.RemoveComponent<OvCore::ECS::Components::CPointLight>();
 		lua["replacement"] = &actor.AddComponent<OvCore::ECS::Components::CPointLight>();
 		CHECK(Run("return first == again and first ~= replacement") == "true");
+	}
+
+	TEST_CASE_FIXTURE(ComponentFixture, "every kind of collider is a checked handle")
+	{
+		using namespace OvCore::ECS::Components;
+
+		// Colliders need a physics engine to make their shapes, freed after them
+		OvPhysics::Core::PhysicsEngine engine{ {} };
+		OvCore::SceneSystem::Scene colliders("", "");
+
+		// Each pushed twice: two handles, equal only through the handles' own __eq
+		const auto push = [&](const char* p_name, auto& p_component) {
+			lua[p_name] = &p_component;
+			lua[std::string(p_name) + "Again"] = &p_component;
+		};
+
+		push("box", colliders.CreateActor("Box").AddComponent<CPhysicalBox>());
+		push("sphere", colliders.CreateActor("Sphere").AddComponent<CPhysicalSphere>());
+		push("capsule", colliders.CreateActor("Capsule").AddComponent<CPhysicalCapsule>());
+		push("field", colliders.CreateActor("Field").AddComponent<CPhysicalHeightField>());
+		push("mesh", colliders.CreateActor("Mesh").AddComponent<CPhysicalMesh>());
+
+		for (const std::string name : { "box", "sphere", "capsule", "field", "mesh" })
+		{
+			CAPTURE(name);
+			CHECK(Run("return " + name + ":IsAlive() and " + name + " == " + name + "Again") == "true");
+		}
+
+		lua.collect_garbage();
 	}
 
 	TEST_CASE_FIXTURE(ComponentFixture, "a value that is not the component a method expects is refused, and nil stays nil")
