@@ -13,7 +13,7 @@ A built game runs as before: the project in `Data/User` (its settings in `Data/U
 | Option | What it does |
 | --- | --- |
 | `--project <folder or file>` | Runs this project: a `.ovproject` file, or the folder that holds exactly one. Its assets are the `Assets` folder next to it |
-| `--engine <folder>` | The engine's resources, an Adventurer checkout's `Resources/Engine` (`Data/Engine` by default) |
+| `--engine <folder>` | The engine's resources, a Lost checkout's `Resources/Engine` (`Data/Engine` by default) |
 | `--scene <path>` | Starts on this scene, relative to the project's assets, instead of the project's `start_scene` |
 | `--frames <n>` | Quits after n frames |
 | `--screenshot <file.png>` | Writes the last frame to a PNG image. Needs `--frames` |
@@ -27,7 +27,7 @@ The paths are relative to the current folder. For example, ten seconds of a scen
 frame captured:
 
 ```sh
-OvGame --project ../MyGame --engine ../Adventurer/Resources/Engine --scene Scenes/Level1.ovscene \
+OvGame --project ../MyGame --engine ../lost/Resources/Engine --scene Scenes/Level1.ovscene \
        --frames 600 --screenshot level1.png --hidden-window --fail-on-error
 ```
 
