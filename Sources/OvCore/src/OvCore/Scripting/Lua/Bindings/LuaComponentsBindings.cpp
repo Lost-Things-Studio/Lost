@@ -1833,7 +1833,7 @@ void BindLuaComponents(sol::state& p_luaState)
 
 	OvCore::Scripting::MarkComponentUsertypes<
 		AComponent, CTransform, CModelRenderer, CMaterialRenderer, CBoneAttachment, CSkinnedMeshRenderer,
-		CPhysicalObject, CPhysicalBox, CPhysicalSphere, CPhysicalCapsule, CPhysicalHeightField, CCharacterController,
+		CPhysicalObject, CPhysicalBox, CPhysicalSphere, CPhysicalCapsule, CPhysicalHeightField, CPhysicalMesh, CCharacterController,
 		CCamera, UI::CCanvas, UI::CImage, UI::CLayoutGroup, UI::CHorizontalLayout, UI::CVerticalLayout, UI::CText,
 		CLight, CPointLight, CSpotLight, CAmbientBoxLight, CAmbientSphereLight, CDirectionalLight,
 		CAudioSource, CAudioListener, CPostProcessStack, CReflectionProbe, CParticleSystem, CLookAt, CSpringBones, CAnimator,
