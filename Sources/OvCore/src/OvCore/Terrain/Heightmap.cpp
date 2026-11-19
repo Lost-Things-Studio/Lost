@@ -88,6 +88,11 @@ std::optional<std::string> OvCore::Terrain::LoadHeightmap(const std::filesystem:
 	return DecodeHeightmap(bytes.data(), bytes.size(), p_image);
 }
 
+bool OvCore::Terrain::IsHole(float p_height)
+{
+	return !(p_height < std::numeric_limits<float>::max());
+}
+
 std::optional<OvCore::Terrain::HeightSample> OvCore::Terrain::SampleHeightField(const std::vector<float>& p_heights, uint32_t p_sampleCount, float p_spacing, float p_x, float p_z)
 {
 	if (p_sampleCount < 2 || p_spacing <= 0.0f || p_heights.size() != static_cast<size_t>(p_sampleCount) * p_sampleCount)
@@ -118,6 +123,11 @@ std::optional<OvCore::Terrain::HeightSample> OvCore::Terrain::SampleHeightField(
 
 	// Two triangles share the (0, 0)-(1, 1) diagonal: (0, 0), (1, 0), (1, 1) where fx >= fz, else (0, 0), (0, 1), (1, 1)
 	HeightSample sample;
+
+	if (IsHole(h00) || IsHole(h11) || IsHole(fx >= fz ? h10 : h01))
+	{
+		return std::nullopt;
+	}
 
 	if (fx >= fz)
 	{

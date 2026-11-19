@@ -20,7 +20,8 @@ end
   or `false` and why not. Build it once the scene's colliders are in place: after a procedural world is generated,
   not in the `OnStart` of the actor that generates it.
 - **What goes in**: the static colliders of the scene's active actors, in the collision layers of `layerMask`.
-  - Height fields, boxes, spheres and capsules.
+  - Height fields, mesh colliders, boxes, spheres and capsules. A height field's holes are left out, as the physics
+    leaves them out, and so a mesh collider laid over a hole (a cave, a tunnel) is walked in.
   - Each shape is the one the physics makes, the actor's scale included. Spheres and capsules are a mesh slightly
     larger than the shape.
   - Triggers are left out, and so are dynamic and kinematic bodies, which move.
@@ -72,7 +73,7 @@ end
 
 ## Cost
 
-Measured on Linux, Release, on the Adventurers World: a terrain height field and its props, about 150000 triangles.
+Measured on Linux, Release, on a generated world of 256 m: a terrain height field and its props, about 150000 triangles.
 
 | Step | Time |
 | --- | --- |
