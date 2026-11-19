@@ -1,48 +1,17 @@
 # Changelog
 
-What Adventurer adds to [Overload](https://github.com/Overload-Technologies/Overload), version by version, newest
+What Lost changes from [Overload](https://github.com/Overload-Technologies/Overload), version by version, newest
 first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
 [Semantic Versioning](https://semver.org/): a script, a shader or a project made for one version keeps working with any
 later version of the same major version.
 
 ## [Unreleased]
 
-### Added
-
-- **Collision layers**: 16 layers, one per physical object (`SetCollisionLayer`, `GetCollisionLayer`,
-  `collision_layer` in a file, a list in the inspector). The project names them (`physics_layer_names`) and lists the
-  pairs that go through each other (`physics_ignored_layer_pairs`); Lua reads and changes them at run time
-  (`Physics.GetLayerIndex`, `GetLayerName`, `DoLayersCollide`, `SetLayersCollide`). See [Docs/Physics.md](Docs/Physics.md).
-- **Physics queries**: `Physics.CastRay` and `Physics.CastSphere` return the objects met, nearest first, with the
-  point, the normal and the distance; `Physics.OverlapSphere` and `Physics.OverlapBox` return the objects a shape
-  overlaps. Each takes a layer mask (`Physics.GetLayerMask`) and leaves triggers out unless asked. `Physics.Raycast`
-  is unchanged.
-- **Project ID**: the save folder follows the project's `project_id`, or `executable_name` while it is empty, so that
-  a game renamed keeps its saves. The editor shows it beside the executable name.
-
-### Changed
-
-- **Ragdolls collide by their layer**: their bodies are on `physics_ragdoll_layer` (15 by default). Going through
-  dynamic bodies is now the project option `physics_ragdoll_ignores_dynamic_bodies`, off by default. A project that
-  relied on it sets it to `true`.
-
-### Fixed
-
-- **Destroyed actors are freed in a built game**: `OvGame` collects the actors destroyed during a frame at its end, as
-  the editor's play mode always did. Before, a destroyed actor stayed active and drawn in a built game.
-- **Actor references inside a prefab survive instantiation**: an actor property that names another actor of the same
-  prefab now names that actor's instance. Before, every instance got new GUIDs and such a property came out `nil`.
-- **The editor completes a project file instead of resetting it**: a project file lacking a setting gets that setting's
-  default and keeps all its other values. Before, one missing key reset every setting (`start_scene` emptied,
-  `executable_name` back to `Game`, which also moved the save folder).
-
-## [0.1.0] - 2026-11-07
-
-Adventurer's first version: Overload 1.9 and the changes below.
+Lost's first version: Overload 1.9 and the changes below.
 
 ### Added
 
-- **Engine version**: `VERSION.txt` holds Adventurer's version, `Application.GetEngineVersion()` returns it to scripts,
+- **Engine version**: `VERSION.txt` holds Lost's version, `Application.GetEngineVersion()` returns it to scripts,
   and the editor's Help menu shows it beside the Overload version it is based on (`OVERLOAD_VERSION`).
 - **Physics on Jolt**: `OvPhysics` is ported from Bullet3 to Jolt Physics 5.6.0.
 - **Ragdolls**: `SkinnedMeshRenderer:StartRagdoll(parts, velocity)` hands a skeleton over to capsules joined by
@@ -50,7 +19,12 @@ Adventurer's first version: Overload 1.9 and the changes below.
 - **Static bodies**: `PhysicalObject:SetStatic` and `IsStatic` (`static` in a file), a body that never moves by itself
   and only follows its transform when the transform changes.
 - **Height fields**: the `PhysicalHeightField` component, a static Jolt height field set from Lua with
-  `SetHeights(sampleCount, spacing, heights)`.
+  `SetHeights(sampleCount, spacing, heights)`; a height of `math.huge` is a hole.
+- **Mesh colliders**: the `PhysicalMesh` component, a static body shaped by triangles set from Lua
+  (`SetTriangles(positions, indices)`, or `SetMesh` from a `MeshData`), each colliding from its front side.
+- **Distance fields**: `DistanceField`, a signed distance field of empty spaces (tubes, ellipsoids, boxes) carved in
+  solid ground, roughened by noise, and meshed natively by blocks (`Mesh`) into a `MeshData` that
+  `Resources.CreateModel` and `PhysicalMesh:SetMesh` take as they are.
 - **Animation layers**: several clips at once on a skinned mesh, each with its own source, speed, loop and weight; the
   clip sources resolved by path inside the component (`SetAnimationSourceModel`).
 - **Layer masks**: `SetLayerMask(rootName, layer)` and `GetLayerMask(layer)`, a layer that only drives a node and its
@@ -82,7 +56,19 @@ Adventurer's first version: Overload 1.9 and the changes below.
   opaque meshes, and neighbouring blended meshes of one material, drawn as one instanced draw when their shader
   declares `#engine_capability INSTANCING`; colour grading and a vignette in the tonemapping pass; a distance fog on
   the post process stack; cached directional shadow maps; an optional depth pre-pass.
+- **Reflection probes**: `ReflectionProbe:SetBrightness` and `GetBrightness`, how bright what a probe captured is for
+  the objects it lights.
 - **Profiling**: a Tracy zone per Behaviour callback, named `script:function`.
+- **Collision layers**: 16 layers, one per physical object (`SetCollisionLayer`, `GetCollisionLayer`,
+  `collision_layer` in a file, a list in the inspector). The project names them (`physics_layer_names`) and lists the
+  pairs that go through each other (`physics_ignored_layer_pairs`); Lua reads and changes them at run time
+  (`Physics.GetLayerIndex`, `GetLayerName`, `DoLayersCollide`, `SetLayersCollide`). See [Docs/Physics.md](Docs/Physics.md).
+- **Physics queries**: `Physics.CastRay` and `Physics.CastSphere` return the objects met, nearest first, with the
+  point, the normal and the distance; `Physics.OverlapSphere` and `Physics.OverlapBox` return the objects a shape
+  overlaps. Each takes a layer mask (`Physics.GetLayerMask`) and leaves triggers out unless asked. `Physics.Raycast`
+  is unchanged.
+- **Project ID**: the save folder follows the project's `project_id`, or `executable_name` while it is empty, so that
+  a game renamed keeps its saves. The editor shows it beside the executable name.
 
 ### Changed
 
@@ -97,7 +83,19 @@ Adventurer's first version: Overload 1.9 and the changes below.
 - **Game input in the editor**: the game reads keys, clicks, scroll and the mouse lock only while the Game View has
   the focus; F5 starts and stops play, and Escape belongs to the game.
 - **A minimized window** keeps the game running; only drawing stops.
+- **Ragdolls collide by their layer**: their bodies are on `physics_ragdoll_layer` (15 by default). Going through
+  dynamic bodies is now the project option `physics_ragdoll_ignores_dynamic_bodies`, off by default. A project that
+  relied on it sets it to `true`.
 
 ### Removed
 
 - Bullet3, replaced by Jolt Physics.
+
+### Fixed
+
+- **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
+- **Actor references inside a prefab survive instantiation**: an actor property that names another actor of the same
+  prefab now names that actor's instance. Before, every instance got new GUIDs and such a property came out `nil`.
+- **The editor completes a project file instead of resetting it**: a project file lacking a setting gets that setting's
+  default and keeps all its other values. Before, one missing key reset every setting (`start_scene` emptied,
+  `executable_name` back to `Game`, which also moved the save folder).
