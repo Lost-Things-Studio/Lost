@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -299,6 +300,69 @@ TEST_SUITE("Terrain")
 		};
 		const auto facing = OvMaths::FVector3::Cross(point(1) - point(0), point(2) - point(0));
 		CHECK(facing.y > 0.0f);
+	}
+
+	TEST_CASE("A hole has no height under it, and no triangle or skirt over it at any level")
+	{
+		// 9 samples a side, 1 m apart, at 1 m: a hole in the middle, as the physics keeps it, and one on the +X edge
+		constexpr uint32_t n = 9;
+		std::vector<float> heights(n * n, 1.0f);
+		heights[4 * n + 4] = std::numeric_limits<float>::max();
+		heights[2 * n + 8] = std::numeric_limits<float>::infinity();
+
+		CHECK(IsHole(std::numeric_limits<float>::max()));
+		CHECK(IsHole(std::numeric_limits<float>::infinity()));
+		CHECK_FALSE(IsHole(1.0e30f));
+		CHECK_FALSE(IsHole(-5.0f));
+
+		// Both triangles of the cell from (3, 3) touch the hole; of the cell from (4, 3), only the one along -X does
+		CHECK_FALSE(SampleHeightField(heights, n, 1.0f, 3.6f, 3.4f).has_value());
+		CHECK_FALSE(SampleHeightField(heights, n, 1.0f, 3.4f, 3.6f).has_value());
+		CHECK_FALSE(SampleHeightField(heights, n, 1.0f, 4.4f, 3.6f).has_value());
+		REQUIRE(SampleHeightField(heights, n, 1.0f, 4.6f, 3.4f).has_value());
+		CHECK(SampleHeightField(heights, n, 1.0f, 4.6f, 3.4f)->height == doctest::Approx(1.0f));
+
+		// One chunk of 8 cells; its box and skirts leave the holes out
+		const auto layout = TerrainLayout::Make(n, 1.0f, 8, 4);
+		REQUIRE(layout.GetChunkCount() == 1);
+		REQUIRE(layout.lodCount == 4);
+		const float depth = ComputeSkirtDepth(heights, layout, 0);
+		CHECK(depth == doctest::Approx(0.1f));
+		const auto box = ComputeChunkBox(heights, layout, 0, depth);
+		CHECK(box.max.y == doctest::Approx(1.0f));
+		CHECK(box.min.y == doctest::Approx(0.9f));
+
+		ChunkGeometry geometry;
+		for (uint32_t lod = 0; lod < 4; ++lod)
+		{
+			CAPTURE(lod);
+			BuildChunk(heights, layout, 0, lod, depth, geometry);
+
+			// Every vertex within the box, a hole's too
+			for (const auto& vertex : geometry.vertices)
+			{
+				CHECK(vertex.position[1] >= box.min.y - 1.0e-4f);
+				CHECK(vertex.position[1] <= box.max.y + 1.0e-4f);
+			}
+
+			// No triangle of the surface on a hole
+			for (uint32_t i = 0; i < 3 * geometry.surfaceTriangles; ++i)
+			{
+				const auto& vertex = geometry.vertices[geometry.indices[i]];
+				const bool middle = vertex.position[0] == 4.0f && vertex.position[2] == 4.0f;
+				const bool edge = vertex.position[0] == 8.0f && vertex.position[2] == 2.0f;
+				CHECK_FALSE((middle || edge));
+			}
+		}
+
+		// At full detail, the triangles the physics leaves out: 6 round the middle, 3 beside the edge
+		BuildChunk(heights, layout, 0, 0, depth, geometry);
+		CHECK(geometry.surfaceTriangles == 128 - 6 - 3);
+
+		// At the coarsest level, the chunk is one cell: both its triangles cover a hole, and the skirt along +X is gone
+		BuildChunk(heights, layout, 0, 3, depth, geometry);
+		CHECK(geometry.surfaceTriangles == 0);
+		CHECK(geometry.indices.size() == 3 * 12);
 	}
 
 	TEST_CASE("Neighbouring chunks at the same level share their edge, and the skirts cover the gap between levels")

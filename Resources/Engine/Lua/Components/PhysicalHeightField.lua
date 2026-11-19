@@ -7,16 +7,17 @@
 PhysicalHeightField = {}
 
 --- Defines the heights of the field, row-major: along +X first, then +Z (the sample (x, z) is at index
---- z * sampleCount + x + 1). An empty array clears the field, which then collides with nothing. The field leaves its
---- height map, if any. Returns true, or false and why when an argument is invalid (nothing is changed then)
+--- z * sampleCount + x + 1). A height of math.huge is a hole: no triangle touching that sample collides. An empty
+--- array clears the field, which then collides with nothing. The field leaves its height map, if any. Returns true,
+--- or false and why when an argument is invalid (nothing is changed then)
 ---@param sampleCount integer samples per side, from 3 to 4096
 ---@param spacing number distance between two neighbouring samples
----@param heights number[] sampleCount * sampleCount heights, or none
+---@param heights number[] sampleCount * sampleCount heights (math.huge for a hole), or none
 ---@return boolean
 ---@return string|nil
 function PhysicalHeightField:SetHeights(sampleCount, spacing, heights) end
 
---- Returns the heights, row-major along +X then +Z (empty before any)
+--- Returns the heights, row-major along +X then +Z, a hole as math.huge (empty before any)
 ---@return number[]
 function PhysicalHeightField:GetHeights() end
 
@@ -64,13 +65,13 @@ function PhysicalHeightField:SetHeightOffset(offset) end
 function PhysicalHeightField:GetHeightOffset() end
 
 --- Returns the height (y) of the field's surface under a point of the world, on the triangle the physics uses, or nil
---- outside the field. Exact for an actor turned about Y only
+--- outside the field and over a hole. Exact for an actor turned about Y only
 ---@param x number
 ---@param z number
 ---@return number|nil
 function PhysicalHeightField:GetHeightAt(x, z) end
 
---- Returns the normal of the field's surface under a point of the world, or nil outside the field
+--- Returns the normal of the field's surface under a point of the world, or nil outside the field and over a hole
 ---@param x number
 ---@param z number
 ---@return Vector3|nil
