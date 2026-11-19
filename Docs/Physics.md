@@ -14,7 +14,12 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
 - A height field (`Actor:AddPhysicalHeightField`, then `SetHeights(sampleCount, spacing, heights)`) is static. The heights
   are row-major, along +X first, then +Z: the sample (x, z) is at index `z * sampleCount + x + 1`, at
   `(x * spacing, height, z * spacing)` from the actor, each cell cut along its (x, z)–(x + 1, z + 1) diagonal. It
-  returns `true`, or `false` and why. Bodies rest about 2 cm into it.
+  returns `true`, or `false` and why. Bodies rest about 2 cm into it. A height of `math.huge` is a hole: no triangle
+  touching that sample collides, so a body falls through (a cave's mouth, a pit).
+- A mesh collider (`Actor:AddPhysicalMesh`, then `SetTriangles(positions, indices)`, or `SetMesh` with a `MeshData`)
+  is static too. Its triangles are in the actor's space and collide from their front only, the side their
+  counter-clockwise winding faces: a ray or a body coming from behind passes through. Build it once; changing its
+  triangles rebuilds the whole shape.
 
 ## Triggers and contacts
 
