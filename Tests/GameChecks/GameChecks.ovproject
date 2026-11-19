@@ -1,5 +1,5 @@
 executable_name=GameChecks
-project_id=AdventurerGameChecks
+project_id=LostGameChecks
 start_scene=Scenes/Destroy.ovscene
 x_resolution=320
 y_resolution=180

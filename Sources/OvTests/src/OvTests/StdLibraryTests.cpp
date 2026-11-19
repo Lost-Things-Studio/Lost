@@ -520,7 +520,7 @@ TEST_SUITE("Standard library")
 			local back = settings:Read()
 			r.backVolume, r.backName = back.volume, back.name
 
-			-- A file written before the envelope, as Adventurers' are
+			-- A file written before the envelope existed
 			Storage.Write("settings.json", Json.Encode({ Version = 1, speed = 2 }))
 			local legacy = settings:Read()
 			r.legacyFrom, r.legacyVersion, r.legacyVolume, r.legacySteps, r.legacySpeed =
