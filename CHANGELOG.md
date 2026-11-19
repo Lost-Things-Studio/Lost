@@ -1,17 +1,17 @@
 # Changelog
 
-What Adventurer adds to [Overload](https://github.com/Overload-Technologies/Overload), version by version, newest
+What Lost changes from [Overload](https://github.com/Overload-Technologies/Overload), version by version, newest
 first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
 [Semantic Versioning](https://semver.org/): a script, a shader or a project made for one version keeps working with any
 later version of the same major version.
 
-## [0.1.0] - 2026-11-07
+## [Unreleased]
 
-Adventurer's first version: Overload 1.9 and the changes below.
+Lost's first version: Overload 1.9 and the changes below.
 
 ### Added
 
-- **Engine version**: `VERSION.txt` holds Adventurer's version, `Application.GetEngineVersion()` returns it to scripts,
+- **Engine version**: `VERSION.txt` holds Lost's version, `Application.GetEngineVersion()` returns it to scripts,
   and the editor's Help menu shows it beside the Overload version it is based on (`OVERLOAD_VERSION`).
 - **Physics on Jolt**: `OvPhysics` is ported from Bullet3 to Jolt Physics 5.6.0.
 - **Ragdolls**: `SkinnedMeshRenderer:StartRagdoll(parts, velocity)` hands a skeleton over to capsules joined by
@@ -19,7 +19,12 @@ Adventurer's first version: Overload 1.9 and the changes below.
 - **Static bodies**: `PhysicalObject:SetStatic` and `IsStatic` (`static` in a file), a body that never moves by itself
   and only follows its transform when the transform changes.
 - **Height fields**: the `PhysicalHeightField` component, a static Jolt height field set from Lua with
-  `SetHeights(sampleCount, spacing, heights)`.
+  `SetHeights(sampleCount, spacing, heights)`; a height of `math.huge` is a hole.
+- **Mesh colliders**: the `PhysicalMesh` component, a static body shaped by triangles set from Lua
+  (`SetTriangles(positions, indices)`, or `SetMesh` from a `MeshData`), each colliding from its front side.
+- **Distance fields**: `DistanceField`, a signed distance field of empty spaces (tubes, ellipsoids, boxes) carved in
+  solid ground, roughened by noise, and meshed natively by blocks (`Mesh`) into a `MeshData` that
+  `Resources.CreateModel` and `PhysicalMesh:SetMesh` take as they are.
 - **Animation layers**: several clips at once on a skinned mesh, each with its own source, speed, loop and weight; the
   clip sources resolved by path inside the component (`SetAnimationSourceModel`).
 - **Layer masks**: `SetLayerMask(rootName, layer)` and `GetLayerMask(layer)`, a layer that only drives a node and its
@@ -51,6 +56,8 @@ Adventurer's first version: Overload 1.9 and the changes below.
   opaque meshes, and neighbouring blended meshes of one material, drawn as one instanced draw when their shader
   declares `#engine_capability INSTANCING`; colour grading and a vignette in the tonemapping pass; a distance fog on
   the post process stack; cached directional shadow maps; an optional depth pre-pass.
+- **Reflection probes**: `ReflectionProbe:SetBrightness` and `GetBrightness`, how bright what a probe captured is for
+  the objects it lights.
 - **Profiling**: a Tracy zone per Behaviour callback, named `script:function`.
 
 ### Changed
@@ -70,3 +77,7 @@ Adventurer's first version: Overload 1.9 and the changes below.
 ### Removed
 
 - Bullet3, replaced by Jolt Physics.
+
+### Fixed
+
+- **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
