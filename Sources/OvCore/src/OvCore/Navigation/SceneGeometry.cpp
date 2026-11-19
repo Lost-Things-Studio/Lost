@@ -6,11 +6,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
+#include <OvCore/ECS/Components/CPhysicalMesh.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/Navigation/SceneGeometry.h>
 #include <OvCore/SceneSystem/Scene.h>
@@ -153,28 +155,76 @@ void OvCore::Navigation::SceneGeometry::AddHeightField(NavGeometry& p_geometry, 
 		return;
 	}
 
-	const int first = static_cast<int>(p_geometry.vertices.size() / 3);
+	// A hole's sample has no vertex: the mesh's bounds come from every vertex
+	std::vector<int> vertexOf(static_cast<size_t>(p_sampleCount) * p_sampleCount, -1);
 
 	for (uint32_t z = 0; z < p_sampleCount; ++z)
 	{
 		for (uint32_t x = 0; x < p_sampleCount; ++x)
 		{
-			const FVector3 world = Transform(p_world, { static_cast<float>(x) * p_spacing, p_heights[z * p_sampleCount + x], static_cast<float>(z) * p_spacing });
+			const float height = p_heights[z * p_sampleCount + x];
+			if (!std::isfinite(height) || height >= std::numeric_limits<float>::max())
+			{
+				continue;
+			}
+
+			vertexOf[z * p_sampleCount + x] = static_cast<int>(p_geometry.vertices.size() / 3);
+
+			const FVector3 world = Transform(p_world, { static_cast<float>(x) * p_spacing, height, static_cast<float>(z) * p_spacing });
 			p_geometry.vertices.push_back(world.x);
 			p_geometry.vertices.push_back(world.y);
 			p_geometry.vertices.push_back(world.z);
 		}
 	}
 
-	const auto index = [&](uint32_t p_x, uint32_t p_z) { return first + static_cast<int>(p_z * p_sampleCount + p_x); };
+	const auto triangle = [&](uint32_t p_ax, uint32_t p_az, uint32_t p_bx, uint32_t p_bz, uint32_t p_cx, uint32_t p_cz) {
+		const int a = vertexOf[p_az * p_sampleCount + p_ax];
+		const int b = vertexOf[p_bz * p_sampleCount + p_bx];
+		const int c = vertexOf[p_cz * p_sampleCount + p_cx];
+
+		if (a >= 0 && b >= 0 && c >= 0)
+		{
+			p_geometry.indices.insert(p_geometry.indices.end(), { a, b, c });
+		}
+	};
 
 	for (uint32_t z = 0; z + 1 < p_sampleCount; ++z)
 	{
 		for (uint32_t x = 0; x + 1 < p_sampleCount; ++x)
 		{
 			// Counter-clockwise seen from above: (x, z), (x + 1, z + 1), (x + 1, z), then (x, z), (x, z + 1), (x + 1, z + 1)
-			p_geometry.indices.insert(p_geometry.indices.end(), { index(x, z), index(x + 1, z + 1), index(x + 1, z) });
-			p_geometry.indices.insert(p_geometry.indices.end(), { index(x, z), index(x, z + 1), index(x + 1, z + 1) });
+			triangle(x, z, x + 1, z + 1, x + 1, z);
+			triangle(x, z, x, z + 1, x + 1, z + 1);
+		}
+	}
+}
+
+void OvCore::Navigation::SceneGeometry::AddMesh(NavGeometry& p_geometry, const OvMaths::FVector3& p_position, const OvMaths::FQuaternion& p_rotation, const OvMaths::FVector3& p_scale, const std::vector<float>& p_positions, const std::vector<uint32_t>& p_indices)
+{
+	const size_t vertexCount = p_positions.size() / 3;
+	const int first = static_cast<int>(p_geometry.vertices.size() / 3);
+
+	for (size_t vertex = 0; vertex < vertexCount; ++vertex)
+	{
+		const FVector3 world = Place(p_position, p_rotation, {
+			p_positions[vertex * 3] * p_scale.x,
+			p_positions[vertex * 3 + 1] * p_scale.y,
+			p_positions[vertex * 3 + 2] * p_scale.z
+		});
+		p_geometry.vertices.push_back(world.x);
+		p_geometry.vertices.push_back(world.y);
+		p_geometry.vertices.push_back(world.z);
+	}
+
+	for (size_t index = 0; index + 2 < p_indices.size(); index += 3)
+	{
+		if (p_indices[index] < vertexCount && p_indices[index + 1] < vertexCount && p_indices[index + 2] < vertexCount)
+		{
+			p_geometry.indices.insert(p_geometry.indices.end(), {
+				first + static_cast<int>(p_indices[index]),
+				first + static_cast<int>(p_indices[index + 1]),
+				first + static_cast<int>(p_indices[index + 2])
+			});
 		}
 	}
 }
@@ -222,6 +272,10 @@ OvCore::Navigation::NavGeometry OvCore::Navigation::SceneGeometry::Collect(Scene
 		else if (const auto* field = dynamic_cast<const CPhysicalHeightField*>(body))
 		{
 			AddHeightField(geometry, transform.GetWorldMatrix(), field->GetSampleCount(), field->GetSpacing(), field->GetHeights());
+		}
+		else if (const auto* mesh = dynamic_cast<const CPhysicalMesh*>(body))
+		{
+			AddMesh(geometry, position, rotation, scale, mesh->GetPositions(), mesh->GetIndices());
 		}
 	}
 
