@@ -146,6 +146,13 @@ function TerrainCheck:OnUpdate()
 		oCheck:Equal(t.oTerrain:GetChunkCount(), 1, "the terrain follows: one chunk")
 		oCheck:Near(t.oField:GetHeightAt(-60, -60) or -1, 2, "and the ground is flat", 1e-5)
 
+		-- A hole reads back as math.huge, and has no ground over it: the six triangles round the middle sample are gone
+		tFlat[5] = math.huge
+		oCheck:Expect(t.oField:SetHeights(3, 4, tFlat), "a script makes a hole")
+		oCheck:Equal(t.oField:GetHeights()[5], math.huge, "the hole reads back as math.huge")
+		oCheck:Equal(t.oField:GetHeightAt(-60, -60), nil, "no ground over the hole")
+		oCheck:Near(t.oField:GetHeightAt(-57, -63) or -1, 2, "the ground beside it stays", 1e-5)
+
 		t.oField:SetHeightmap("Textures/Terrain/Hills.png")
 		oCheck:Equal(t.oTerrain:GetChunkCount(), 16, "the height map makes the field again")
 		oCheck:Equal(t.oTerrain:GetError(), nil, "and the terrain draws it")

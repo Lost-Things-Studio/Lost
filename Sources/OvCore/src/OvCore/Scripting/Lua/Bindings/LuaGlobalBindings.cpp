@@ -30,6 +30,7 @@
 #include "OvCore/ECS/PhysicsWrapper.h"
 #include "OvCore/Global/QuitRequest.h"
 #include "OvCore/Global/ServiceLocator.h"
+#include "OvCore/Helpers/DistanceField.h"
 #include "OvCore/Input/GameInput.h"
 #include "OvCore/Helpers/InputHelpers.h"
 #include "OvCore/SceneSystem/SceneManager.h"
@@ -148,7 +149,8 @@ namespace
 
 	/**
 	* Model(), or nil and why: one mesh from flat arrays (Positions and Indices required, Normals, TexCoords, Tangents
-	* and Bitangents optional), registered under the path or replacing the meshes of the model made there before
+	* and Bitangents optional) or from a MeshData, registered under the path or replacing the meshes of the model made
+	* there before
 	*/
 	Results CreateModel(sol::this_state p_state, const sol::object& p_path, const sol::object& p_geometry, const sol::object& p_materialName)
 	{
@@ -164,14 +166,40 @@ namespace
 			return failure("the path must be a non-empty string");
 		}
 
-		if (p_geometry.get_type() != sol::type::table)
-		{
-			return failure("the geometry must be a table");
-		}
-
 		if (p_materialName.get_type() != sol::type::lua_nil && p_materialName.get_type() != sol::type::string)
 		{
 			return failure("the material name must be a string");
+		}
+
+		const std::string materialName = p_materialName.get_type() == sol::type::string ? p_materialName.as<std::string>() : "Material";
+
+		const auto registered = [&](Resources::Mesh* p_mesh) -> Results {
+			auto* model = OVSERVICE(OvCore::ResourceManagement::ModelManager).CreateFromGeometry(p_path.as<std::string>(), { p_mesh }, { materialName });
+
+			if (!model)
+			{
+				delete p_mesh;
+				return failure("a model loaded from a file already has this path");
+			}
+
+			return { sol::make_object(p_state, model), sol::make_object(p_state, sol::lua_nil) };
+		};
+
+		if (p_geometry.is<OvCore::Helpers::MeshData>())
+		{
+			const auto& data = p_geometry.as<const OvCore::Helpers::MeshData&>();
+
+			if (data.vertices.empty() || data.indices.empty())
+			{
+				return failure("the mesh data is empty");
+			}
+
+			return registered(new Resources::Mesh(data.vertices, data.indices, 0));
+		}
+
+		if (p_geometry.get_type() != sol::type::table)
+		{
+			return failure("the geometry must be a table or a MeshData");
 		}
 
 		const sol::table geometry = p_geometry.as<sol::table>();
@@ -283,17 +311,7 @@ namespace
 			}
 		}
 
-		const std::string materialName = p_materialName.get_type() == sol::type::string ? p_materialName.as<std::string>() : "Material";
-		auto* mesh = new Resources::Mesh(vertices, indices, 0);
-		auto* model = OVSERVICE(OvCore::ResourceManagement::ModelManager).CreateFromGeometry(p_path.as<std::string>(), { mesh }, { materialName });
-
-		if (!model)
-		{
-			delete mesh;
-			return failure("a model loaded from a file already has this path");
-		}
-
-		return { sol::make_object(p_state, model), sol::make_object(p_state, sol::lua_nil) };
+		return registered(new Resources::Mesh(vertices, indices, 0));
 	}
 }
 
@@ -830,7 +848,7 @@ void BindLuaGlobal(sol::state& p_luaState)
 
 	p_luaState.create_named_table("Application",
 		"Quit", []() { OvCore::Global::QuitRequest::RequestedEvent.Invoke(); },
-		"GetEngineVersion", []() { return std::string(ADVENTURER_VERSION); },
+		"GetEngineVersion", []() { return std::string(LOST_VERSION); },
 		"GetApiVersion", []() { return std::make_tuple(OvCore::Scripting::LuaApi::kVersionMajor, OvCore::Scripting::LuaApi::kVersionMinor); }
 	);
 }
