@@ -88,6 +88,7 @@ stones. It sits on the terrain's actor, beside its `PhysicalHeightField` (and us
   the first time the camera comes within a layer's draw distance of it, then kept.
   - A grid of cells of `1 / sqrt(density)` metres gives one candidate per cell at a random point of it, kept with the
     probability of the density map there, then where the slope and the height allow: the density holds on average.
+    Nothing stands over a hole of the field.
   - Each cell draws its random numbers from the seed and its own place: the same seed scatters the same, whatever
     the order the chunks come in.
   - A change of heights, of the actor's transform, of a layer or of its density map scatters again.
