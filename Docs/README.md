@@ -1,7 +1,7 @@
-# Adventurer manual
+# Lost manual
 
-What a game made with Adventurer must know about the engine: its rules, and the pitfalls learned while building a game
-on it. Each page states the behaviour of the current version; [`CHANGELOG.md`](../CHANGELOG.md) says when it changed.
+What a game made with Lost must know about the engine: its rules, and the pitfalls learned while building games on
+it. Each page states the behaviour of the current version; [`CHANGELOG.md`](../CHANGELOG.md) says when it changed.
 
 | Page | What it covers |
 | --- | --- |
