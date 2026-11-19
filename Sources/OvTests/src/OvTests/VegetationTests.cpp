@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <tuple>
 #include <vector>
@@ -17,6 +18,7 @@
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
 #include <OvCore/ECS/Components/CVegetation.h>
 #include <OvCore/SceneSystem/Scene.h>
+#include <OvCore/Terrain/Heightmap.h>
 #include <OvCore/Terrain/Scatter.h>
 #include <OvPhysics/Core/PhysicsEngine.h>
 
@@ -177,6 +179,37 @@ TEST_SUITE("Vegetation")
 		settings.minHeight = 18.5f;
 		const auto high = ScatterAll(ramp, layout, settings);
 		CHECK(low.size() + high.size() == all.size());
+	}
+
+	TEST_CASE("Nothing grows over a hole of the field")
+	{
+		// A flat field with a square of holes from (20, 20) to (40, 40)
+		auto heights = Flat(65);
+		for (uint32_t z = 20; z <= 40; ++z)
+		{
+			for (uint32_t x = 20; x <= 40; ++x)
+			{
+				heights[z * 65 + x] = std::numeric_limits<float>::infinity();
+			}
+		}
+
+		const auto layout = TerrainLayout::Make(65, 1.0f, 32, 1);
+		ScatterSettings settings;
+		settings.density = 1.0f;
+
+		const auto all = ScatterAll(heights, layout, settings);
+		REQUIRE(!all.empty());
+
+		// Each one stands on ground the physics keeps, and none inside the square
+		for (const auto& instance : all)
+		{
+			CHECK(SampleHeightField(heights, 65, 1.0f, instance.position.x, instance.position.z).has_value());
+			const bool inside = instance.position.x >= 20.0f && instance.position.x <= 40.0f && instance.position.z >= 20.0f && instance.position.z <= 40.0f;
+			CHECK_FALSE(inside);
+		}
+
+		// About 1 a square metre on the ground left: the 4096 m² less the 483 m² of the triangles touching a hole
+		CHECK(static_cast<double>(all.size()) == doctest::Approx(4096.0 - 483.0).epsilon(0.05));
 	}
 
 	TEST_CASE("An instance stands upright or along the ground, turned and sized as asked")

@@ -8,10 +8,12 @@
 #include <cmath>
 #include <limits>
 
+#include <OvCore/Terrain/Heightmap.h>
 #include <OvCore/Terrain/TerrainMesher.h>
 
 namespace
 {
+	using OvCore::Terrain::IsHole;
 	using OvCore::Terrain::TerrainLayout;
 
 	float HeightAt(const std::vector<float>& p_heights, const TerrainLayout& p_layout, uint32_t p_x, uint32_t p_z)
@@ -42,8 +44,18 @@ namespace
 		{
 			const uint32_t a = kept[k];
 			const uint32_t b = kept[k + 1];
+			if (IsHole(at(a)) || IsHole(at(b)))
+			{
+				continue;
+			}
+
 			for (uint32_t s = a + 1; s < b; ++s)
 			{
+				if (IsHole(at(s)))
+				{
+					continue;
+				}
+
 				const float t = static_cast<float>(s - a) / static_cast<float>(b - a);
 				const float line = at(a) + t * (at(b) - at(a));
 				error = std::max(error, std::abs(at(s) - line));
@@ -52,29 +64,38 @@ namespace
 		return error;
 	}
 
-	// The full-detail normal at a sample, from its neighbours (one-sided at the field's edges)
+	// The full-detail normal at a sample, from its neighbours (one-sided at the field's edges and beside a hole)
 	OvMaths::FVector3 NormalAt(const std::vector<float>& p_heights, const TerrainLayout& p_layout, uint32_t p_x, uint32_t p_z)
 	{
-		const uint32_t last = p_layout.sampleCount - 1;
-		const uint32_t xa = p_x > 0 ? p_x - 1 : p_x;
-		const uint32_t xb = p_x < last ? p_x + 1 : p_x;
-		const uint32_t za = p_z > 0 ? p_z - 1 : p_z;
-		const uint32_t zb = p_z < last ? p_z + 1 : p_z;
+		if (IsHole(HeightAt(p_heights, p_layout, p_x, p_z)))
+		{
+			return { 0.0f, 1.0f, 0.0f };
+		}
 
-		const float slopeX = (HeightAt(p_heights, p_layout, xb, p_z) - HeightAt(p_heights, p_layout, xa, p_z)) / (static_cast<float>(xb - xa) * p_layout.spacing);
-		const float slopeZ = (HeightAt(p_heights, p_layout, p_x, zb) - HeightAt(p_heights, p_layout, p_x, za)) / (static_cast<float>(zb - za) * p_layout.spacing);
+		const uint32_t last = p_layout.sampleCount - 1;
+		const auto solid = [&](uint32_t p_sx, uint32_t p_sz) { return !IsHole(HeightAt(p_heights, p_layout, p_sx, p_sz)); };
+		const uint32_t xa = p_x > 0 && solid(p_x - 1, p_z) ? p_x - 1 : p_x;
+		const uint32_t xb = p_x < last && solid(p_x + 1, p_z) ? p_x + 1 : p_x;
+		const uint32_t za = p_z > 0 && solid(p_x, p_z - 1) ? p_z - 1 : p_z;
+		const uint32_t zb = p_z < last && solid(p_x, p_z + 1) ? p_z + 1 : p_z;
+
+		const auto slope = [&](float p_rise, uint32_t p_samples) { return p_samples > 0 ? p_rise / (static_cast<float>(p_samples) * p_layout.spacing) : 0.0f; };
+		const float slopeX = slope(HeightAt(p_heights, p_layout, xb, p_z) - HeightAt(p_heights, p_layout, xa, p_z), xb - xa);
+		const float slopeZ = slope(HeightAt(p_heights, p_layout, p_x, zb) - HeightAt(p_heights, p_layout, p_x, za), zb - za);
 
 		return OvMaths::FVector3::Normalize({ -slopeX, 1.0f, -slopeZ });
 	}
 
-	OvRendering::Geometry::Vertex MakeVertex(const std::vector<float>& p_heights, const TerrainLayout& p_layout, uint32_t p_x, uint32_t p_z, float p_drop)
+	// A hole's vertex, which no triangle uses, stands at p_holeHeight so that the mesh's bounds hold
+	OvRendering::Geometry::Vertex MakeVertex(const std::vector<float>& p_heights, const TerrainLayout& p_layout, uint32_t p_x, uint32_t p_z, float p_drop, float p_holeHeight)
 	{
 		const auto normal = NormalAt(p_heights, p_layout, p_x, p_z);
 		const float count = static_cast<float>(p_layout.sampleCount);
+		const float height = HeightAt(p_heights, p_layout, p_x, p_z);
 
 		OvRendering::Geometry::Vertex vertex{};
 		vertex.position[0] = static_cast<float>(p_x) * p_layout.spacing;
-		vertex.position[1] = HeightAt(p_heights, p_layout, p_x, p_z) - p_drop;
+		vertex.position[1] = (IsHole(height) ? p_holeHeight : height) - p_drop;
 		vertex.position[2] = static_cast<float>(p_z) * p_layout.spacing;
 		vertex.texCoords[0] = (static_cast<float>(p_x) + 0.5f) / count;
 		vertex.texCoords[1] = 1.0f - (static_cast<float>(p_z) + 0.5f) / count;
@@ -151,9 +172,18 @@ OvCore::Terrain::TerrainBox OvCore::Terrain::ComputeChunkBox(const std::vector<f
 		for (uint32_t x = x0; x <= x1; ++x)
 		{
 			const float height = HeightAt(p_heights, p_layout, x, z);
-			low = std::min(low, height);
-			high = std::max(high, height);
+			if (!IsHole(height))
+			{
+				low = std::min(low, height);
+				high = std::max(high, height);
+			}
 		}
+	}
+
+	// A chunk all holes draws nothing: a flat box at the actor's height
+	if (low > high)
+	{
+		low = high = 0.0f;
 	}
 
 	return TerrainBox{
@@ -179,13 +209,48 @@ void OvCore::Terrain::BuildChunk(const std::vector<float>& p_heights, const Terr
 
 	p_geometry.vertices.reserve(static_cast<size_t>(columnCount) * rowCount + 4 * (columnCount + rowCount));
 
+	// The chunk's holes, if any, and the lowest height that is not one
+	bool hasHoles = false;
+	float lowest = std::numeric_limits<float>::max();
+	for (uint32_t z = z0; z <= z1; ++z)
+	{
+		for (uint32_t x = x0; x <= x1; ++x)
+		{
+			const float height = HeightAt(p_heights, p_layout, x, z);
+			hasHoles = hasHoles || IsHole(height);
+			lowest = IsHole(height) ? lowest : std::min(lowest, height);
+		}
+	}
+	const float holeHeight = lowest < std::numeric_limits<float>::max() ? lowest : 0.0f;
+
 	for (const uint32_t z : rows)
 	{
 		for (const uint32_t x : columns)
 		{
-			p_geometry.vertices.push_back(MakeVertex(p_heights, p_layout, x, z, 0.0f));
+			p_geometry.vertices.push_back(MakeVertex(p_heights, p_layout, x, z, 0.0f, holeHeight));
 		}
 	}
+
+	// Whether a triangle of the level covers a hole of the full detail: one of the samples on or inside it. At full
+	// detail, its three corners, which is what the physics leaves out
+	const auto coversHole = [&](uint32_t p_xa, uint32_t p_xb, uint32_t p_za, uint32_t p_zb, bool p_belowDiagonal)
+	{
+		for (uint32_t z = p_za; z <= p_zb; ++z)
+		{
+			for (uint32_t x = p_xa; x <= p_xb; ++x)
+			{
+				// Below the (xa, za)-(xb, zb) diagonal: the side of (xb, za)
+				const uint64_t across = static_cast<uint64_t>(x - p_xa) * (p_zb - p_za);
+				const uint64_t along = static_cast<uint64_t>(z - p_za) * (p_xb - p_xa);
+				const bool inside = p_belowDiagonal ? across >= along : across <= along;
+				if (inside && IsHole(HeightAt(p_heights, p_layout, x, z)))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	};
 
 	// Each cell split along its (x, z)-(x + 1, z + 1) diagonal, as the physics does, wound to face up
 	const auto index = [&](uint32_t p_column, uint32_t p_row) { return p_row * columnCount + p_column; };
@@ -197,12 +262,48 @@ void OvCore::Terrain::BuildChunk(const std::vector<float>& p_heights, const Terr
 			const uint32_t i10 = index(column + 1, row);
 			const uint32_t i01 = index(column, row + 1);
 			const uint32_t i11 = index(column + 1, row + 1);
-			p_geometry.indices.insert(p_geometry.indices.end(), { i00, i11, i10, i00, i01, i11 });
+
+			const uint32_t xa = columns[column], xb = columns[column + 1];
+			const uint32_t za = rows[row], zb = rows[row + 1];
+
+			if (!hasHoles || !coversHole(xa, xb, za, zb, true))
+			{
+				p_geometry.indices.insert(p_geometry.indices.end(), { i00, i11, i10 });
+			}
+			if (!hasHoles || !coversHole(xa, xb, za, zb, false))
+			{
+				p_geometry.indices.insert(p_geometry.indices.end(), { i00, i01, i11 });
+			}
 		}
 	}
 	p_geometry.surfaceTriangles = static_cast<uint32_t>(p_geometry.indices.size() / 3);
 
-	// A skirt under each edge: the edge's vertices copied lower, joined by quads seen from both sides
+	// Whether the full-detail samples of an edge between two of the surface's vertices, both included, hold a hole
+	const auto spanHasHole = [&](uint32_t p_a, uint32_t p_b)
+	{
+		if (!hasHoles)
+		{
+			return false;
+		}
+
+		const uint32_t xa = columns[p_a % columnCount], xb = columns[p_b % columnCount];
+		const uint32_t za = rows[p_a / columnCount], zb = rows[p_b / columnCount];
+
+		for (uint32_t z = std::min(za, zb); z <= std::max(za, zb); ++z)
+		{
+			for (uint32_t x = std::min(xa, xb); x <= std::max(xa, xb); ++x)
+			{
+				if (IsHole(HeightAt(p_heights, p_layout, x, z)))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+
+	// A skirt under each edge: the edge's vertices copied lower, joined by quads seen from both sides, none along a
+	// span with a hole, whose triangles are not drawn
 	const auto skirt = [&](const std::vector<uint32_t>& p_edge)
 	{
 		const auto firstLow = static_cast<uint32_t>(p_geometry.vertices.size());
@@ -217,6 +318,11 @@ void OvCore::Terrain::BuildChunk(const std::vector<float>& p_heights, const Terr
 		{
 			const uint32_t a = p_edge[k];
 			const uint32_t b = p_edge[k + 1];
+			if (spanHasHole(a, b))
+			{
+				continue;
+			}
+
 			const auto la = firstLow + static_cast<uint32_t>(k);
 			const uint32_t lb = la + 1;
 			p_geometry.indices.insert(p_geometry.indices.end(), { a, la, b, b, la, lb, a, b, la, b, lb, la });
