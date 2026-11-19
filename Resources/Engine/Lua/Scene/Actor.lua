@@ -102,6 +102,10 @@ function Actor:GetPhysicalHeightField() end
 ---@return CharacterController|nil
 function Actor:GetCharacterController() end
 
+--- Returns the PhysicalMesh attached to this actor (If any)
+---@return PhysicalMesh|nil
+function Actor:GetPhysicalMesh() end
+
 --- Returns the Camera attached to this actor (If any)
 ---@return Camera|nil
 function Actor:GetCamera() end
@@ -253,6 +257,10 @@ function Actor:AddPhysicalHeightField() end
 ---@return CharacterController
 function Actor:AddCharacterController() end
 
+--- Adds a PhysicalMesh component to the actor and returns it
+---@return PhysicalMesh
+function Actor:AddPhysicalMesh() end
+
 --- Adds a Camera component to the actor and returns it
 ---@return Camera
 function Actor:AddCamera() end
@@ -362,6 +370,9 @@ function Actor:RemovePhysicalCapsule() end
 function Actor:RemovePhysicalHeightField() end
 --- Removes the CharacterController component from the actor
 function Actor:RemoveCharacterController() end
+
+--- Removes the PhysicalMesh component from the actor
+function Actor:RemovePhysicalMesh() end
 --- Removes the Camera component from the actor
 function Actor:RemoveCamera() end
 --- Removes the PointLight component from the actor
