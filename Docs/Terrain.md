@@ -20,10 +20,13 @@ A terrain is two components on one actor: a `PhysicalHeightField`, which holds t
   - A map that cannot be read leaves the field empty; `GetHeightmapError()` and the inspector say why.
 - **From a script**: `SetHeights(sampleCount, spacing, heights)`, as before. The field then leaves its height map, and
   nothing saves those heights: a procedural world makes them again each run. `GetHeights()` reads them back.
+- **Holes**: a height of `math.huge` from a script is a hole (see [Physics](Physics.md)); `GetHeights()` reads it back
+  as `math.huge`. Over a triangle that touches a hole, `GetHeightAt` and `GetNormalAt` answer `nil`, as a ray finds no
+  ground there.
 - **Where things stand**: the sample (x, z) is at `(x * spacing, height, z * spacing)` from the actor, so the actor
   stands at the terrain's first corner, and each cell is cut along its (x, z)–(x + 1, z + 1) diagonal.
 - **Queries**: `GetHeightAt(x, z)` and `GetNormalAt(x, z)` take a point of the world and answer on the triangles the
-  physics uses, or `nil` outside the field.
+  physics uses, or `nil` outside the field and over a hole.
   - They are exact for an actor turned about Y only; a field tilted about another axis has no single height under a
     point.
   - They cost a few multiplications, with no ray: use them to stand things on the ground.
@@ -46,6 +49,9 @@ A terrain is two components on one actor: a `PhysicalHeightField`, which holds t
   edge. It hides the gaps between neighbours at different levels. The skirts are drawn from both sides, and casting a
   shadow they lengthen the terrain's shadow by their depth at most.
 - **Normals** come from the full detail at every level, so the light does not jump when a chunk changes level.
+- **Holes** are not drawn. At full detail, a chunk leaves out exactly the triangles the physics leaves out; at a
+  coarser level, every triangle with a hole of the full detail on or inside it, so a hole seen from afar is drawn up to
+  a coarse cell wider than it is. No skirt hangs along a hole.
 - **The look**:
   - The material is `:Materials/Terrain.ovmat` by default (`Standard`, rough, casting and receiving shadows), or any
     other (`SetMaterialPath`, `material`).

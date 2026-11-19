@@ -87,7 +87,7 @@ namespace OvCore::Terrain
 	float ComputeSkirtDepth(const std::vector<float>& p_heights, const TerrainLayout& p_layout, uint32_t p_chunk);
 
 	/**
-	* Returns the box of a chunk, its skirts included, in the field's own space
+	* Returns the box of a chunk, its skirts included, in the field's own space, its holes left out
 	* @param p_heights
 	* @param p_layout
 	* @param p_chunk
@@ -98,7 +98,9 @@ namespace OvCore::Terrain
 	/**
 	* Builds the mesh of a chunk at a level of detail, in the field's own space. Normals come from the full detail, so
 	* the light does not jump between levels; texture coordinates span the whole field, with a pixel centre on each
-	* sample for a texture of one pixel per sample, its first row at the far edge (+Z), as an image loaded for the GPU
+	* sample for a texture of one pixel per sample, its first row at the far edge (+Z), as an image loaded for the GPU.
+	* A triangle over a hole (see IsHole) is left out, and so is the skirt along it: at full detail, exactly the
+	* triangles the physics leaves out; at a coarser level, every triangle with a hole of the full detail on or in it
 	* @param p_heights
 	* @param p_layout
 	* @param p_chunk

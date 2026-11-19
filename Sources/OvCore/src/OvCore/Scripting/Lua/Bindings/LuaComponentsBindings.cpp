@@ -37,6 +37,9 @@
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
 #include <OvCore/ECS/Components/CTerrain.h>
 #include <OvCore/ECS/Components/CVegetation.h>
+#include <OvCore/Terrain/Heightmap.h>
+#include <OvCore/ECS/Components/CPhysicalMesh.h>
+#include <OvCore/Helpers/DistanceField.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>  
 #include <OvCore/ECS/Components/CParticleSystem.h>
 #include <OvCore/ECS/Components/CPointLight.h>  
@@ -152,9 +155,10 @@ namespace
 		for (size_t index = 0; index < size; ++index)
 		{
 			const auto height = table.raw_get<sol::optional<double>>(index + 1);
-			if (!height || !std::isfinite(*height))
+			const bool hole = height && std::isinf(*height) && *height > 0.0;
+			if (!height || (!std::isfinite(*height) && !hole))
 			{
-				return { false, std::format("the height {} is not a finite number", index + 1) };
+				return { false, std::format("the height {} is neither a finite number nor math.huge", index + 1) };
 			}
 
 			heights[index] = static_cast<float>(*height);
@@ -314,6 +318,58 @@ namespace
 		return static_cast<uint32_t>(p_index);
 	}
 
+	// true, or false and why: the triangles are only applied when both arrays are valid
+	std::tuple<bool, std::optional<std::string>> SetTriangles(
+		OvCore::ECS::Components::CPhysicalMesh& p_mesh,
+		const sol::object& p_positions,
+		const sol::object& p_indices
+	)
+	{
+		if (p_positions.get_type() != sol::type::table || p_indices.get_type() != sol::type::table)
+		{
+			return { false, "the positions and the indices must be arrays of numbers" };
+		}
+
+		const sol::table positionTable = p_positions.as<sol::table>();
+		const sol::table indexTable = p_indices.as<sol::table>();
+		const size_t positionCount = positionTable.size();
+		const size_t indexCount = indexTable.size();
+
+		if (positionCount % 3 != 0 || indexCount % 3 != 0)
+		{
+			return { false, std::format("{} positions and {} indices are not whole vertices and triangles", positionCount, indexCount) };
+		}
+
+		std::vector<float> positions(positionCount);
+
+		for (size_t index = 0; index < positionCount; ++index)
+		{
+			const auto value = positionTable.raw_get<sol::optional<double>>(index + 1);
+			if (!value || !std::isfinite(*value))
+			{
+				return { false, std::format("the position {} is not a finite number", index + 1) };
+			}
+
+			positions[index] = static_cast<float>(*value);
+		}
+
+		const size_t vertexCount = positionCount / 3;
+		std::vector<uint32_t> indices(indexCount);
+
+		for (size_t index = 0; index < indexCount; ++index)
+		{
+			const auto value = indexTable.raw_get<sol::optional<double>>(index + 1);
+			if (!value || *value != std::floor(*value) || *value < 0.0 || *value >= static_cast<double>(vertexCount))
+			{
+				return { false, std::format("the index {} is not a vertex from 0 to {}", index + 1, vertexCount - 1) };
+			}
+
+			indices[index] = static_cast<uint32_t>(*value);
+		}
+
+		p_mesh.SetTriangles(std::move(positions), std::move(indices));
+		return { true, std::nullopt };
+	}
 }
 
 void BindLuaComponents(sol::state& p_luaState)
@@ -688,7 +744,18 @@ void BindLuaComponents(sol::state& p_luaState)
 	p_luaState.new_usertype<CPhysicalHeightField>("PhysicalHeightField",
 		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
 		"SetHeights", &SetHeights,
-		"GetHeights", [](CPhysicalHeightField& p_this) { return sol::as_table(p_this.GetHeights()); },
+		"GetHeights", [](CPhysicalHeightField& p_this) {
+			// A hole as math.huge, as SetHeights takes it
+			std::vector<double> heights(p_this.GetHeights().begin(), p_this.GetHeights().end());
+			for (double& height : heights)
+			{
+				if (OvCore::Terrain::IsHole(static_cast<float>(height)))
+				{
+					height = std::numeric_limits<double>::infinity();
+				}
+			}
+			return sol::as_table(std::move(heights));
+		},
 		"GetSampleCount", &CPhysicalHeightField::GetSampleCount,
 		"GetSpacing", &CPhysicalHeightField::GetSpacing,
 		"SetSpacing", [](CPhysicalHeightField& p_this, float p_spacing) {
@@ -739,6 +806,23 @@ void BindLuaComponents(sol::state& p_luaState)
 		"GetGroundPoint", &CCharacterController::GetGroundPoint,
 		"GetGroundVelocity", &CCharacterController::GetGroundVelocity,
 		"GetGroundObject", &CCharacterController::GetGroundObject
+	);
+
+	p_luaState.new_usertype<CPhysicalMesh>("PhysicalMesh",
+		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
+		"SetTriangles", &SetTriangles,
+		"SetMesh", [](CPhysicalMesh& p_mesh, const OvCore::Helpers::MeshData& p_data) {
+			std::vector<float> positions;
+			positions.reserve(p_data.vertices.size() * 3);
+
+			for (const auto& vertex : p_data.vertices)
+			{
+				positions.insert(positions.end(), { vertex.position[0], vertex.position[1], vertex.position[2] });
+			}
+
+			return p_mesh.SetTriangles(std::move(positions), p_data.indices);
+		},
+		"GetTriangleCount", &CPhysicalMesh::GetTriangleCount
 	);
 
 	p_luaState.new_enum<OvRendering::Settings::EProjectionMode>("ProjectionMode", {
@@ -1136,6 +1220,8 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetInfluenceSize", &CReflectionProbe::SetInfluenceSize,
 		"GetInfluenceSize", &CReflectionProbe::GetInfluenceSize,
 		"SetBoxProjection", &CReflectionProbe::SetBoxProjection,
+		"SetBrightness", &CReflectionProbe::SetBrightness,
+		"GetBrightness", &CReflectionProbe::GetBrightness,
 		"IsBoxProjectionEnabled", &CReflectionProbe::IsBoxProjectionEnabled,
 		"RequestCapture", &CReflectionProbe::RequestCapture,
 		"GetCubemap", &CReflectionProbe::GetCubemap
