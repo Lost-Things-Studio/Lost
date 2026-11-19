@@ -39,7 +39,7 @@ freely, subject to the following restrictions:
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-// Adventurer: without it, <windows.h> defines min and max as macros, which break std::min and std::max in every file
+// Lost: without it, <windows.h> defines min and max as macros, which break std::min and std::max in every file
 // that includes SoLoud
 #ifndef NOMINMAX
 #define NOMINMAX

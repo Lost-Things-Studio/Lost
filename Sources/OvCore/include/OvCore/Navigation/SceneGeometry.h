@@ -45,7 +45,9 @@ namespace OvCore::Navigation::SceneGeometry
 	void AddCapsule(NavGeometry& p_geometry, const OvMaths::FVector3& p_center, const OvMaths::FQuaternion& p_rotation, float p_radius, float p_cylinderHeight);
 
 	/**
-	* Adds a height field's grid, each cell cut along its (x, z)–(x + 1, z + 1) diagonal as Jolt does
+	* Adds a height field's grid, each cell cut along its (x, z)–(x + 1, z + 1) diagonal as Jolt does. A triangle
+	* touching a hole (an infinite height, or the largest float, which the physics keeps for one) is left out, as the
+	* physics leaves it out
 	* @param p_geometry
 	* @param p_world (the actor's world matrix)
 	* @param p_sampleCount
@@ -53,4 +55,16 @@ namespace OvCore::Navigation::SceneGeometry
 	* @param p_heights
 	*/
 	void AddHeightField(NavGeometry& p_geometry, const OvMaths::FMatrix4& p_world, uint32_t p_sampleCount, float p_spacing, const std::vector<float>& p_heights);
+
+	/**
+	* Adds a mesh collider's triangles, as the physics makes them: each vertex scaled, then turned and moved. Indices
+	* beyond the vertices are skipped
+	* @param p_geometry
+	* @param p_position
+	* @param p_rotation
+	* @param p_scale
+	* @param p_positions (three floats a vertex)
+	* @param p_indices (three a triangle)
+	*/
+	void AddMesh(NavGeometry& p_geometry, const OvMaths::FVector3& p_position, const OvMaths::FQuaternion& p_rotation, const OvMaths::FVector3& p_scale, const std::vector<float>& p_positions, const std::vector<uint32_t>& p_indices);
 }

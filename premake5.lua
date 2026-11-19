@@ -1,4 +1,4 @@
--- Function to read the version number from VERSION.txt: Adventurer's own version
+-- Function to read the version number from VERSION.txt: Lost's own version
 local function readVersion()
 	local versionFile = io.open("VERSION.txt", "r")
 	if versionFile then
@@ -21,7 +21,7 @@ workspace "Overload"
 	startproject "OvEditor"
 	defines {
 		"LUA_SCRIPTING",
-		"ADVENTURER_VERSION=\"" .. version .. "\"",
+		"LOST_VERSION=\"" .. version .. "\"",
 		"OVERLOAD_VERSION=\"" .. overloadVersion .. "\"",
 		"SOL_NO_LUA_HPP"
 	}
