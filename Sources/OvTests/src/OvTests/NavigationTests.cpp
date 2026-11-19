@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
+#include <OvCore/ECS/Components/CPhysicalMesh.h>
 #include <OvCore/Navigation/NavMesh.h>
 #include <OvCore/Navigation/SceneGeometry.h>
 #include <OvCore/SceneSystem/Scene.h>
@@ -322,6 +324,85 @@ TEST_SUITE("Navigation")
 		NavMesh mesh;
 		REQUIRE_FALSE(mesh.Build(withoutLayer3, {}).has_value());
 		CHECK(mesh.FindPath({ -5.0f, 0.0f, -5.0f }, { 5.0f, 0.0f, 5.0f })->complete);
+	}
+
+	TEST_CASE("a height field's holes are left out, and a mesh collider is taken as the physics makes it")
+	{
+		using namespace OvCore::ECS::Components;
+
+		OvPhysics::Core::PhysicsEngine engine{ {} };
+		OvCore::SceneSystem::Scene scene("", "");
+
+		// 21 samples a side, 1 m apart, with a trench of holes across z = 10 from x = 0 to x = 14
+		std::vector<float> heights(21 * 21, 0.0f);
+		for (int x = 0; x <= 14; ++x)
+		{
+			heights[10 * 21 + x] = std::numeric_limits<float>::infinity();
+		}
+
+		auto& fieldActor = scene.CreateActor("Field");
+		REQUIRE(fieldActor.AddComponent<CPhysicalHeightField>().SetHeights(21, 1.0f, heights));
+
+		const auto field = SceneGeometry::Collect(scene, 0xFFFFu);
+
+		// No vertex for a hole, and of the 800 triangles, the 59 that touch one are gone
+		CHECK(field.vertices.size() / 3 == 21 * 21 - 15);
+		CHECK(field.GetTriangleCount() == 741);
+		for (size_t i = 0; i + 2 < field.vertices.size(); i += 3)
+		{
+			CHECK(std::isfinite(field.vertices[i + 1]));
+		}
+
+		// A path across the trench goes round its end
+		NavMesh fieldMesh;
+		REQUIRE_FALSE(fieldMesh.Build(field, {}).has_value());
+		const auto around = fieldMesh.FindPath({ 5.0f, 0.0f, 5.0f }, { 5.0f, 0.0f, 15.0f });
+		REQUIRE(around.has_value());
+		CHECK(around->complete);
+
+		float crossing = 0.0f;
+		for (size_t i = 1; i < around->corners.size(); ++i)
+		{
+			const auto& a = around->corners[i - 1];
+			const auto& b = around->corners[i];
+			if ((a.z < 10.0f) != (b.z < 10.0f))
+			{
+				crossing = a.x + (b.x - a.x) * (10.0f - a.z) / (b.z - a.z);
+			}
+		}
+		CHECK(crossing > 14.0f);
+
+		// A floor of two triangles, in the actor's space, scaled, turned and moved by the actor
+		auto& meshActor = scene.CreateActor("Mesh");
+		const FVector3 position{ 40.0f, 1.0f, 0.0f };
+		const FQuaternion rotation({ 0.0f, 90.0f, 0.0f });
+		meshActor.transform.SetLocalPosition(position);
+		meshActor.transform.SetLocalRotation(rotation);
+		meshActor.transform.SetLocalScale({ 10.0f, 1.0f, 20.0f });
+		REQUIRE(meshActor.AddComponent<CPhysicalMesh>().SetTriangles({ 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1 }, { 0, 2, 1, 0, 3, 2 }));
+
+		const auto at = [&](float p_x, float p_z) {
+			const FVector3 turned = FQuaternion::RotatePoint({ p_x, 0.0f, p_z }, rotation);
+			return FVector3{ position.x + turned.x, position.y + turned.y, position.z + turned.z };
+		};
+
+		const auto both = SceneGeometry::Collect(scene, 0xFFFFu);
+		CHECK(both.GetTriangleCount() == 741 + 2);
+
+		const FVector3 corner = at(10.0f, 20.0f);
+		bool placed = false;
+		for (size_t i = 0; i + 2 < both.vertices.size(); i += 3)
+		{
+			placed = placed || (both.vertices[i] == doctest::Approx(corner.x) && both.vertices[i + 1] == doctest::Approx(corner.y) && both.vertices[i + 2] == doctest::Approx(corner.z));
+		}
+		CHECK(placed);
+
+		// Its triangles face up: they are walked on
+		NavMesh mesh;
+		REQUIRE_FALSE(mesh.Build(both, {}).has_value());
+		const auto across = mesh.FindPath(at(2.0f, 2.0f), at(8.0f, 18.0f));
+		REQUIRE(across.has_value());
+		CHECK(across->complete);
 	}
 
 	TEST_CASE("a box's faces and a capsule's face outwards, and hold the shape")

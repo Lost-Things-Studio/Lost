@@ -109,14 +109,15 @@ namespace OvCore::ECS::Components
 
 		/**
 		* Returns the height of the field's surface under a point of the world (its y), on the triangle the physics
-		* uses, or nothing outside the field. Exact for an actor turned about Y only
+		* uses, or nothing outside the field and over a hole. Exact for an actor turned about Y only
 		* @param p_x
 		* @param p_z
 		*/
 		std::optional<float> GetHeightAt(float p_x, float p_z) const;
 
 		/**
-		* Returns the normal of the field's surface under a point of the world, or nothing outside the field
+		* Returns the normal of the field's surface under a point of the world, or nothing outside the field and over a
+		* hole
 		* @param p_x
 		* @param p_z
 		*/
@@ -133,7 +134,7 @@ namespace OvCore::ECS::Components
 		float GetSpacing() const;
 
 		/**
-		* Returns the heights, row-major along +X then +Z (empty before SetHeights)
+		* Returns the heights, row-major along +X then +Z, a hole as the largest float (empty before SetHeights)
 		*/
 		const std::vector<float>& GetHeights() const;
 
