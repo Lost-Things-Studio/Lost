@@ -159,6 +159,6 @@ TEST_SUITE("Save storage")
 		CHECK(SaveStorage::GetDefaultRoot("My Game!").parent_path().filename() == "My Game");
 		CHECK(SaveStorage::GetDefaultRoot("../..").parent_path().filename() == "Game");
 		CHECK(SaveStorage::GetDefaultRoot("CON").parent_path().filename() == "Game");
-		CHECK(SaveStorage::GetDefaultRoot("Adventurers").filename() == "Saves");
+		CHECK(SaveStorage::GetDefaultRoot("SampleGame").filename() == "Saves");
 	}
 }
