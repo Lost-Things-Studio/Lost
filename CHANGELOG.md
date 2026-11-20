@@ -82,6 +82,12 @@ Lost's first version: Overload 1.9 and the changes below.
   storage, the Lua `Json` and `Storage` bindings, the project settings, physics layers and queries, and scenes; the
   in-game checks of `Tests/GameChecks` run the engine through `OvGame` (destroyed actors, prefab references, Lua
   queries, project settings). The CI runs both, the in-game checks on Linux. See [Docs/Testing.md](Docs/Testing.md).
+- **Lua module contract**: `require(path)` loads a module of the project's assets, or of the engine's with `:`,
+  shares `Resources.GetScript`'s cache, and raises an error that says why a module cannot be loaded.
+  `Application.GetApiVersion()` returns the version of the Lua API, 1.0 so far, with a deprecation policy in
+  [Docs/Scripting.md](Docs/Scripting.md). `OvGame --dump-lua-api` prints the API, and the engine's tests check it
+  against the definitions of `Resources/Engine/Lua`, which now cover every binding (`AssetRef`, the settings'
+  constructors, the matrices' call, Tracy's stack-capturing zones).
 
 ### Changed
 
@@ -105,6 +111,9 @@ Lost's first version: Overload 1.9 and the changes below.
 ### Removed
 
 - Bullet3, replaced by Jolt Physics.
+- **Constructors no script could use**: `Scene.new`, `PhysicsHit.new`, `RaycastHit.new` and `AssetRef.new`, made by
+  sol on its own, are gone. A scene, a hit or a ray's result come from the engine; an asset reference from `Model()`,
+  `Prefab()` and the like.
 
 ### Fixed
 
