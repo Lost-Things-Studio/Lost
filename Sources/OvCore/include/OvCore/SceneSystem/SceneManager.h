@@ -107,6 +107,13 @@ namespace OvCore::SceneSystem
 		*/
 		void ForgetCurrentSceneSourcePath();
 
+		/**
+		* Defines whether a scene that cannot be loaded is also said in a dialog (it is always logged). A run that
+		* nobody watches turns it off: the dialog would wait for a click
+		* @param p_enabled
+		*/
+		void SetErrorDialogsEnabled(bool p_enabled);
+
 	public:
 		OvTools::Eventing::Event<> SceneLoadEvent;
 		OvTools::Eventing::Event<> SceneUnloadEvent;
@@ -119,6 +126,7 @@ namespace OvCore::SceneSystem
 
 		bool m_currentSceneLoadedFromPath = false;
 		std::string m_currentSceneSourcePath = "";
+		bool m_errorDialogsEnabled = true;
 
 		std::function<void()> m_delayedLoadCall;
 	};

@@ -110,8 +110,19 @@ bool OvCore::SceneSystem::SceneManager::LoadSceneFromMemory(tinyxml2::XMLDocumen
 		}
 	}
 
-	OvWindowing::Dialogs::MessageBox message("Scene loading failed", "The scene you are trying to load was not found or corrupted", OvWindowing::Dialogs::MessageBox::EMessageType::ERROR, OvWindowing::Dialogs::MessageBox::EButtonLayout::OK, true);
+	OVLOG_ERROR("Failed to load scene: the file holds no scene");
+
+	if (m_errorDialogsEnabled)
+	{
+		OvWindowing::Dialogs::MessageBox message("Scene loading failed", "The scene you are trying to load was not found or corrupted", OvWindowing::Dialogs::MessageBox::EMessageType::ERROR, OvWindowing::Dialogs::MessageBox::EButtonLayout::OK, true);
+	}
+
 	return false;
+}
+
+void OvCore::SceneSystem::SceneManager::SetErrorDialogsEnabled(bool p_enabled)
+{
+	m_errorDialogsEnabled = p_enabled;
 }
 
 void OvCore::SceneSystem::SceneManager::UnloadCurrentScene()

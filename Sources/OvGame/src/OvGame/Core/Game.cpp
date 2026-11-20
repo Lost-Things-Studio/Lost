@@ -41,7 +41,13 @@ OvGame::Core::Game::Game(Context & p_context) :
 	const std::string startupScenePath = OvTools::Utils::PathParser::MakeNonWindowsStyle(m_context.startScene);
 
 	// A scene that cannot be loaded leaves an empty one, so that the run ends cleanly and says why
-	if (!m_context.sceneManager.LoadScene(startupScenePath))
+	if (startupScenePath.empty())
+	{
+		OVLOG_ERROR("The project has no start scene: set start_scene, or pass --scene");
+		m_startSceneLoaded = false;
+		m_context.sceneManager.LoadEmptyScene();
+	}
+	else if (!m_context.sceneManager.LoadScene(startupScenePath))
 	{
 		OVLOG_ERROR("The start scene \"" + startupScenePath + "\" cannot be loaded");
 		m_startSceneLoaded = false;
@@ -97,12 +103,17 @@ void RenderCurrentScene(
 		}
 		else
 		{
+			// No camera sees the scene: the frame is the clear colour, not what the framebuffer held before
+			p_context.framebuffer->Bind();
 			p_renderer.Clear(true, true, true);
+			p_context.framebuffer->Unbind();
 		}
 	}
 	else
 	{
+		p_context.framebuffer->Bind();
 		p_renderer.Clear(true, true, true);
+		p_context.framebuffer->Unbind();
 	}
 }
 
@@ -134,6 +145,8 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 			ZoneScopedN("Audio Update");
 			m_context.audioEngine->Update(m_context.clock.GetDeltaTimeUnscaled());
 		}
+
+		m_frameDrawn = drawable;
 
 		if (drawable)
 		{
@@ -182,4 +195,9 @@ void OvGame::Core::Game::PostUpdate()
 bool OvGame::Core::Game::HasStartSceneLoaded() const
 {
 	return m_startSceneLoaded;
+}
+
+bool OvGame::Core::Game::IsFrameDrawn() const
+{
+	return m_frameDrawn;
 }

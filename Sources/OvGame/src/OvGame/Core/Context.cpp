@@ -57,6 +57,9 @@ OvGame::Core::Context::Context(const LaunchOptions& p_options) :
 {
 	startScene = p_options.scene.value_or(projectSettings.GetOrDefault<std::string>("start_scene", {}));
 
+	// A run of a given number of frames, or with no window to see, is one nobody may answer a dialog in
+	sceneManager.SetErrorDialogsEnabled(!p_options.frames && !p_options.hiddenWindow);
+
 	ModelManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	TextureManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	ShaderManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
@@ -95,9 +98,14 @@ OvGame::Core::Context::Context(const LaunchOptions& p_options) :
 	windowSettings.samples = static_cast<uint32_t>(samples);
 	windowSettings.visible = !p_options.hiddenWindow;
 
+	// A hidden window is never full screen (a full-screen window is always shown), and keeps the project's resolution
+	// whatever the screen: what it draws is the same on every machine
+	if (p_options.hiddenWindow)
+		windowSettings.fullscreen = false;
+
 	/* Window creation */
 	device = std::make_unique<OvWindowing::Context::Device>(deviceSettings);
-	if (windowSettings.fullscreen)
+	if (windowSettings.fullscreen || p_options.hiddenWindow)
 	{
 		windowSettings.width = targetWindowResolution[0];
 		windowSettings.height = targetWindowResolution[1];

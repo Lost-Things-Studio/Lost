@@ -22,7 +22,6 @@ OvGame::Core::Application::Application(const LaunchOptions& p_options) :
 	{
 		m_context.window->SetShouldClose(true);
 	};
-
 }
 
 OvGame::Core::Application::~Application()
@@ -47,7 +46,16 @@ int OvGame::Core::Application::Run()
 		if (m_options.frames && ++frame >= *m_options.frames)
 		{
 			if (m_options.screenshot)
-				screenshotWritten = TakeScreenshot();
+			{
+				if (m_game.IsFrameDrawn())
+				{
+					screenshotWritten = TakeScreenshot();
+				}
+				else
+				{
+					OVLOG_ERROR("The screenshot cannot be taken: the window was minimized, the last frame was not drawn");
+				}
+			}
 
 			m_context.window->SetShouldClose(true);
 		}

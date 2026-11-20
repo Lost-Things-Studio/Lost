@@ -17,11 +17,14 @@ A built game runs as before: the project in `Data/User` (its settings in `Data/U
 | `--scene <path>` | Starts on this scene, relative to the project's assets, instead of the project's `start_scene` |
 | `--frames <n>` | Quits after n frames |
 | `--screenshot <file.png>` | Writes the last frame to a PNG image. Needs `--frames` |
-| `--hidden-window` | Does not show the window. The game still draws each frame |
+| `--hidden-window` | Does not show the window, never full screen and at the project's resolution whatever the screen. The game still draws each frame |
 | `--fail-on-error` | Ends with exit code 2 when an error was logged |
 | `--audio <null\|auto>` | `null` plays the sounds on the null driver, mixed and discarded, even on a machine with an audio device; `auto`, as without the option, plays them on the device, or on the null driver without one. See [Audio](Audio.md) |
 | `--dump-lua-api` | Prints the engine's Lua API, one name per line (`Physics.CastRay`, `Vector3.x`), and quits without a window. See [Scripting](Scripting.md) |
 | `--help`, `-h` | Prints the options |
+
+An argument that does not start with `--`, a file dropped on the game or what a launcher adds, is left aside, with a
+note on the error output. An option the game does not know ends the run with exit code 1.
 
 The paths are relative to the current folder. For example, ten seconds of a scene at 60 frames per second, its last
 frame captured:
@@ -38,7 +41,7 @@ OvGame --project ../MyGame --engine ../lost/Resources/Engine --scene Scenes/Leve
 | 0 | The run went well |
 | 1 | An option is wrong, or the start scene cannot be loaded (the game then runs an empty scene until it quits) |
 | 2 | With `--fail-on-error`: an error was logged, from the start scene's loading to the game's shutdown |
-| 3 | The screenshot was not written: it cannot be, or the game quit before the last frame |
+| 3 | The screenshot was not written: it cannot be, the window was minimized on the last frame, or the game quit before it |
 
 1 and 3 take precedence over 2: a run whose screenshot fails ends with 3, even though that failure is also logged as
 an error.
@@ -49,7 +52,9 @@ an error.
   slow machine, 600 frames last longer than ten seconds, and each frame's step stays capped by `max_frame_delta` (see
   [Projects](Projects.md)).
 - **The screenshot is the scene as drawn**, post process and game UI included, at the window's size. The debug
-  overlay (F12) is not in it.
+  overlay (F12) is not in it. A scene without a camera gives the clear colour.
+- **A run nobody can answer shows no dialog**: with `--frames` or `--hidden-window`, a scene that cannot be loaded is
+  only logged, where a player would also see a message box.
 - **Every error the engine logs counts**, the scripts' errors included. A machine without an audio device logs a
   warning, not an error, and plays the sounds on the null driver: they play, end and loop as with a device, unheard.
 - **The save folder is the player's own** (see [Saving](Saving.md)). On Linux, a test that must not touch it sets
