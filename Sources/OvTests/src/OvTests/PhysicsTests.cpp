@@ -139,6 +139,29 @@ TEST_SUITE("Physics layers")
 		CHECK(ghost.GetTransform().GetWorldPosition().y < -1.0f);
 		CHECK(crate.GetTransform().GetWorldPosition().y == doctest::Approx(0.75f).epsilon(0.05));
 	}
+
+	TEST_CASE("bodies at rest wake up when what they collide with changes")
+	{
+		// A body at rest may sleep (bodies never do yet, see PhysicalObject): a change of layers must wake it, or it
+		// would stay up on what it now goes through
+		World world;
+		world.AddBox({ 0.0f, 0.0f, 0.0f }, { 5.0f, 0.5f, 5.0f }, 3);
+		auto& crate = world.AddBox({ -2.0f, 1.0f, 0.0f }, { 0.25f, 0.25f, 0.25f }, 2, false);
+		auto& barrel = world.AddBox({ 2.0f, 1.0f, 0.0f }, { 0.25f, 0.25f, 0.25f }, 0, false);
+
+		world.Step(3.0f);
+		REQUIRE(crate.GetTransform().GetWorldPosition().y == doctest::Approx(0.75f).epsilon(0.05));
+		REQUIRE(barrel.GetTransform().GetWorldPosition().y == doctest::Approx(0.75f).epsilon(0.05));
+
+		world.engine.SetLayersCollide(2, 3, false);
+		world.Step(1.0f);
+		CHECK(crate.GetTransform().GetWorldPosition().y < -1.0f);
+		CHECK(barrel.GetTransform().GetWorldPosition().y == doctest::Approx(0.75f).epsilon(0.05));
+
+		barrel.SetLayer(2);
+		world.Step(1.0f);
+		CHECK(barrel.GetTransform().GetWorldPosition().y < -1.0f);
+	}
 }
 
 TEST_SUITE("Physics queries")
@@ -207,6 +230,32 @@ TEST_SUITE("Physics queries")
 		CHECK(engine.CastSphere({ 0.0f, 0.0f, 0.0f }, 0.0f, kDown, 30.0f).empty());
 		CHECK(engine.CastSphere({ 0.0f, 0.0f, 0.0f }, 0.25f, kDown, nan).empty());
 		CHECK(engine.OverlapSphere({ 0.0f, -15.0f, 0.0f }, -1.0f).empty());
+
+		// A point that is not finite, or a box with a side that is not, is no query
+		CHECK(engine.CastRay({ nan, 0.0f, 0.0f }, kDown, 30.0f).empty());
+		CHECK(engine.CastSphere({ 0.0f, nan, 0.0f }, 0.25f, kDown, 30.0f).empty());
+		CHECK(engine.OverlapSphere({ 0.0f, -15.0f, nan }, 1.0f).empty());
+		CHECK(engine.OverlapBox({ 0.0f, -15.0f, 0.0f }, { nan, 1.0f, 1.0f }, FQuaternion()).empty());
+		CHECK(engine.OverlapBox({ 0.0f, -15.0f, 0.0f }, { 1.0f, nan, 1.0f }, FQuaternion()).empty());
+		CHECK(engine.OverlapBox({ nan, -15.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, FQuaternion()).empty());
+	}
+
+	TEST_CASE("an infinite distance reaches far")
+	{
+		World world;
+		auto& far = world.AddBox({ 0.0f, -500.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0);
+		world.Step(1.0f / 60.0f);
+
+		const float infinity = std::numeric_limits<float>::infinity();
+
+		const auto ray = world.engine.CastRay({ 0.0f, 0.0f, 0.0f }, kDown, infinity);
+		REQUIRE(ray.size() == 1);
+		CHECK(ray[0].object == &far);
+		CHECK(ray[0].distance == doctest::Approx(499.0f).epsilon(0.001));
+
+		const auto sphere = world.engine.CastSphere({ 0.0f, 0.0f, 0.0f }, 0.5f, kDown, infinity);
+		REQUIRE(sphere.size() == 1);
+		CHECK(sphere[0].distance == doctest::Approx(498.5f).epsilon(0.001));
 	}
 
 	TEST_CASE("a sphere cast stops a radius short")
@@ -223,6 +272,12 @@ TEST_SUITE("Physics queries")
 		REQUIRE_FALSE(inside.empty());
 		CHECK(inside[0].object == &column.wall);
 		CHECK(inside[0].distance == doctest::Approx(0.0f));
+
+		// Whichever way it goes, a sphere meets the box it starts in
+		const auto outwards = column.engine.CastSphere({ 0.0f, -15.0f, 0.0f }, 0.25f, { 0.0f, 1.0f, 0.0f }, 3.0f);
+		REQUIRE_FALSE(outwards.empty());
+		CHECK(outwards[0].object == &column.wall);
+		CHECK(outwards[0].distance == doctest::Approx(0.0f));
 	}
 
 	TEST_CASE("overlaps return the objects a shape overlaps, each once")
