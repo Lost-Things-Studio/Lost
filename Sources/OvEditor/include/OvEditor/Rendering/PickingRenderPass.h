@@ -68,8 +68,10 @@ namespace OvEditor::Rendering
 		* The GPU is never waited for, so the result usually comes from the previous frame.
 		* Returns std::nullopt if nothing has been picked (or if no result is available yet).
 		* @param p_scene
+		* @param p_waitForNewest Wait for the readback of the last frame drawn, as for a click, which must not pick what
+		* was under the mouse a few frames earlier
 		*/
-		PickingResult GetPickingResult(const OvCore::SceneSystem::Scene& p_scene);
+		PickingResult GetPickingResult(const OvCore::SceneSystem::Scene& p_scene, bool p_waitForNewest = false);
 
 	private:
 		virtual void Draw(OvRendering::Data::PipelineState p_pso) override;
