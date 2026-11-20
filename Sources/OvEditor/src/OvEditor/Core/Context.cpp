@@ -207,10 +207,10 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 		engineAssetsPath
 	);
 
-	// Play mode keeps its saves where the built game will: they are the same game's
 	/* What the scripts may do: their saves, their Json and the longest frame step */
 	const auto runtimeLimits = OvCore::Helpers::ProjectSettings::ReadRuntimeLimits(projectSettings);
 
+	// Play mode keeps its saves where the built game will: they are the same game's
 	saveStorage = std::make_unique<OvTools::Filesystem::SaveStorage>(
 		OvTools::Filesystem::SaveStorage::GetDefaultRoot(OvCore::Helpers::ProjectSettings::GetSaveName(projectSettings)),
 		runtimeLimits.storage
@@ -318,6 +318,6 @@ void OvEditor::Core::Context::ApplyProjectSettings()
 	// The save folder follows the project's ID, or its executable's name
 	if (auto root = OvTools::Filesystem::SaveStorage::GetDefaultRoot(OvCore::Helpers::ProjectSettings::GetSaveName(projectSettings)); root != saveStorage->GetRoot())
 	{
-		*saveStorage = OvTools::Filesystem::SaveStorage(std::move(root));
+		*saveStorage = OvTools::Filesystem::SaveStorage(std::move(root), saveStorage->GetLimits());
 	}
 }
