@@ -82,5 +82,9 @@ Lost's first version: Overload 1.9 and the changes below.
 ### Fixed
 
 - **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
+- **Callbacks when a scene goes**: on a scene change, on quitting and when play stops in the editor, every actor
+  receives `OnDisable` and `OnDestroy` while its scene is still the current one, then the actors are deleted. Before,
+  the scene was already gone during these callbacks, and any actor handle used there raised
+  `ActorRef: no active scene`.
 - **Actor references inside a prefab survive instantiation**: an actor property that names another actor of the same
   prefab now names that actor's instance. Before, every instance got new GUIDs and such a property came out `nil`.
