@@ -21,5 +21,8 @@ namespace OvCore::Rendering
 		uint32_t count = 0;
 		uint64_t poseVersion = 0;
 		float boundsScale = 1.0f;
+
+		// While a ragdoll moves the bones, they are wherever the physics put them, away from the actor's bounds
+		bool unbounded = false;
 	};
 }

@@ -4,9 +4,11 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
 
 ## Bodies
 
-- `PhysicalBox`, `PhysicalSphere`, `PhysicalCapsule` and `PhysicalHeightField` are the colliders.
+- `PhysicalBox`, `PhysicalSphere`, `PhysicalCapsule`, `PhysicalHeightField` and `PhysicalMesh` are the colliders.
 - A capsule's `height` is its straight part: the body is `height + 2 × radius` tall, centred on its actor.
 - A collider scales with its actor: a capsule's radius follows the X scale and its straight part the Y scale.
+- A negative scale mirrors what is drawn, not what collides: a mesh collider or a height field under a mirrored actor
+  collides as the unmirrored shape, as with Bullet before. Mirror their data instead.
 - A linear or angular factor only frees or locks an axis: 0 locks it, anything else frees it whole. A body with no axis
   free is simulated as kinematic.
 - A static body (`SetStatic(true)`, `static` in a file) never moves by itself and only follows its transform when the
@@ -20,6 +22,8 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
   is static too. Its triangles are in the actor's space and collide from their front only, the side their
   counter-clockwise winding faces: a ray or a body coming from behind passes through. Build it once; changing its
   triangles rebuilds the whole shape.
+- A height field's heights and a mesh collider's triangles come from scripts and are not saved with the scene or the
+  prefab: the script that sets them sets them again when the scene loads.
 
 ## Triggers and contacts
 
@@ -35,6 +39,8 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
 - A script that rewrites the linear velocity every step wipes any impulse; apply pushes through the same script.
 - A body moved in `OnFixedUpdate` only moves on fixed steps: anything sampled per frame (a camera) must follow an
   interpolated visual, not the body itself.
+- A kinematic body follows its transform by jumping to it at each step, at no speed: it pushes what is in its way but
+  does not carry what stands on it. A moving platform carries its riders in script, or moves them as it moves.
 
 ## Queries
 
@@ -51,3 +57,7 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
   dynamic bodies, raise no collision event, and raycasts never return them.
 - While a ragdoll drives a skeleton, the animation does not; the bones it does not move keep their pose relative to
   their parent.
+- A part's `Radius` and `Length` are in metres in the world, whatever the scale of the actor and its bones: a smaller
+  character passes smaller values.
+- A ragdoll collides with the kinematic body of its own character, which still stands where the character fell: turn
+  that body off, or make it a trigger, before starting the ragdoll.
