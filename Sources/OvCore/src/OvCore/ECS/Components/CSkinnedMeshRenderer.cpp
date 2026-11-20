@@ -124,7 +124,15 @@ namespace
 
 		if (nextIt == p_keys.begin())
 		{
-			return nextIt->value;
+			if (!p_looping || p_keys.size() < 2)
+			{
+				return nextIt->value;
+			}
+
+			// Before the first key of a loop, the clip is still on its way from the last key, a loop earlier
+			auto prev = p_keys.back();
+			prev.time -= p_duration;
+			return interpolate(prev, p_keys.front(), p_keys.front().time - prev.time);
 		}
 
 		const auto& prev = *std::prev(nextIt);
@@ -1597,7 +1605,6 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildRuntimeData(bool p_mo
 		m_ragdollPartByNode.clear();
 		m_ragdollPartScales.clear();
 	}
-
 
 	m_localPose.clear();
 	m_globalPose.clear();
