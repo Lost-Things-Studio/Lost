@@ -114,18 +114,22 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
 
 - `Physics.CastRay(origin, direction, distance[, layerMask, includeTriggers])` returns the objects the ray meets,
   nearest first, each once, as a table of `PhysicsHit`: `Object`, `Point`, `Normal` (out of the object) and
-  `Distance`. Nothing met gives an empty table. A ray that starts inside an object meets it at distance 0.
+  `Distance`. Nothing met gives an empty table. A ray that starts inside a box, a sphere or a capsule meets it at
+  distance 0. A distance of `math.huge` reaches 100 km.
 - `Physics.CastSphere(origin, radius, direction, distance[, layerMask, includeTriggers])` sweeps a sphere the same way.
-  An object the sphere overlaps at its origin is met at distance 0.
+  A box, a sphere or a capsule that the sphere overlaps at its origin is met at distance 0, whichever way it goes.
+- A mesh or a height field is met only by a ray or a sphere that goes into the side its faces look to: a ray cast up
+  from under the ground goes through it.
 - `Physics.OverlapSphere(center, radius[, layerMask, includeTriggers])` and
   `Physics.OverlapBox(center, halfExtents[, rotation, layerMask, includeTriggers])` return the physical objects that
   overlap the shape, each once, in no particular order.
 - A query sees every layer unless given a mask: `Physics.GetLayerMask("Default", "Enemy")` builds one from names or
   indices. The collision matrix plays no part in queries. Triggers are left out unless `includeTriggers` is `true`.
+  A query given a point that is not finite returns an empty table.
 - Queries never return a ragdoll's bodies.
 - `Physics.Raycast(origin, direction, distance)`, the older query, returns `nil` or a `RaycastHit` with
   `FirstResultObject` and `ResultObjects`: every object crossed, triggers included, in no particular order and without
-  distances.
+  distances. It does not normalize its direction: it reaches the direction's length times `distance`.
 
 ## Ragdolls
 

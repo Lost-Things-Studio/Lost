@@ -5,7 +5,8 @@
 Physics = {}
 
 --- Casts a ray against all Physical Object in the Scene and returns information on what was hit (in no particular
---- order, triggers included, without distances). Physics.CastRay tells more
+--- order, triggers included, without distances). The direction is not normalized: the ray reaches its length times
+--- distance. Physics.CastRay tells more
 ---@param origin Vector3
 ---@param direction Vector3
 ---@param distance number
@@ -13,21 +14,22 @@ Physics = {}
 function Physics.Raycast(origin, direction, distance) end
 
 --- Casts a ray and returns the objects it meets, nearest first, each once: an empty table when it meets none. A ray
---- that starts inside an object meets it at distance 0
+--- that starts inside a box, a sphere or a capsule meets it at distance 0; a mesh or a height field is met only from
+--- the side its faces look to
 ---@param origin Vector3
 ---@param direction Vector3 need not be normalized
----@param distance number
+---@param distance number math.huge reaches 100 km
 ---@param layerMask? integer the layers seen (Physics.GetLayerMask), every layer when nil
 ---@param includeTriggers? boolean false when nil
 ---@return PhysicsHit[]
 function Physics.CastRay(origin, direction, distance, layerMask, includeTriggers) end
 
---- Sweeps a sphere and returns the objects it meets, nearest first, each once. An object the sphere overlaps at its
---- origin is met at distance 0
+--- Sweeps a sphere and returns the objects it meets, nearest first, each once. A box, a sphere or a capsule the sphere
+--- overlaps at its origin is met at distance 0; a mesh or a height field is met only from the side its faces look to
 ---@param origin Vector3
 ---@param radius number
 ---@param direction Vector3 need not be normalized
----@param distance number
+---@param distance number math.huge reaches 100 km
 ---@param layerMask? integer the layers seen (Physics.GetLayerMask), every layer when nil
 ---@param includeTriggers? boolean false when nil
 ---@return PhysicsHit[]
