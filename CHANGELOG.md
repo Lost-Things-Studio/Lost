@@ -242,6 +242,16 @@ Lost's first version: Overload 1.9 and the changes below.
   discarded, so that they play, end and loop as with a device; `OvGame --audio null` does the same on a machine that
   has one. In Lua, the `Audio` table (`GetDriver`, `GetVoiceCount`); in C++, `AudioEngine(EDriver)`, and `Mix` for a
   test to hear what is played. FLAC files are sounds. The Lua API is now 1.22. See [Docs/Audio.md](Docs/Audio.md).
+- **Audio buses, sounds played once and the attenuation of a source**: the project names its buses (`audio_buses`,
+  `Music,Effects,Interface,Ambience` by default, 8 at most; a key the editor adds to older projects and shows in the
+  project settings), each with a volume beside the Master's (`Audio.GetBuses`, `Audio.SetVolume`, `Audio.GetVolume`).
+  A source plays on a bus (`SetBus`, `bus` in a file, a list in the inspector), draws its pitch at random
+  (`SetPitchVariation`), and fades by a model (`SetAttenuationModel` and the `AttenuationModel` enum: none, inverse,
+  linear, exponential), a rolloff (`SetRolloff`) and a maximum distance (`SetMaxDistance`), which the inspector draws.
+  Sounds played once overlap without a source (`Audio.PlayOneShot(sound, options)`) or from one, following it
+  (`AudioSource:PlayOneShot`); one too far to be heard ends at once. Stopping a game in the editor stops them and sets
+  the volumes back to 1. In C++, `AudioEngine::SetBuses`, `PlayOneShot`, `VaryPitch`, `ResetVolumes`,
+  `OvAudio::Settings::AttenuationSettings` and `ProjectSettings::ReadAudioBuses`. The Lua API is now 1.23.
 
 ### Changed
 
@@ -273,6 +283,8 @@ Lost's first version: Overload 1.9 and the changes below.
   when it cannot open a device, then plays the sounds on the null driver. Before, it played none, each logging a
   warning.
 - **Up to 64 sounds are heard at once**, the loudest, instead of 16.
+- **A sound in the world fades no more past its source's maximum distance**, 500 metres by default, where it faded
+  without end: a source of an older scene, exponential from its threshold, keeps there a five-hundredth of its volume.
 
 ### Removed
 
