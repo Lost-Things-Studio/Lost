@@ -27,20 +27,20 @@ if %ERRORLEVEL% neq 0 (
     exit /b %ERRORLEVEL%
 )
 
-:: The output is located in a folder called ..\..\Build\Publish. Create an archive with this folder's content, and name the archive Overload-<version>-<platform>.zip.
+:: The output is located in a folder called ..\..\Build\Publish. Create an archive with this folder's content, and name the archive Lost-<version>-<platform>.zip.
 for /f "delims=" %%v in (..\..\VERSION.txt) do set version=%%v
 set platform=windows_x64
 
 :: Navigate to the release folder
 pushd ..\..\Build\
 
-:: Delete any existing folder with the name Overload-%version%-%platform%
-if exist Overload-%version%-%platform% (
-    rmdir /s /q Overload-%version%-%platform%
+:: Delete any folder left by an earlier run, so that it doesn't end up in the archive
+if exist ..\Releases\Lost-%version%-%platform% (
+    rmdir /s /q ..\Releases\Lost-%version%-%platform%
 )
 
-:: Copy the folder "Publish" to a new folder called "Overload-%version%-%platform%"
-xcopy Publish\ ..\Releases\Overload-%version%-%platform% /E /I
+:: Copy the folder "Publish" to a new folder called "Lost-%version%-%platform%"
+xcopy Publish\ ..\Releases\Lost-%version%-%platform% /E /I
 
 :: Ensure the Releases folder exists
 if not exist ..\Releases (
@@ -48,15 +48,15 @@ if not exist ..\Releases (
 )
 
 :: Create the archive, but first delete any existing archive with the same name
-if exist ..\Releases\Overload-%version%-%platform%.zip (
-    del ..\Releases\Overload-%version%-%platform%.zip
+if exist ..\Releases\Lost-%version%-%platform%.zip (
+    del ..\Releases\Lost-%version%-%platform%.zip
 )
-powershell Compress-Archive -Path ..\Releases\Overload-%version%-%platform%\ -DestinationPath ..\Releases\Overload-%version%-%platform%.zip -Force
-echo Archive created: ..\Releases\Overload-%version%-%platform%.zip
+powershell Compress-Archive -Path ..\Releases\Lost-%version%-%platform%\ -DestinationPath ..\Releases\Lost-%version%-%platform%.zip -Force
+echo Archive created: ..\Releases\Lost-%version%-%platform%.zip
 
 :: Delete temporary build
-if exist ..\Releases\Overload-%version%-%platform% (
-    rmdir /s /q ..\Releases\Overload-%version%-%platform%
+if exist ..\Releases\Lost-%version%-%platform% (
+    rmdir /s /q ..\Releases\Lost-%version%-%platform%
     echo Temporary build deleted.
 )
 
