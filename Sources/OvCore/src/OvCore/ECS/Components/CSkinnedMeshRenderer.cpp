@@ -1291,6 +1291,18 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnDeserialize(tinyxml2::XMLD
 			m_layers.emplace_back();
 		}
 	}
+	else if (p_node->FirstChildElement("animation") || p_node->FirstChildElement("playing"))
+	{
+		// A file saved before the layers keeps its one animation at the root: it becomes the base layer
+		m_layers.clear();
+		auto& layer = m_layers.emplace_back();
+		OvCore::Helpers::Serializer::DeserializeModel(p_doc, p_node, "animation_source", layer.animationSourceModel);
+		OvCore::Helpers::Serializer::DeserializeString(p_doc, p_node, "animation", layer.deserializedAnimationName);
+		OvCore::Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "playing", layer.playing);
+		OvCore::Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "looping", layer.looping);
+		OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "playback_speed", layer.speed);
+		OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "time_ticks", layer.timeTicks);
+	}
 
 	SetMeshBoundsScale(m_meshBoundsScale);
 	m_poseEvaluationRate = std::max(0.0f, m_poseEvaluationRate);
