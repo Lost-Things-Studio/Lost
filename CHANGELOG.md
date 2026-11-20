@@ -1,0 +1,363 @@
+# Changelog
+
+What Lost changes from [Overload](https://github.com/Overload-Technologies/Overload), version by version, newest
+first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
+[Semantic Versioning](https://semver.org/): from 1.0, a script, a shader or a project made for one version keeps
+working with any later version of the same major version. Before 1.0, a minor version may break that; its section says
+how under "Changed" and "Removed".
+
+## [Unreleased]
+
+Lost's first version: Overload 1.9 and the changes below.
+
+### Added
+
+- **Engine version**: `VERSION.txt` holds Lost's version, `Application.GetEngineVersion()` returns it to scripts,
+  and the editor's Help menu shows it beside the Overload version it is based on (`OVERLOAD_VERSION`).
+- **Physics on Jolt**: `OvPhysics` is ported from Bullet3 to Jolt Physics 5.6.0.
+- **Ragdolls**: `SkinnedMeshRenderer:StartRagdoll(parts, velocity)` hands a skeleton over to capsules joined by
+  swing-twist constraints, from its current pose; `StopRagdoll`, `IsRagdoll`, `AddRagdollImpulse`.
+- **Static bodies**: `PhysicalObject:SetStatic` and `IsStatic` (`static` in a file), a body that never moves by itself
+  and only follows its transform when the transform changes.
+- **Height fields**: the `PhysicalHeightField` component, a static Jolt height field set from Lua with
+  `SetHeights(sampleCount, spacing, heights)`; a height of `math.huge` is a hole.
+- **Mesh colliders**: the `PhysicalMesh` component, a static body shaped by triangles set from Lua
+  (`SetTriangles(positions, indices)`, or `SetMesh` from a `MeshData`), each colliding from its front side.
+- **Distance fields**: `DistanceField`, a signed distance field of empty spaces (tubes, ellipsoids, boxes) carved in
+  solid ground, roughened by noise, and meshed natively by blocks (`Mesh`) into a `MeshData` that
+  `Resources.CreateModel` and `PhysicalMesh:SetMesh` take as they are.
+- **Animation layers**: several clips at once on a skinned mesh, each with its own source, speed, loop and weight; the
+  clip sources resolved by path inside the component (`SetAnimationSourceModel`).
+- **Layer masks**: `SetLayerMask(rootName, layer)` and `GetLayerMask(layer)`, a layer that only drives a node and its
+  descendants (`<mask_root>` in a file, shown in the inspector).
+- **Clips on rigs of other bone lengths**: a clip plays on a model whose bones share their names, parents, rest
+  rotations and rest scales but not their rest positions; each move is scaled by the ratio of the rest lengths.
+- **Skeletons that extend the clip's**: a model may carry bones of its own under a bone both rigs share; no track
+  drives them and scripts may turn them.
+- **Global bone transforms**: `GetBoneGlobalPosition`, `GetBoneGlobalRotation` and `GetBoneGlobalScale` in Lua.
+- **Bone attachments**: the `BoneAttachment` component (`SetBone`, `SetOffsetPosition/Rotation/Scale`, `SetTarget`,
+  `IsAttached`), an actor that rides a bone, placed after every script.
+- **Rigid parts bound to bones**: at import, a mesh hung on a bone without skin weights follows its nearest bone
+  ancestor; imported normals and tangents are transformed as directions.
+- **2D UI**: canvases, `Image`, `Text` and layout components (Overload PR #819), screen and world space canvases, and the
+  UI Lua library in `Resources/Engine/Libraries/UI` with its own documentation.
+- **Save files**: `Storage` (`Write`, `Read`, `Exists`, `Delete`, `List`) reaches the project's save folder and nothing
+  else, and `Json` (`Encode`, `Decode`) turns a table into text and back. See [Docs/Saving.md](Docs/Saving.md).
+- **Models built from Lua**: `Resources.CreateModel(path, geometry, materialName)`, a model of one mesh from flat
+  arrays, registered under a path that needs no file and rebuilt in place.
+- **Script loading**: `Resources.GetScript` (Overload PR #843), sandboxed module loading for Lua.
+- **Time**: the `Time` table, `GetScale`, `SetScale` (never below 0), `GetUnscaledDeltaTime` and `GetGameTime`; the scaled
+  game time is `ubo_GameTime` in the engine buffer.
+- **Lua additions**: `Application.Quit()`; `Inputs.GetKeyName(key)` names a printable key by the keyboard's layout;
+  `Inputs.GetViewportSize` and `Inputs.SetCursorShape`; the renderer's visibility flags; the `string`, `table`,
+  `coroutine` and `utf8` libraries in the sandbox.
+- **Sleeping Behaviours**: `Actor:SetBehaviourUpdating(behaviour, bool)` and `IsBehaviourUpdating`, a Behaviour that
+  stops, then resumes, receiving its per-frame callbacks.
+- **Rendering**: a draw distance per model renderer (`SetMaxDrawDistance`, `max_draw_distance` in a file); identical
+  opaque meshes, and neighbouring blended meshes of one material, drawn as one instanced draw when their shader
+  declares `#engine_capability INSTANCING`; colour grading and a vignette in the tonemapping pass; a distance fog on
+  the post process stack; cached directional shadow maps; an optional depth pre-pass.
+- **Reflection probes**: `ReflectionProbe:SetBrightness` and `GetBrightness`, how bright what a probe captured is for
+  the objects it lights.
+- **Profiling**: a Tracy zone per Behaviour callback, named `script:function`.
+- **Collision layers**: 16 layers, one per physical object (`SetCollisionLayer`, `GetCollisionLayer`,
+  `collision_layer` in a file, a list in the inspector). The project names them (`physics_layer_names`) and lists the
+  pairs that go through each other (`physics_ignored_layer_pairs`); Lua reads and changes them at run time
+  (`Physics.GetLayerIndex`, `GetLayerName`, `DoLayersCollide`, `SetLayersCollide`). See [Docs/Physics.md](Docs/Physics.md).
+- **Physics queries**: `Physics.CastRay` and `Physics.CastSphere` return the objects met, nearest first, with the
+  point, the normal and the distance; `Physics.OverlapSphere` and `Physics.OverlapBox` return the objects a shape
+  overlaps. Each takes a layer mask (`Physics.GetLayerMask`) and leaves triggers out unless asked. `Physics.Raycast`
+  is unchanged.
+- **Project ID**: the save folder follows the project's `project_id`, or `executable_name` while it is empty, so that
+  a game renamed keeps its saves. The editor shows it beside the executable name.
+- **Runtime limits in the project**: the save folder's limits (`storage_max_file_mib`, `storage_max_total_mib`,
+  `storage_max_entries`), `Json`'s (`json_max_mib`, `json_max_depth`) and the longest frame step (`max_frame_delta`)
+  are optional project keys; their defaults are the former fixed values. In C++, `SaveStorageLimits`,
+  `Clock::SetMaxDeltaTime` and `OvCore::Scripting::SetJsonLimits`.
+- **Play shortcuts**: the editor's keys that start and stop playing are set in Settings > Play Shortcuts (F5 for
+  both by default, as before).
+- **`OvGame` command line**: `--project` runs a project from its folder, with `--engine`, `--scene`, `--frames`,
+  `--screenshot` (a PNG of the last frame), `--hidden-window` and `--fail-on-error`; the exit code tells how the run
+  went. Without options, a built game runs as before. See [Docs/CommandLine.md](Docs/CommandLine.md).
+- **Engine tests**: `OvTests`, a doctest program built with the engine, tests the command line, the PNG writer, the save
+  storage, the Lua `Json` and `Storage` bindings, the project settings, physics layers and queries, and scenes; the
+  in-game checks of `Tests/GameChecks` run the engine through `OvGame` (destroyed actors, prefab references, Lua
+  queries, project settings). The CI runs both, the in-game checks on Linux. See [Docs/Testing.md](Docs/Testing.md).
+- **Lua module contract**: `require(path)` loads a module of the project's assets, or of the engine's with `:`,
+  shares `Resources.GetScript`'s cache, and raises an error that says why a module cannot be loaded.
+  `Application.GetApiVersion()` returns the version of the Lua API, with a deprecation policy in
+  [Docs/Scripting.md](Docs/Scripting.md). `OvGame --dump-lua-api` prints the API, and the engine's tests check it
+  against the definitions of `Resources/Engine/Lua`, which now cover every binding (`AssetRef`, the settings'
+  constructors, the matrices' call, Tracy's stack-capturing zones).
+- **Shader API**: the public includes, their functions and uniforms, the engine buffer and `Standard`'s stages are
+  declared in [Docs/Shaders.md](Docs/Shaders.md) and versioned (`SHADER_API_VERSION_MAJOR`/`MINOR`, 1.0, in every
+  shader through the engine buffer); the engine's tests check the declaration against the includes.
+- **Standard's extension points**: `Standard` is two public includes (`Standard/StandardVertex.ovfxh`,
+  `Standard/StandardFragment.ovfxh`) that a shader includes and extends through `STANDARD_VERTEX`, `STANDARD_CLIP`,
+  `STANDARD_SURFACE` and `STANDARD_LIGHTING`, instead of copying `Standard` and falling behind it. `Standard` draws as
+  before, pixel for pixel.
+- **Global frame events**: `Events.AddUpdate(callback[, owner])`, `Events.AddLateUpdate` and `Events.Remove` run a
+  module every frame, before every Behaviour's `OnUpdate` and after every `OnLateUpdate`, without an actor in the scene.
+  A callback that fails is logged and removed, one with an owner ends with it. The Lua API is now 1.1. See
+  [Docs/Scripting.md](Docs/Scripting.md).
+- **Behaviours from the engine's resources**: a Behaviour whose path starts with `:` (`:Behaviours/Spin.lua`) is loaded
+  from the engine's resources, as `require` loads a module.
+- **Fog as a material option**: `u_Fog` on `Standard` (on by default) and `Unlit` (off by default, now able to take the
+  fog), as both behaved before.
+- **Character controller**: `CharacterController` (`Actor:AddCharacterController`, the "Character Controller" component)
+  moves a character by its velocity on Jolt's `CharacterVirtual`: it stands on the slopes it can walk without sliding,
+  climbs steps, keeps to the ground going down and falls under gravity. `GetRealVelocity()` says how fast it really
+  went, `IsGrounded()`, `GetGroundState()` and `GetGroundObject()` what holds it. Queries, triggers and collision
+  events see it as a body; `physics_ragdoll_ignores_dynamic_bodies` lets ragdolls through it. The Lua API is now 1.2.
+  See [Docs/Physics.md](Docs/Physics.md).
+- **Physics interpolation**: `PhysicalObject:SetInterpolated(true)` (`interpolated` in a file, a box in the inspector)
+  draws a dynamic body or a character controller between its last two physics steps, so that it and what follows it
+  move smoothly above 60 FPS. `OnFixedUpdate` still sees the pose of the physics, and a script that moves the transform
+  teleports the body. Off by default. The Lua API is now 1.3.
+- **Gamepads**: up to 4, through GLFW's gamepad mappings. `Inputs.GetGamepadButton`, `GetGamepadButtonDown`,
+  `GetGamepadButtonUp` and `GetGamepadAxis` (sticks with a disc dead zone, up positive; triggers 0 to 1), on a given pad
+  or the first connected; `IsGamepadConnected`, `GetGamepadName`, `SetGamepadDeadZone`. They follow the Game View's
+  focus in the editor as the keyboard does. The Lua API is now 1.4. See [Docs/Input.md](Docs/Input.md).
+- **Input actions**: a project declares its actions and their default inputs (keys, mouse buttons, gamepad buttons,
+  triggers, a stick's way) in a JSON file its `input_actions` key names. `Inputs.GetAction`, `GetActionDown`,
+  `GetActionUp` and `GetActionValue` read them; `GetBindings`, `SetBinding` (which swaps with the slot that held the
+  input), `ResetBindings`, `GetPressedInput` and `GetInputName` make a rebinding menu, and the bindings are saved in the
+  save folder. The Lua API is now 1.5. See [Docs/Input.md](Docs/Input.md).
+- **JSON in C++**: `OvTools::Utils::Json` reads and writes JSON values, for the engine's own files.
+- **Input consumption**: `Inputs.Consume(input[, pad])` hides an input from the game's reads, direct or through the
+  actions, until it is released, and releases it for the game if it saw it held; `Inputs.ConsumeMouseScroll()` hides
+  the frame's scroll, and `Inputs.SetKeyboardCaptured(captured)` every key, for a text field. Every read takes a last
+  `includeConsumed` argument, for the code that consumed. The Lua API is now 1.6. See [Docs/Input.md](Docs/Input.md).
+- **Text beyond Latin-1**: a font bakes any character it has the first time a text needs it (Greek and Cyrillic in
+  Roboto), its atlas growing up to 4096 pixels a side; a character it lacks is still drawn as `?`.
+  `Text:GetContentSize()` measures a text. The Lua API is now 1.7. See [Docs/Rendering.md](Docs/Rendering.md).
+- **Typed text**: `Inputs.GetTypedText()` gives the characters typed during the frame, in UTF-8, as the keyboard's
+  layout makes them (accents, dead keys, AltGr), and `Inputs.GetKeyRepeatCount(key)` the system's repeats of a key held
+  down. The Lua API is now 1.8. See [Docs/Input.md](Docs/Input.md).
+- **The UI library takes its input**: `DTextEntry` takes the characters typed, any the font has, instead of a US
+  layout guessed from the keys, and repeats at the system's rate. The controller keeps from gameplay a click that
+  lands on a panel, the wheel over a panel, and the keyboard while a panel has the focus (`SetConsumesInput(false)`
+  lets them through). It updates itself, after every `OnLateUpdate`.
+- **UI clipping**: a UI element clips what its children draw to its rectangle (`Transform:SetUIClipChildren(true)`,
+  `ui_clip_children` in a file, "Clip Children" in the inspector), on a screen or a world space canvas, turned or not;
+  a clip inside another shows what both let through. `DScrollPanel` clips its content. The Lua API is now 1.9. See
+  [Docs/Rendering.md](Docs/Rendering.md).
+- **A Lua standard library**: `Resources/Engine/Libraries/Std`, loaded with `require(":Libraries/Std/Init")`, gives
+  games what they all write: `Class`, `Signal`, `Timers`, `Tween`, `Ease`, `Pool` and `StateMachine`. Timers and tweens
+  advance by themselves, on game or real time, and what is given an owner ends with that actor. See
+  [Docs/StandardLibrary.md](Docs/StandardLibrary.md).
+- **Checked components in Lua**: a component reaches Lua as a handle checked on every use, as actors are. One that was
+  removed, or whose actor was freed, raises a clear error instead of being read through a dangling pointer;
+  `Component:IsAlive()` tests it, and two handles on one component are equal. A component method called on a value
+  that is not that component (`light.SetIntensity(2)`) raises an error instead of reading it as one. The Lua API is
+  now 1.10. See [Docs/Scripting.md](Docs/Scripting.md).
+- **Material blend modes**: a blendable material is combined with what is already drawn as alpha (as before), additive
+  or premultiplied (`blend_mode` in a `.ovmat`, "Blend Mode" in the material editor, `Material::SetBlendMode` in
+  C++). A material saved before them keeps blending as alpha. See [Docs/Rendering.md](Docs/Rendering.md#blend-modes).
+- **GPU particles**: the `ParticleSystem` component emits particles the GPU draws in one draw per mesh. Each is
+  written once at its birth, and the shader works out the rest on the system's clock: rate and bursts, five shapes,
+  gravity and drag, size and colour over life, fades, spin, the world's space or the emitter's, game or real time,
+  seeds. Billboards by default (`:Shaders/Particle.ovfx`, `:Materials/Particle.ovmat`), or any model with a shader
+  that reads the particles through the new public include `Common/Particles.ovfxh`. Scripts burst particles where they
+  want with `Emit(count, overrides)`. In the editor: Add Component and Actors > Others > Particle System. The Lua API is
+  now 1.11 (`ParticleSystem`, `ParticleShape`, `ParticleSpace`, `Actor:Get`/`Add`/`RemoveParticleSystem`), and the
+  shader API 1.1. See [Docs/Particles.md](Docs/Particles.md).
+- **Navigation**: `Navigation.Build([settings])` builds a navigation mesh for the current scene at run time, from its
+  static colliders (height fields less their holes, mesh colliders, boxes, spheres and capsules, in the collision layers
+  given), for an agent of a radius, a height, a step and a slope. `Navigation.FindPath(from, to)` returns a path's
+  corners, and whether it reaches the end or stops at the nearest point it can; `FindNearestPoint`, `Raycast` along the
+  mesh and `GetRandomPoint` answer the rest. `Navigation.Rebuild(min, max)` builds again the tiles of a box after a door
+  shuts or a wall goes up, and `GetDebugGeometry` gives the mesh to draw. The mesh is the scene's, and goes with it. The
+  Lua API is now 1.12. It is built with [Recast & Detour](https://github.com/recastnavigation/recastnavigation) 1.6.0
+  (zlib licence), a new dependency. On a generated world of 256 m, about 150000 triangles, it builds in about half a
+  second, and a path takes 0.2 ms. See [Docs/Navigation.md](Docs/Navigation.md).
+- **Animation update mode**: a skinned mesh renderer set to `AnimationUpdateMode.WHEN_VISIBLE` (`SetUpdateMode`,
+  "Update Mode" in the inspector, `update_mode` in a file) works its pose out only while a render pass (a view, the
+  shadows, a reflection) drew it the frame before (`WasVisible()`); out of sight, its clips' time runs on, a bone read
+  from a script is still right, and its attachments keep their place. `ALWAYS`, the default, is the former behaviour.
+  `GetPoseEvaluationCount()` and `GetSkeletonUpdateCount()` count the work done. The Lua API is now 1.13. See
+  [Docs/Animation.md](Docs/Animation.md#when-the-pose-is-worked-out).
+- **Retargeting**: a layer's clips play on a model whose bones have other names, through the layer's bone map
+  (`SetAnimationBoneMap({ ModelBone = "ClipBone" })`, `bone_map` in a file), and whose rests turn otherwise: each key is
+  carried through the two rests, so that the bone turns in the model's space as the clip's turns in its own. A source
+  that cannot play says why, naming the bone (`GetAnimationSourceError`, the warning, the inspector). The same rig plays
+  as before, bit for bit. In C++, `OvCore::Animation::Retarget`. The Lua API is now 1.14. See
+  [Docs/Animation.md](Docs/Animation.md#clips-on-other-rigs).
+- **Look at**: the `LookAt` component turns a chain of bones (the spine, the neck, the head), each its share, towards an
+  actor or a point, over the animation: within yaw and pitch bounds, on a critically damped spring, holding its
+  direction as the body turns, faded in and out by a weight. In C++, `OvCore::Animation::LookAtSolver`. See
+  [Docs/Animation.md](Docs/Animation.md#look-at).
+- **Spring bones**: the `SpringBones` component swings chains of bones (hair, capes, tails) as the body moves, in
+  groups with their own settings, linked side by side like a cape's columns, against capsules on the body's bones and
+  a ground; out of sight it rests, and a jump starts it again from rest. In C++, `OvCore::Animation::SpringSolver`.
+  Both apply after the scripts, from the frame's pose, before the bone attachments. The Lua API is now 1.15. See
+  [Docs/Animation.md](Docs/Animation.md#spring-bones).
+- **Animation graphs**: the `Animator` component plays a JSON file of the project (`.ovanim`): parameters (numbers,
+  booleans, triggers), layers over each other under a bone mask, states (a clip, clips blended along a parameter in
+  step, or nothing), and transitions on conditions, triggers and exit times, with fades that start from the blend they
+  interrupt. The skinned mesh renderer samples the graph instead of its own layers, with the same bone matching. A file
+  that cannot play says where, with its JSON path. The editor knows `.ovanim` files (`EFileType::ANIMATION_GRAPH`):
+  the Asset Browser lists them, the inspector picks them, and a rename follows them. In C++,
+  `OvCore::Animation::AnimationGraph`, and `Scene::GetRealAssetPath` is public. The Lua API is now 1.16. See [Docs/Animation.md](Docs/Animation.md#animator).
+- **Terrains**: a `PhysicalHeightField` can come from a height map, an image of the project of 8 or 16 bits with a scale
+  and an offset, which a scene saves and loads (before, a field's heights were lost with the scene). It answers
+  `GetHeightAt` and `GetNormalAt` on the physics' triangles, and gives its heights back to Lua (`GetHeights`, a hole as
+  `math.huge`). Over a hole there is no height, and the terrain leaves out the triangles the physics leaves out. The
+  `Terrain` component draws it in chunks, each at one of up to 4 levels of detail by its distance to the camera, with
+  skirts hiding the gaps; its colour comes from a colour map, an image or a colour per sample from a script, on the
+  albedo of `:Materials/Terrain.ovmat` or any material. In C++, `OvCore::Terrain::Heightmap` and `TerrainMesher`. The
+  Lua API is now 1.17. See [Docs/Terrain.md](Docs/Terrain.md).
+- **Levels of detail for models**: a `ModelRenderer` takes up to 7 lighter models, each drawn from its distance on
+  with the renderer's materials by slot, the distance measured to the centre of the model's bounds rather than to its
+  pivot, with a margin against flicker and a bias per renderer (`lods` and `lod_bias` in a file, a list in the
+  inspector; `SetLodModels`, `GetLodModels`, `GetLodLevel`, `GetLodError`, `SetLodBias` and `GetLodBias` in Lua). A
+  model with bones takes levels with the same bones. In C++, `OvCore::Rendering::LodSelection`. The Lua API is now
+  1.18. See [Docs/Rendering.md](Docs/Rendering.md#levels-of-detail).
+- **Vegetation**: a `Vegetation` component covers the height field of its actor with models in layers (up to 8),
+  each with its density and density map (an image, or weights from a script), scale, random turn, alignment to the
+  ground, steepest slope, height range, draw distance, shadows and seed. Each chunk of the field is scattered the first
+  time the camera comes within reach, the same for a seed whatever the order, and drawn as one instanced draw whose
+  matrices are prepared once (`InstancingDrawableDescriptor::prepared`, `OvCore::Rendering::PrepareInstance`). A
+  material whose shader does not declare `INSTANCING` is refused. In Lua, the `Vegetation` usertype (`AddLayer`,
+  `SetLayer`, `GetLayer`, `RemoveLayer`, `SetDensityMap`, `GetInstanceCount`, `GetError`) and
+  `Actor:Get/Add/RemoveVegetation`; in C++, `OvCore::Terrain::Scatter`. The Lua API is now 1.19. See
+  [Docs/Terrain.md](Docs/Terrain.md#vegetation).
+- **Lit UI in the world**: a `Text` or an `Image` under a world space canvas can be lit as the scene is, by its lights,
+  the shadows it receives and its fog (`lit` in a file, "Lit" in the inspector, `SetLit` and `IsLit` in Lua;
+  `DPanel:SetLit` and `DLabel:SetLit` in the UI library). It is drawn among the transparent surfaces with a copy of the
+  host's lit material (`:Materials/TextLit.ovmat`, `:Materials/ImageLit.ovmat`, through
+  `UIResourceRegistry::Definition`), the elements of a canvas in the order of the hierarchy
+  (`SceneDrawableDescriptor::sortPosition`). A screen space canvas stays unlit. The Lua API is now 1.20. See
+  [Docs/Rendering.md](Docs/Rendering.md#lit-ui-in-the-world).
+- **Localization**: translation tables, one JSON file per language in the folder the project's `translations` key
+  names, with a `default_language` (two keys the editor adds to older projects and shows in the project settings).
+  Texts with `{name}` parameters and plural forms chosen by `count` after CLDR's rules (English, French, Spanish,
+  Italian, Portuguese, Russian, Ukrainian, Polish, Czech, Arabic, Hebrew, Japanese, Chinese and more), a missing text
+  taken from the default language then shown as its key and warned once, and fonts a language stands for others. The
+  language starts as the player's saved choice (`language.json`), else the system's, else the default one. In Lua, the
+  `Localization` table (`Get`, `Has`, `GetLanguage`, `SetLanguage`, `GetLanguages`, `GetDefaultLanguage`, `GetFont`,
+  `GetRevision`), `Text:SetTextKey` and `GetTextKey` (`text_key` in a file, "Text Key" in the inspector), and
+  `DLabel:SetTextKey` in the UI library; in C++, `OvCore::Localization`. The Lua API is now 1.21. See
+  [Docs/Localization.md](Docs/Localization.md).
+- **Sounds without an audio device**: on a machine without one, the sounds play on SoLoud's null driver, mixed and
+  discarded, so that they play, end and loop as with a device; `OvGame --audio null` does the same on a machine that
+  has one. In Lua, the `Audio` table (`GetDriver`, `GetVoiceCount`); in C++, `AudioEngine(EDriver)`, and `Mix` for a
+  test to hear what is played. FLAC files are sounds. The Lua API is now 1.22. See [Docs/Audio.md](Docs/Audio.md).
+- **Audio buses, sounds played once and the attenuation of a source**: the project names its buses (`audio_buses`,
+  `Music,Effects,Interface,Ambience` by default, 8 at most; a key the editor adds to older projects and shows in the
+  project settings), each with a volume beside the Master's (`Audio.GetBuses`, `Audio.SetVolume`, `Audio.GetVolume`).
+  A source plays on a bus (`SetBus`, `bus` in a file, a list in the inspector), draws its pitch at random
+  (`SetPitchVariation`), and fades by a model (`SetAttenuationModel` and the `AttenuationModel` enum: none, inverse,
+  linear, exponential), a rolloff (`SetRolloff`) and a maximum distance (`SetMaxDistance`), which the inspector draws.
+  Sounds played once overlap without a source (`Audio.PlayOneShot(sound, options)`) or from one, following it
+  (`AudioSource:PlayOneShot`); one too far to be heard ends at once. Stopping a game in the editor stops them and sets
+  the volumes back to 1. In C++, `AudioEngine::SetBuses`, `PlayOneShot`, `VaryPitch`, `ResetVolumes`,
+  `OvAudio::Settings::AttenuationSettings` and `ProjectSettings::ReadAudioBuses`. The Lua API is now 1.23.
+- **The game's end, for scripts**: `Events.AddQuit(callback[, owner])` calls a function once as the game ends, its scene
+  still current: a built game quitting or closed, the end of `--frames`, a game stopped in the editor or the editor
+  closed during one. A module writes there what it kept for later (a save). In C++, `ScriptEngine::NotifyQuit`. The Lua
+  API is now 1.24.
+- **Versioned saves**: the standard library's `SaveFile` keeps a file of the save folder in an envelope with the version
+  of its shape (`{"version": n, "data": ...}`), migrates an older file from version to version by the game's
+  migrations, and sets aside a file it cannot use (`<name>.broken.json`, `<name>.v<n>.json`, newer than the game) with a
+  warning, the defaults standing until the next write. A write asked for again and again is made once (`Schedule`,
+  `Flush`, `FlushAll`), and what waits is written as the game ends. A file without the envelope is version 0. In C++,
+  `OvCore::Helpers::VersionedSave`. See [Docs/Saving.md](Docs/Saving.md#versions).
+- **More Behaviour property types**: vectors (`Vector2`, `Vector3`, `Vector4` defaults), colours (`Color(r, g, b, a)`,
+  a `Vector4` to the script), enumerations (`Enum({ ... }, default)`, the chosen string) and lists
+  (`List("number" | "string" | "bool", { ... })`, a plain table), each with its inspector widget and its type in
+  prefab and scene files. The Lua API is now 1.25 (`Color`, `Enum`, `List`).
+
+### Changed
+
+- **Behaviours run in their declared order**, the order of the prefab or the scene file, for every callback.
+- **The Lua state is kept across scene changes**: removing a Behaviour no longer rebuilds it, so modules and what they
+  hold survive `Scenes.Load`. The editor still rebuilds it on play and on stop.
+- **A Behaviour's script is compiled once** per Lua state and run for each Behaviour, which still gets a table of its
+  own.
+- **Actors are found by GUID in constant time**: a scene keeps its actors in a map by GUID.
+- **Lua holds actors as checked handles**: a destroyed actor raises an error when used, `IsAlive()` tests it;
+  `FindChild` and `GetParent` return `nil` when there is none; `GetChildren` and `FindActorsBy*` return plain tables.
+- **Game input in the editor**: the game reads keys, clicks, scroll and the mouse lock only while the Game View has
+  the focus; F5 starts and stops play, and Escape belongs to the game.
+- **A minimized window** keeps the game running; only drawing stops.
+- **Ragdolls collide by their layer**: their bodies are on `physics_ragdoll_layer` (15 by default). Going through
+  dynamic bodies is now the project option `physics_ragdoll_ignores_dynamic_bodies`, off by default. A project that
+  relied on it sets it to `true`.
+- **Text texture coordinates are in atlas pixels**: a custom text shader divides them by
+  `textureSize(u_FontAtlas, 0)`, as `Text.ovfx` does, so that a growing atlas moves no glyph.
+- **The UI controller updates itself**: a `controller:Update(deltaTime)` from a Behaviour now changes nothing after
+  the frame the controller is created in, and can be removed. Panel callbacks run after every `OnLateUpdate`; a
+  gameplay script that read clicks meant for the UI no longer sees them.
+- **Skinned poses are worked out on demand**: a layer's settings (`SetLayerWeight`, `SetTime`, `SetAnimation`,
+  `SetLayerMask`, `Play`, `Stop`…) and bone writes (`SetBoneLocalRotation`…) only mark the pose; it is worked out once,
+  when a script reads a bone or after the scripts, before bone attachments are placed. Calls keep their order: a bone
+  written after a setting stays written. A bone write fell from about 2.6 µs to 0.5 µs, a weight from about 17 µs (a
+  whole pose each time) to a mark.
+- **No audio device is a warning, and the sounds still play**: the audio engine logs a warning, no longer an error,
+  when it cannot open a device, then plays the sounds on the null driver. Before, it played none, each logging a
+  warning.
+- **Up to 64 sounds are heard at once**, the loudest, instead of 16.
+- **A sound in the world fades no more past its source's maximum distance**, 500 metres by default, where it faded
+  without end: a source of an older scene, exponential from its threshold, keeps there a five-hundredth of its volume.
+- **Unreadable properties are reported**: a property written in a file with an unknown type (`type="boolean"`) is
+  logged as an error, and one whose type the script no longer declares as a warning. Both were ignored silently.
+
+### Removed
+
+- Bullet3, replaced by Jolt Physics.
+- **Constructors no script could use**: `Scene.new`, `PhysicsHit.new`, `RaycastHit.new` and `AssetRef.new`, made by
+  sol on its own, are gone. A scene, a hit or a ray's result come from the engine; an asset reference from `Model()`,
+  `Prefab()` and the like.
+
+### Fixed
+
+- **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
+- **`ReflectionProbe:RequestCapture()` without its argument**: the argument `forceImmediate` is optional, as its
+  definition and the C++ say. The binding required it, so a call without it raised an error in a Debug build and read
+  an undefined value in a Release build.
+- **World space UI behind the scene**: a world space canvas is depth-tested against the scene, as
+  `Libraries/UI/Docs/WorldSpace.md` says, so a wall in front of it hides it. The depth test it asked for was lost
+  when its drawables were prepared for the UI pass, and it was drawn over everything.
+- **Culling of mirrored models**: a model with a negative scale is culled where it is drawn. Its bounding sphere goes
+  through the world matrix, where the decomposed scale and rotation lost the mirror's sign, and its radius follows
+  the largest scale (a scale of -2 on X counted as 0 before).
+- **Callbacks when a scene goes**: on a scene change, on quitting and when play stops in the editor, every actor
+  receives `OnDisable` and `OnDestroy` while its scene is still the current one, then the actors are deleted. Before,
+  the scene was already gone during these callbacks, and any actor handle used there raised
+  `ActorRef: no active scene`.
+- **Actor references inside a prefab survive instantiation**: an actor property that names another actor of the same
+  prefab now names that actor's instance. Before, every instance got new GUIDs and such a property came out `nil`.
+- **The editor completes a project file instead of resetting it**: a project file lacking a setting gets that setting's
+  default and keeps all its other values. Before, one missing key reset every setting (`start_scene` emptied,
+  `executable_name` back to `Game`, which also moved the save folder).
+- **The save folder's entry limit counts new folders**: a write that makes folders on the way to its file counts them
+  against `storage_max_entries`. Before, it counted the file only, so the folder could hold up to three entries too
+  many.
+- **A destroyed physics engine stops listening for new bodies**: a body made after an engine was destroyed reached it
+  in freed memory. The game and the editor keep one engine, so only a program that makes several, such as the tests,
+  could meet it.
+- **`Component` methods on lights and bodies**: `GetOwner()` and the other `Component` methods answer on a
+  `PointLight`, a `SpotLight`, a `DirectionalLight`, the ambient lights, a `PhysicalBox`, a `PhysicalSphere` and a
+  `PhysicalCapsule`. Their usertypes named only their direct base, so these methods were `nil` on them.
+- **Sounds in the world are heard on their side**: the listener heard behind its actor, so a sound on the left of a
+  camera's picture was heard on the right. It now hears along its actor's forward, with its up, and from the start: a
+  sound played before the first update no longer begins on the other side.
+- **Sounds in the world faded twice over**: SoLoud applied a source's attenuation to its channels and again to its
+  volume, so that a sound twice as far as its attenuation threshold was a quarter as loud instead of half, and one four
+  times as far a sixteenth instead of a quarter. It is applied once (one line of `Dependencies/soloud`, marked).
+- **Resuming leaves paused what the game paused**: after the editor's pause, resuming a game played again every paused
+  source, those the game had paused included. A game stopped while paused left the audio suspended for the next one.
+- **A sound file that cannot be read gives no sound**: `Resources.GetSound` returns `nil`, as its definition said, with
+  a warning naming the file. Before, it gave a sound that played nothing.
+- **A sound made spatial or flat while it plays** plays on from where it was. Before, the change waited for the next
+  `Play`.
+- **A maths argument that is not one raises an error instead of crashing**: in a Release build, sol reads its
+  arguments unchecked, so that a binding taking a `Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Matrix3` or
+  `Matrix4` read whatever it was given as one. `nil`, a table such as `{ x = 0, y = 0, z = 0 }` or a number crashed
+  the game (`Physics.Raycast(nil, ...)`, `Transform:SetLocalPosition({ ... })`), and another maths type was read as
+  this one, out of bounds for a smaller one (`Matrix4.Transpose(Matrix3.new())`). It now raises an error in Lua's
+  words, `bad argument #2 to 'Distance' (Vector3 expected, got table)`, as a Debug build refused such values already.
+  The self of an operator or a field is checked to be a userdata, so that `nil + v` and a table given a vector's
+  metatable are refused too. A maths argument costs a read of its metatable, about 30 ns; a field, next to nothing.
+  See [Docs/Scripting.md](Docs/Scripting.md).

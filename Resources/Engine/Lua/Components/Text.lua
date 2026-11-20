@@ -26,9 +26,13 @@ function Text:GetOwner() end
 ---@return string
 function Text:GetText() end
 
---- Defines the text content
+--- Defines the text content, in UTF-8. A character the font has no glyph for is drawn as "?". A text key is cleared
 ---@param text string
 function Text:SetText(text) end
+
+--- Returns the size the text's lines take, in canvas pixels, wrapped at the element's width when it has one
+---@return Vector2
+function Text:GetContentSize() end
 
 --- Returns the font resource path
 ---@return string
@@ -69,3 +73,21 @@ function Text:GetVerticalAlignment() end
 --- Defines the vertical text alignment
 ---@param alignment TextVerticalAlignment
 function Text:SetVerticalAlignment(alignment) end
+
+--- Returns whether the text is lit as the scene is under a world space canvas
+---@return boolean
+function Text:IsLit() end
+
+--- Defines whether the text is lit as the scene is (its lights, the shadows it receives, its fog), drawn among its
+--- transparent surfaces. Only under a world space canvas: a screen space text stays drawn over the scene, unlit
+---@param lit boolean
+function Text:SetLit(lit) end
+
+--- Returns the text key, or "" when the text is set as it is
+---@return string
+function Text:GetTextKey() end
+
+--- Shows the text a key gives in the current language (Localization.Get), again each time the language changes.
+--- An empty key leaves the text as it is; SetText clears the key
+---@param key string
+function Text:SetTextKey(key) end

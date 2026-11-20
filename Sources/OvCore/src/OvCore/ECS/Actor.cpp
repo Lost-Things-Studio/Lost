@@ -19,6 +19,7 @@
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
+#include <OvCore/ECS/Components/CCharacterController.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
@@ -26,6 +27,12 @@
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/ECS/Components/CPostProcessStack.h>
+#include <OvCore/ECS/Components/CAnimator.h>
+#include <OvCore/ECS/Components/CLookAt.h>
+#include <OvCore/ECS/Components/CParticleSystem.h>
+#include <OvCore/ECS/Components/CTerrain.h>
+#include <OvCore/ECS/Components/CVegetation.h>
+#include <OvCore/ECS/Components/CSpringBones.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
 #include <OvCore/ECS/Components/CSpotLight.h>
@@ -311,6 +318,20 @@ bool OvCore::ECS::Actor::IsAlive() const
 	return !m_destroyed;
 }
 
+void OvCore::ECS::Actor::PrepareForDeletion()
+{
+	if (!m_sleeping)
+	{
+		if (IsActive())
+			OnDisable();
+
+		if (m_awaked && m_started)
+			OnDestroy();
+
+		m_sleeping = true;
+	}
+}
+
 void OvCore::ECS::Actor::SetSleeping(bool p_sleeping)
 {
 	m_sleeping = p_sleeping;
@@ -429,6 +450,19 @@ bool OvCore::ECS::Actor::RemoveComponent(OvCore::ECS::Components::AComponent& p_
 std::vector<std::shared_ptr<OvCore::ECS::Components::AComponent>>& OvCore::ECS::Actor::GetComponents()
 {
 	return m_components;
+}
+
+std::shared_ptr<OvCore::ECS::Components::AComponent> OvCore::ECS::Actor::GetComponentShared(const Components::AComponent& p_component) const
+{
+	for (const auto& component : m_components)
+	{
+		if (component.get() == &p_component)
+		{
+			return component;
+		}
+	}
+
+	return nullptr;
 }
 
 OvCore::ECS::Components::Behaviour & OvCore::ECS::Actor::AddBehaviour(const std::string & p_name)
@@ -659,6 +693,7 @@ void OvCore::ECS::Actor::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::
 				else if (IsType<CPhysicalSphere>(componentType)) component = &AddComponent<CPhysicalSphere>();
 				else if (IsType<CPhysicalCapsule>(componentType)) component = &AddComponent<CPhysicalCapsule>();
 				else if (IsType<CPhysicalHeightField>(componentType)) component = &AddComponent<CPhysicalHeightField>();
+				else if (IsType<CCharacterController>(componentType)) component = &AddComponent<CCharacterController>();
 				else if (IsType<CPhysicalMesh>(componentType)) component = &AddComponent<CPhysicalMesh>();
 				else if (IsType<CModelRenderer>(componentType)) component = &AddComponent<CModelRenderer>();
 				else if (IsType<CCamera>(componentType)) component = &AddComponent<CCamera>();
@@ -672,6 +707,12 @@ void OvCore::ECS::Actor::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::
 				else if (IsType<CAmbientSphereLight>(componentType)) component = &AddComponent<CAmbientSphereLight>();
 				else if (IsType<CPostProcessStack>(componentType)) component = &AddComponent<CPostProcessStack>();
 				else if (IsType<CReflectionProbe>(componentType)) component = &AddComponent<CReflectionProbe>();
+				else if (IsType<CParticleSystem>(componentType)) component = &AddComponent<CParticleSystem>();
+				else if (IsType<CTerrain>(componentType)) component = &AddComponent<CTerrain>();
+				else if (IsType<CVegetation>(componentType)) component = &AddComponent<CVegetation>();
+				else if (IsType<CAnimator>(componentType)) component = &AddComponent<CAnimator>();
+				else if (IsType<CLookAt>(componentType)) component = &AddComponent<CLookAt>();
+				else if (IsType<CSpringBones>(componentType)) component = &AddComponent<CSpringBones>();
 				else if (IsType<CSkinnedMeshRenderer>(componentType)) component = &AddComponent<CSkinnedMeshRenderer>();
 				else if (IsType<CBoneAttachment>(componentType)) component = &AddComponent<CBoneAttachment>();
 				else if (IsType<UI::CCanvas>(componentType)) component = &AddComponent<UI::CCanvas>();

@@ -8,7 +8,7 @@
 #include <format>
 #include <optional>
 
-#include <sol/sol.hpp>
+#include <OvCore/Scripting/Lua/LuaComponentRef.h>
 
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CAmbientBoxLight.h>
@@ -20,6 +20,7 @@
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
+#include <OvCore/ECS/Components/CCharacterController.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
@@ -27,6 +28,12 @@
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/ECS/Components/CPostProcessStack.h>
+#include <OvCore/ECS/Components/CAnimator.h>
+#include <OvCore/ECS/Components/CLookAt.h>
+#include <OvCore/ECS/Components/CParticleSystem.h>
+#include <OvCore/ECS/Components/CTerrain.h>
+#include <OvCore/ECS/Components/CVegetation.h>
+#include <OvCore/ECS/Components/CSpringBones.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
 #include <OvCore/ECS/Components/CSpotLight.h>
@@ -142,6 +149,7 @@ void BindLuaActor(sol::state& p_luaState)
 		"GetPhysicalSphere", [](ActorRef& r) { return r.Resolve().GetComponent<CPhysicalSphere>(); },
 		"GetPhysicalCapsule", [](ActorRef& r) { return r.Resolve().GetComponent<CPhysicalCapsule>(); },
 		"GetPhysicalHeightField", [](ActorRef& r) { return r.Resolve().GetComponent<CPhysicalHeightField>(); },
+		"GetCharacterController", [](ActorRef& r) { return r.Resolve().GetComponent<CCharacterController>(); },
 		"GetPhysicalMesh", [](ActorRef& r) { return r.Resolve().GetComponent<CPhysicalMesh>(); },
 		"GetCamera", [](ActorRef& r) { return r.Resolve().GetComponent<CCamera>(); },
 		"GetLight", [](ActorRef& r) { return r.Resolve().GetComponent<CLight>(); },
@@ -158,6 +166,12 @@ void BindLuaActor(sol::state& p_luaState)
 		"GetAudioListener", [](ActorRef& r) { return r.Resolve().GetComponent<CAudioListener>(); },
 		"GetPostProcessStack", [](ActorRef& r) { return r.Resolve().GetComponent<CPostProcessStack>(); },
 		"GetReflectionProbe", [](ActorRef& r) { return r.Resolve().GetComponent<CReflectionProbe>(); },
+		"GetParticleSystem", [](ActorRef& r) { return r.Resolve().GetComponent<CParticleSystem>(); },
+		"GetTerrain", [](ActorRef& r) { return r.Resolve().GetComponent<CTerrain>(); },
+		"GetVegetation", [](ActorRef& r) { return r.Resolve().GetComponent<CVegetation>(); },
+		"GetAnimator", [](ActorRef& r) { return r.Resolve().GetComponent<CAnimator>(); },
+		"GetLookAt", [](ActorRef& r) { return r.Resolve().GetComponent<CLookAt>(); },
+		"GetSpringBones", [](ActorRef& r) { return r.Resolve().GetComponent<CSpringBones>(); },
 		"GetCanvas", [](ActorRef& r) { return r.Resolve().GetComponent<UI::CCanvas>(); },
 		"GetHorizontalLayout", [](ActorRef& r) { return r.Resolve().GetComponent<UI::CHorizontalLayout>(); },
 		"GetImage", [](ActorRef& r) { return r.Resolve().GetComponent<UI::CImage>(); },
@@ -206,6 +220,7 @@ void BindLuaActor(sol::state& p_luaState)
 		"AddPhysicalSphere", [](ActorRef& r) -> CPhysicalSphere& { return r.Resolve().AddComponent<CPhysicalSphere>(); },
 		"AddPhysicalCapsule", [](ActorRef& r) -> CPhysicalCapsule& { return r.Resolve().AddComponent<CPhysicalCapsule>(); },
 		"AddPhysicalHeightField", [](ActorRef& r) -> CPhysicalHeightField& { return r.Resolve().AddComponent<CPhysicalHeightField>(); },
+		"AddCharacterController", [](ActorRef& r) -> CCharacterController& { return r.Resolve().AddComponent<CCharacterController>(); },
 		"AddPhysicalMesh", [](ActorRef& r) -> CPhysicalMesh& { return r.Resolve().AddComponent<CPhysicalMesh>(); },
 		"AddCamera", [](ActorRef& r) -> CCamera& { return r.Resolve().AddComponent<CCamera>(); },
 		"AddPointLight", [](ActorRef& r) -> CPointLight& { return r.Resolve().AddComponent<CPointLight>(); },
@@ -220,6 +235,12 @@ void BindLuaActor(sol::state& p_luaState)
 		"AddAudioListener", [](ActorRef& r) -> CAudioListener& { return r.Resolve().AddComponent<CAudioListener>(); },
 		"AddPostProcessStack", [](ActorRef& r) -> CPostProcessStack& { return r.Resolve().AddComponent<CPostProcessStack>(); },
 		"AddReflectionProbe", [](ActorRef& r) -> CReflectionProbe& { return r.Resolve().AddComponent<CReflectionProbe>(); },
+		"AddParticleSystem", [](ActorRef& r) -> CParticleSystem& { return r.Resolve().AddComponent<CParticleSystem>(); },
+		"AddTerrain", [](ActorRef& r) -> CTerrain& { return r.Resolve().AddComponent<CTerrain>(); },
+		"AddVegetation", [](ActorRef& r) -> CVegetation& { return r.Resolve().AddComponent<CVegetation>(); },
+		"AddAnimator", [](ActorRef& r) -> CAnimator& { return r.Resolve().AddComponent<CAnimator>(); },
+		"AddLookAt", [](ActorRef& r) -> CLookAt& { return r.Resolve().AddComponent<CLookAt>(); },
+		"AddSpringBones", [](ActorRef& r) -> CSpringBones& { return r.Resolve().AddComponent<CSpringBones>(); },
 		"AddCanvas", [](ActorRef& r) -> UI::CCanvas& { return r.Resolve().AddComponent<UI::CCanvas>(); },
 		"AddHorizontalLayout", [](ActorRef& r) -> UI::CHorizontalLayout& { return r.Resolve().AddComponent<UI::CHorizontalLayout>(); },
 		"AddImage", [](ActorRef& r) -> UI::CImage& { return r.Resolve().AddComponent<UI::CImage>(); },
@@ -233,6 +254,7 @@ void BindLuaActor(sol::state& p_luaState)
 		"RemovePhysicalSphere", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPhysicalSphere>(); },
 		"RemovePhysicalCapsule", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPhysicalCapsule>(); },
 		"RemovePhysicalHeightField", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPhysicalHeightField>(); },
+		"RemoveCharacterController", [](ActorRef& r) { return r.Resolve().RemoveComponent<CCharacterController>(); },
 		"RemovePhysicalMesh", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPhysicalMesh>(); },
 		"RemoveCamera", [](ActorRef& r) { return r.Resolve().RemoveComponent<CCamera>(); },
 		"RemovePointLight", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPointLight>(); },
@@ -247,6 +269,12 @@ void BindLuaActor(sol::state& p_luaState)
 		"RemoveAudioListener", [](ActorRef& r) { return r.Resolve().RemoveComponent<CAudioListener>(); },
 		"RemovePostProcessStack", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPostProcessStack>(); },
 		"RemoveReflectionProbe", [](ActorRef& r) { return r.Resolve().RemoveComponent<CReflectionProbe>(); },
+		"RemoveParticleSystem", [](ActorRef& r) { return r.Resolve().RemoveComponent<CParticleSystem>(); },
+		"RemoveTerrain", [](ActorRef& r) { return r.Resolve().RemoveComponent<CTerrain>(); },
+		"RemoveVegetation", [](ActorRef& r) { return r.Resolve().RemoveComponent<CVegetation>(); },
+		"RemoveAnimator", [](ActorRef& r) { return r.Resolve().RemoveComponent<CAnimator>(); },
+		"RemoveLookAt", [](ActorRef& r) { return r.Resolve().RemoveComponent<CLookAt>(); },
+		"RemoveSpringBones", [](ActorRef& r) { return r.Resolve().RemoveComponent<CSpringBones>(); },
 		"RemoveCanvas", [](ActorRef& r) { return r.Resolve().RemoveComponent<UI::CCanvas>(); },
 		"RemoveHorizontalLayout", [](ActorRef& r) { return r.Resolve().RemoveComponent<UI::CHorizontalLayout>(); },
 		"RemoveImage", [](ActorRef& r) { return r.Resolve().RemoveComponent<UI::CImage>(); },

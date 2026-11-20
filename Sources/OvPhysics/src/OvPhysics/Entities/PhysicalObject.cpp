@@ -16,6 +16,7 @@
 #include <OvDebug/Assertion.h>
 #include <OvDebug/Logger.h>
 #include <OvPhysics/Entities/PhysicalObject.h>
+#include <OvPhysics/Settings/PhysicsSettings.h>
 #include <OvPhysics/Tools/Conversion.h>
 
 using namespace OvPhysics::Tools;
@@ -188,12 +189,47 @@ bool OvPhysics::Entities::PhysicalObject::IsTrigger() const
 
 bool OvPhysics::Entities::PhysicalObject::IsKinematic() const
 {
-	return m_kinematic;
+	return m_kinematic || IsCharacter();
 }
 
 bool OvPhysics::Entities::PhysicalObject::IsStatic() const
 {
-	return m_static || MustBeStatic();
+	return !IsCharacter() && (m_static || MustBeStatic());
+}
+
+bool OvPhysics::Entities::PhysicalObject::IsCharacter() const
+{
+	return false;
+}
+
+void OvPhysics::Entities::PhysicalObject::SetInterpolated(bool p_interpolated)
+{
+	if (p_interpolated != m_interpolated)
+	{
+		m_interpolated = p_interpolated;
+		m_hasPhysicsPose = false;
+	}
+}
+
+bool OvPhysics::Entities::PhysicalObject::IsInterpolated() const
+{
+	return m_interpolated;
+}
+
+void OvPhysics::Entities::PhysicalObject::RecordPhysicsPose(const OvMaths::FVector3& p_position, const OvMaths::FQuaternion& p_rotation)
+{
+	m_previousPhysicsPosition = m_hasPhysicsPose ? m_physicsPosition : p_position;
+	m_previousPhysicsRotation = m_hasPhysicsPose ? m_physicsRotation : p_rotation;
+	m_physicsPosition = p_position;
+	m_physicsRotation = p_rotation;
+	m_hasPhysicsPose = true;
+}
+
+void OvPhysics::Entities::PhysicalObject::ResetPhysicsPose(const OvMaths::FVector3& p_position, const OvMaths::FQuaternion& p_rotation)
+{
+	m_previousPhysicsPosition = m_physicsPosition = p_position;
+	m_previousPhysicsRotation = m_physicsRotation = p_rotation;
+	m_hasPhysicsPose = m_interpolated;
 }
 
 bool OvPhysics::Entities::PhysicalObject::MustBeStatic() const
@@ -258,12 +294,19 @@ void OvPhysics::Entities::PhysicalObject::SetAngularFactor(const OvMaths::FVecto
 
 void OvPhysics::Entities::PhysicalObject::SetTrigger(bool p_trigger)
 {
-	m_body->SetIsSensor(p_trigger);
-	m_trigger = p_trigger;
+	// A character controller is never a trigger
+	m_trigger = p_trigger && !IsCharacter();
+	m_body->SetIsSensor(m_trigger);
 }
 
 void OvPhysics::Entities::PhysicalObject::SetKinematic(bool p_kinematic)
 {
+	// A character controller's body is always kinematic, and its velocity is its own
+	if (IsCharacter())
+	{
+		return;
+	}
+
 	m_kinematic = p_kinematic;
 
 	if (m_kinematic)
@@ -278,11 +321,26 @@ void OvPhysics::Entities::PhysicalObject::SetKinematic(bool p_kinematic)
 
 void OvPhysics::Entities::PhysicalObject::SetStatic(bool p_static)
 {
-	if (m_static != p_static)
+	if (m_static != p_static && !IsCharacter())
 	{
 		m_static = p_static;
 		RecreateBody();
 	}
+}
+
+void OvPhysics::Entities::PhysicalObject::SetLayer(uint16_t p_layer)
+{
+	m_layer = std::min(p_layer, static_cast<uint16_t>(Settings::PhysicsSettings::kLayerCount - 1));
+
+	if (m_body)
+	{
+		m_bodyInterface->SetObjectLayer(m_body->GetID(), m_layer);
+	}
+}
+
+uint16_t OvPhysics::Entities::PhysicalObject::GetLayer() const
+{
+	return m_layer;
 }
 
 void OvPhysics::Entities::PhysicalObject::SetEnabled(bool p_enabled)
@@ -311,6 +369,9 @@ void OvPhysics::Entities::PhysicalObject::UpdateBodyTransform()
 		m_bodyPosition = position;
 		m_bodyRotation = rotation;
 
+		// Moved elsewhere, an interpolated body starts again from there rather than sliding to it
+		ResetPhysicsPose(position, rotation);
+
 		m_bodyInterface->SetPositionAndRotation(
 			m_body->GetID(),
 			Conversion::ToJoltVector3(position),
@@ -336,6 +397,42 @@ void OvPhysics::Entities::PhysicalObject::UpdateFTransform()
 	const OvMaths::FQuaternion rotation = Conversion::ToOvQuaternion(m_body->GetRotation());
 
 	// World setters recompute the local transform (and its scale) from the matrices, so they are only used when required
+	if (m_transform->HasParent())
+	{
+		m_transform->SetWorldPosition(position);
+		m_transform->SetWorldRotation(rotation);
+	}
+	else
+	{
+		m_transform->SetLocalPosition(position);
+		m_transform->SetLocalRotation(rotation);
+	}
+
+	m_bodyPosition = m_transform->GetWorldPosition();
+	m_bodyRotation = m_transform->GetWorldRotation();
+
+	if (m_interpolated)
+	{
+		RecordPhysicsPose(position, rotation);
+	}
+}
+
+void OvPhysics::Entities::PhysicalObject::ApplyInterpolation(float p_alpha)
+{
+	if (!m_interpolated || !m_hasPhysicsPose || !m_enabled || !m_body->IsDynamic())
+	{
+		return;
+	}
+
+	// A script moved the transform since the physics did: it is teleported there at the next step, not interpolated
+	if (!IsSamePose(m_transform->GetWorldPosition(), m_transform->GetWorldRotation(), m_bodyPosition, m_bodyRotation))
+	{
+		return;
+	}
+
+	const OvMaths::FVector3 position = OvMaths::FVector3::Lerp(m_previousPhysicsPosition, m_physicsPosition, p_alpha);
+	const OvMaths::FQuaternion rotation = OvMaths::FQuaternion::Normalize(OvMaths::FQuaternion::Slerp(m_previousPhysicsRotation, m_physicsRotation, p_alpha));
+
 	if (m_transform->HasParent())
 	{
 		m_transform->SetWorldPosition(position);
@@ -380,21 +477,23 @@ void OvPhysics::Entities::PhysicalObject::CreateBody(const Settings::BodySetting
 
 	m_previousScale = m_transform->GetWorldScale();
 	m_bodyPosition = m_transform->GetWorldPosition();
-	m_bodyRotation = m_transform->GetWorldRotation();
+
+	// A character's capsule stays upright, whatever way its actor faces
+	m_bodyRotation = IsCharacter() ? OvMaths::FQuaternion::Identity : m_transform->GetWorldRotation();
 	m_linearFactor = p_bodySettings.linearFactor;
 	m_angularFactor = p_bodySettings.angularFactor;
 
 	// Jolt cannot simulate a dynamic body without any degree of freedom, such a body is simulated as kinematic
 	const JPH::EAllowedDOFs allowedDOFs = ToAllowedDOFs(m_linearFactor, m_angularFactor);
 	const bool isStatic = IsStatic();
-	const bool isDynamic = !isStatic && !m_kinematic && allowedDOFs != JPH::EAllowedDOFs::None;
+	const bool isDynamic = !isStatic && !IsKinematic() && allowedDOFs != JPH::EAllowedDOFs::None;
 
 	JPH::BodyCreationSettings bodyCreationSettings(
 		CreateShape({ std::abs(m_previousScale.x), std::abs(m_previousScale.y), std::abs(m_previousScale.z) }),
 		Conversion::ToJoltVector3(m_bodyPosition),
 		Conversion::ToJoltQuaternion(m_bodyRotation),
 		isStatic ? JPH::EMotionType::Static : isDynamic ? JPH::EMotionType::Dynamic : JPH::EMotionType::Kinematic,
-		kObjectLayer
+		m_layer
 	);
 
 	bodyCreationSettings.mAllowedDOFs = isDynamic ? allowedDOFs : JPH::EAllowedDOFs::All;
@@ -406,7 +505,7 @@ void OvPhysics::Entities::PhysicalObject::CreateBody(const Settings::BodySetting
 		bodyCreationSettings.mMassPropertiesOverride.mMass = std::max(kMinimumMass, m_mass);
 	}
 
-	bodyCreationSettings.mIsSensor = p_bodySettings.isTrigger;
+	bodyCreationSettings.mIsSensor = p_bodySettings.isTrigger && !IsCharacter();
 	bodyCreationSettings.mMotionQuality = ToMotionQuality(m_collisionMode);
 	bodyCreationSettings.mAllowSleeping = false; // TODO: Avoid using always active
 	bodyCreationSettings.mFriction = p_bodySettings.friction;

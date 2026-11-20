@@ -28,7 +28,11 @@
 
 #include <OvTools/Filesystem/IniFile.h>
 #include <OvTools/Filesystem/SaveStorage.h>
+#include <OvCore/Input/InputActions.h>
+#include <OvCore/Localization/Localization.h>
 #include <OvTools/Time/Clock.h>
+
+#include <OvGame/Core/LaunchOptions.h>
 
 namespace OvGame::Core
 {
@@ -40,8 +44,9 @@ namespace OvGame::Core
 	public:
 		/**
 		* Constructor
+		* @param p_options (where the project and the engine are, and how the window shows)
 		*/
-		Context();
+		Context(const LaunchOptions& p_options);
 
 		/**
 		* Destructor
@@ -52,6 +57,11 @@ namespace OvGame::Core
 		const std::filesystem::path engineAssetsPath;
 		const std::filesystem::path projectAssetsPath;
 
+		/**
+		* The scene the game starts on: the command line's, or the project's start_scene
+		*/
+		std::string startScene;
+
 		std::unique_ptr<OvWindowing::Context::Device> device;
 		std::unique_ptr<OvWindowing::Window> window;
 		std::unique_ptr<OvWindowing::Inputs::InputManager> inputManager;
@@ -61,6 +71,8 @@ namespace OvGame::Core
 		std::unique_ptr<OvAudio::Core::AudioEngine> audioEngine;
 		std::unique_ptr<OvCore::Scripting::ScriptEngine> scriptEngine;
 		std::unique_ptr<OvTools::Filesystem::SaveStorage> saveStorage;
+		std::unique_ptr<OvCore::Input::InputActions> inputActions;
+		std::unique_ptr<OvCore::Localization::Localization> localization;
 		std::unique_ptr<baregl::Framebuffer> framebuffer;
 
 		OvCore::SceneSystem::SceneManager sceneManager;

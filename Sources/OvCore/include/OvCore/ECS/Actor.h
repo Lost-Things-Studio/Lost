@@ -200,6 +200,13 @@ namespace OvCore::ECS
 		void SetSleeping(bool p_sleeping);
 
 		/**
+		* Runs the callbacks the actor runs when deleted (OnDisable when active, OnDestroy once started), then puts it to
+		* sleep, so that deleting it runs them no more. A scene calls it on every actor before deleting any, so that each
+		* callback still finds the others
+		*/
+		void PrepareForDeletion();
+
+		/**
 		* Called when the scene start or when the actor gets enabled for the first time during play mode
 		* This method will always be called in an ordered triple:
 		* - OnAwake()
@@ -326,6 +333,13 @@ namespace OvCore::ECS
 		* Returns a reference to the vector of components
 		*/
 		std::vector<std::shared_ptr<Components::AComponent>>& GetComponents();
+
+		/**
+		* Returns the shared pointer that owns one of the actor's components, or nullptr when the actor has no such
+		* component. A weak pointer taken from it tells when the component is removed, or freed with its actor
+		* @param p_component
+		*/
+		std::shared_ptr<Components::AComponent> GetComponentShared(const Components::AComponent& p_component) const;
 
 		/**
 		* Add a behaviour to the actor

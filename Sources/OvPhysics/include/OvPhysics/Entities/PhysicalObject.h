@@ -63,18 +63,18 @@ namespace OvPhysics::Entities
 		* Add a force to the physical object
 		* @param p_force
 		*/
-		void AddForce(const OvMaths::FVector3& p_force);
-		
+		virtual void AddForce(const OvMaths::FVector3& p_force);
+
 		/**
 		* Add an impulse to the physical object
 		* @param p_impulse
 		*/
-		void AddImpulse(const OvMaths::FVector3& p_impulse);
+		virtual void AddImpulse(const OvMaths::FVector3& p_impulse);
 
 		/**
 		* Clear forces
 		*/
-		void ClearForces();
+		virtual void ClearForces();
 
 		/**
 		* Returns the mass of the physical object
@@ -99,7 +99,7 @@ namespace OvPhysics::Entities
 		/**
 		* Returns the linear velocity of the physical object
 		*/
-		OvMaths::FVector3 GetLinearVelocity() const;
+		virtual OvMaths::FVector3 GetLinearVelocity() const;
 
 		/**
 		* Returns the angular of the physical object
@@ -131,6 +131,25 @@ namespace OvPhysics::Entities
 		* body is only moved when its transform changes
 		*/
 		bool IsStatic() const;
+
+		/**
+		* Returns true if the physical object is a character controller: its body is kinematic, never static nor a
+		* trigger, and the controller moves it
+		*/
+		virtual bool IsCharacter() const;
+
+		/**
+		* Defines if the transform of the physical object is interpolated between its last two physics steps, so that
+		* it moves smoothly at any frame rate. Only a body the physics moves (a dynamic body, a character controller)
+		* is interpolated
+		* @param p_interpolated
+		*/
+		void SetInterpolated(bool p_interpolated);
+
+		/**
+		* Returns true if the transform of the physical object is interpolated between its last two physics steps
+		*/
+		bool IsInterpolated() const;
 
 		/**
 		* Returns a reference to the transform of the physical object
@@ -165,7 +184,7 @@ namespace OvPhysics::Entities
 		* Defines a new linear velocity for the physical object
 		* @param p_linearVelocity
 		*/
-		void SetLinearVelocity(const OvMaths::FVector3& p_linearVelocity);
+		virtual void SetLinearVelocity(const OvMaths::FVector3& p_linearVelocity);
 
 		/**
 		* Defines a new angular velocity for the physical object
@@ -202,6 +221,18 @@ namespace OvPhysics::Entities
 		* @param p_static
 		*/
 		void SetStatic(bool p_static);
+
+		/**
+		* Puts the physical object on a collision layer (0 to PhysicsSettings::kLayerCount - 1): which layers collide
+		* is set by the physics engine's settings. Out of range, the layer is clamped
+		* @param p_layer
+		*/
+		void SetLayer(uint16_t p_layer);
+
+		/**
+		* Returns the collision layer of the physical object
+		*/
+		uint16_t GetLayer() const;
 
 		/**
 		* Defines if the physical object should be enabled or not
@@ -244,14 +275,35 @@ namespace OvPhysics::Entities
 		void Consider();
 		void Unconsider();
 
+		/* Needed by the physics engine */
+		virtual void UpdateBodyTransform();
+		virtual void UpdateFTransform();
+
+		/**
+		* Moves the transform between the last two physics poses, when it is interpolated and nothing else moved it
+		* since the physics did
+		* @param p_alpha (0 at the previous pose, 1 at the last one)
+		*/
+		virtual void ApplyInterpolation(float p_alpha);
+
+		/**
+		* Keeps the pose the physics gave at the end of a step, and the one before
+		* @param p_position
+		* @param p_rotation
+		*/
+		void RecordPhysicsPose(const OvMaths::FVector3& p_position, const OvMaths::FQuaternion& p_rotation);
+
+		/**
+		* Forgets the poses kept: the object starts again from where it is, without moving between two poses
+		* @param p_position
+		* @param p_rotation
+		*/
+		void ResetPhysicsPose(const OvMaths::FVector3& p_position, const OvMaths::FQuaternion& p_rotation);
+
 	private:
 		/* Internal */
 		void CreateBody(const Settings::BodySettings& p_bodySettings);
 		Settings::BodySettings DestroyBody();
-
-		/* Needed by the physics engine */
-		void					UpdateBodyTransform();
-		void					UpdateFTransform();
 
 	public:
 		OvTools::Eventing::Event<PhysicalObject&>			CollisionStartEvent;
@@ -262,9 +314,7 @@ namespace OvPhysics::Entities
 		OvTools::Eventing::Event<PhysicalObject&>			TriggerStayEvent;
 		OvTools::Eventing::Event<PhysicalObject&>			TriggerStopEvent;
 
-	private:
-		static constexpr uint16_t kObjectLayer = 0;
-
+	protected:
 		/* Transform stuff */
 		OvMaths::FTransform* const		m_transform;
 		const bool						m_internalTransform;
@@ -273,9 +323,11 @@ namespace OvPhysics::Entities
 		float					m_mass = 1.f;
 		bool					m_kinematic = false;
 		bool					m_static = false;
+		uint16_t				m_layer = 0;
 		bool					m_trigger = false;
 		bool					m_enabled = true;
 		bool					m_considered = false;
+		bool					m_interpolated = false;
 		ECollisionDetectionMode m_collisionMode = ECollisionDetectionMode::DISCRETE;
 		OvMaths::FVector3		m_linearFactor = OvMaths::FVector3::One;
 		OvMaths::FVector3		m_angularFactor = OvMaths::FVector3::One;
@@ -285,6 +337,13 @@ namespace OvPhysics::Entities
 		OvMaths::FVector3 m_previousScale = { 0.0f, 0.0f, 0.0f };
 		OvMaths::FVector3 m_bodyPosition;
 		OvMaths::FQuaternion m_bodyRotation;
+
+		/* The last two poses the physics gave, for interpolation */
+		bool m_hasPhysicsPose = false;
+		OvMaths::FVector3 m_previousPhysicsPosition;
+		OvMaths::FVector3 m_physicsPosition;
+		OvMaths::FQuaternion m_previousPhysicsRotation;
+		OvMaths::FQuaternion m_physicsRotation;
 		static OvTools::Eventing::Event<PhysicalObject&>	CreatedEvent;
 		static OvTools::Eventing::Event<PhysicalObject&>	DestroyedEvent;
 

@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -17,9 +18,18 @@
 #include <OvCore/ECS/Components/CBoneAttachment.h>
 #include <OvCore/ECS/Components/CCamera.h>
 #include <OvCore/ECS/Components/CLight.h>
+#include <OvCore/ECS/Components/CAnimator.h>
+#include <OvCore/ECS/Components/CLookAt.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
+#include <OvCore/ECS/Components/CParticleSystem.h>
+#include <OvCore/ECS/Components/CTerrain.h>
+#include <OvCore/ECS/Components/CVegetation.h>
 #include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
+#include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
+#include <OvCore/ECS/Components/CSpringBones.h>
+#include <OvCore/Navigation/NavMesh.h>
+#include <OvTools/Eventing/Event.h>
 #include <OvTools/Utils/OptRef.h>
 
 namespace OvCore::SceneSystem
@@ -42,6 +52,13 @@ namespace OvCore::SceneSystem
 			std::vector<ECS::Components::CPostProcessStack*> postProcessStacks;
 			std::vector<ECS::Components::CReflectionProbe*> reflectionProbes;
 			std::vector<ECS::Components::CBoneAttachment*> boneAttachments;
+			std::vector<ECS::Components::CParticleSystem*> particleSystems;
+			std::vector<ECS::Components::CTerrain*> terrains;
+			std::vector<ECS::Components::CVegetation*> vegetations;
+			std::vector<ECS::Components::CSkinnedMeshRenderer*> skinnedMeshRenderers;
+			std::vector<ECS::Components::CAnimator*> animators;
+			std::vector<ECS::Components::CLookAt*> lookAts;
+			std::vector<ECS::Components::CSpringBones*> springBones;
 		};
 
 		/**
@@ -116,10 +133,47 @@ namespace OvCore::SceneSystem
 		void LateUpdate(float p_deltaTime);
 
 		/**
+		* Invoked at the start of Update, before any actor's: the script engine's global Update event
+		*/
+		static OvTools::Eventing::Event<float> UpdateEvent;
+
+		/**
+		* Invoked in LateUpdate once every actor's has run, before the bone attachments follow their bones: the script
+		* engine's global LateUpdate event
+		*/
+		static OvTools::Eventing::Event<float> LateUpdateEvent;
+
+		/**
+		* Moves every animator's graph on and has its skinned mesh sample it, once every actor's OnUpdate has run (the
+		* parameters the scripts set apply in the same frame) and before any OnLateUpdate. Called by LateUpdate
+		* @param p_deltaTime
+		*/
+		void UpdateAnimators(float p_deltaTime);
+
+		/**
+		* Applies the animation constraints over the frame's pose, once the scripts have run: every look at, then every
+		* spring bones (whose chains hang from the looks' bones). Called by LateUpdate
+		* @param p_deltaTime
+		*/
+		void UpdateAnimationConstraints(float p_deltaTime);
+
+		/**
+		* Works out the pose of every skinned mesh that needs it, once the scripts have run and before the bone
+		* attachments read it: a pose set many times in the frame is worked out once. Called by LateUpdate.
+		*/
+		void UpdateSkinnedMeshes();
+
+		/**
 		* Places every bone attachment on its bone, parents first. Called at the end of LateUpdate, once every script
 		* has run.
 		*/
 		void UpdateBoneAttachments();
+
+		/**
+		* Moves every particle system's clock on, once the actors are where the frame leaves them
+		* @param p_deltaTime
+		*/
+		void UpdateParticleSystems(float p_deltaTime);
 
 		/**
 		* Create an actor with a default name and return a reference to it.
@@ -163,6 +217,12 @@ namespace OvCore::SceneSystem
 		* Collect garbages by removing Destroyed-marked actors
 		*/
 		void CollectGarbages();
+
+		/**
+		* Deletes every actor. Each first runs its last callbacks (OnDisable, OnDestroy) while all the others are still
+		* there; then the actors are deleted one by one, each forgotten by the scene as it goes
+		*/
+		void DestroyAllActors();
 
 		/**
 		* Return the first actor identified by the given name, or nullptr on fail
@@ -228,6 +288,17 @@ namespace OvCore::SceneSystem
 		const FastAccessComponents& GetFastAccessComponents() const;
 
 		/**
+		* Returns the scene's navigation mesh, built from its static colliders by Navigation.Build, and freed with it
+		*/
+		Navigation::NavMesh& GetNavigation();
+
+		/**
+		* Returns the file an asset path names: in the project's assets, or the engine's for a path starting with ':'
+		* @param p_path
+		*/
+		std::filesystem::path GetRealAssetPath(const std::string& p_path) const;
+
+		/**
 		* Serialize the scene
 		* @param p_doc
 		* @param p_root
@@ -242,7 +313,6 @@ namespace OvCore::SceneSystem
 		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_root) override;
 
 	private:
-		std::filesystem::path GetRealAssetPath(const std::string& p_path) const;
 		void BeginBatchActorCreation();
 		void EndBatchActorCreation(bool p_startCreatedActors);
 		ECS::Actor* InstantiatePrefabInternal(const std::string& p_prefabPath, OvTools::Utils::OptRef<ECS::Actor> p_parent);
@@ -262,5 +332,6 @@ namespace OvCore::SceneSystem
 		FastAccessComponents m_fastAccessComponents;
 		std::filesystem::path m_projectAssetsPath;
 		std::filesystem::path m_engineAssetsPath;
+		std::unique_ptr<Navigation::NavMesh> m_navigation;
 	};
 }

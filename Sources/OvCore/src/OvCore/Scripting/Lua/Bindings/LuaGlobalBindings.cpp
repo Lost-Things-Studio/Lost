@@ -9,12 +9,16 @@
 #include <cstdint>
 #include <format>
 #include <limits>
+#include <unordered_set>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
 #include <OvDebug/Logger.h>
+#include <OvTools/Filesystem/SaveStorage.h>
 #include <OvMaths/FVector2.h>
 #include <OvMaths/FVector3.h>
 #include <OvTools/Time/Clock.h>
@@ -27,8 +31,10 @@
 #include "OvCore/Global/QuitRequest.h"
 #include "OvCore/Global/ServiceLocator.h"
 #include "OvCore/Helpers/DistanceField.h"
+#include "OvCore/Input/GameInput.h"
 #include "OvCore/Helpers/InputHelpers.h"
 #include "OvCore/SceneSystem/SceneManager.h"
+#include "OvCore/Scripting/Lua/LuaApi.h"
 #include "OvCore/ResourceManagement/ModelManager.h"
 #include "OvCore/ResourceManagement/ShaderManager.h"
 #include "OvCore/ResourceManagement/TextureManager.h"
@@ -37,7 +43,9 @@
 #include "OvCore/Scripting/Common/ScriptPropertyValue.h"
 #include "OvCore/Scripting/ScriptEngine.h"
 
+#include <OvPhysics/Core/PhysicsEngine.h>
 #include <OvPhysics/Entities/PhysicalObject.h>
+#include <OvPhysics/Settings/PhysicsSettings.h>
 
 #include <OvRendering/Geometry/Vertex.h>
 #include <OvRendering/Resources/Mesh.h>
@@ -45,10 +53,47 @@
 #include <OvWindowing/Cursor/ECursorShape.h>
 #include <OvWindowing/Inputs/InputManager.h>
 
-#include <sol/sol.hpp>
+#include <OvCore/Scripting/Lua/LuaComponentRef.h>
 
 namespace
 {
+	OvCore::Input::InputActions& Actions()
+	{
+		return OVSERVICE(OvCore::Input::InputActions);
+	}
+
+	/**
+	* Returns true if the project declares the action; an unknown one is logged once, and reads as released
+	*/
+	bool FindAction(const std::string& p_action, std::string_view p_function)
+	{
+		if (Actions().HasAction(p_action))
+		{
+			return true;
+		}
+
+		static std::unordered_set<std::string> reported;
+		if (reported.insert(p_action).second)
+		{
+			OVLOG_ERROR(std::format("Inputs.{}: the project declares no action named \"{}\"", p_function, p_action));
+		}
+
+		return false;
+	}
+
+	/**
+	* The gamepad a script names, 1 to 4, as the engine counts them, 0 to 3; when it names none, the first connected
+	*/
+	std::optional<int> ResolveGamepad(sol::optional<int> p_pad)
+	{
+		if (p_pad)
+		{
+			return *p_pad >= 1 && *p_pad <= OvWindowing::Inputs::Gamepads::kMaxGamepads ? std::optional<int>(*p_pad - 1) : std::nullopt;
+		}
+
+		return OvCore::Helpers::InputHelpers::GetFirstGamepad();
+	}
+
 	using Results = std::tuple<sol::object, sol::object>;
 
 	/**
@@ -283,7 +328,9 @@ void BindLuaGlobal(sol::state& p_luaState)
 	// Asset reference type, used in script local tables to declare asset properties.
 	// The inspector renders an asset picker for any field initialised with one of the
 	// factory functions below (Model(), Texture(), Shader(), Material(), Sound(), Prefab()).
+	// An asset reference is made by Model(), Texture()... and filled by the engine
 	p_luaState.new_usertype<AssetRef>("AssetRef",
+		sol::no_constructor,
 		"path", &AssetRef::path
 	);
 
@@ -295,7 +342,64 @@ void BindLuaGlobal(sol::state& p_luaState)
 	p_luaState["Sound"]    = []() { return AssetRef{EFT::SOUND,    ""}; };
 	p_luaState["Prefab"]   = []() { return AssetRef{EFT::PREFAB,   ""}; };
 
+	// Colours, enumerations and lists are declared the same way: Color(r, g, b[, a]), Enum({ "A", "B" }[, "A"]) and
+	// List("number" | "string" | "bool"[, { ... }]). The script receives a Vector4, the chosen name and a plain table
+	p_luaState.new_usertype<ColorValue>("ColorProperty", sol::no_constructor);
+	p_luaState.new_usertype<EnumValue>("EnumProperty", sol::no_constructor);
+	p_luaState.new_usertype<ListValue>("ListProperty", sol::no_constructor);
+
+	p_luaState["Color"] = [](sol::optional<float> p_r, sol::optional<float> p_g, sol::optional<float> p_b, sol::optional<float> p_a)
+	{
+		return ColorValue{ { p_r.value_or(1.0f), p_g.value_or(1.0f), p_b.value_or(1.0f), p_a.value_or(1.0f) } };
+	};
+
+	p_luaState["Enum"] = [](sol::table p_choices, sol::optional<std::string> p_default)
+	{
+		EnumValue property;
+
+		for (size_t index = 1; index <= p_choices.size(); ++index)
+		{
+			if (const auto choice = p_choices.get<sol::optional<std::string>>(index))
+				property.choices.push_back(*choice);
+		}
+
+		if (property.choices.empty())
+			throw std::runtime_error("Enum: give at least one choice, as a list of strings");
+
+		const bool knownDefault = p_default && std::find(property.choices.begin(), property.choices.end(), *p_default) != property.choices.end();
+		if (p_default && !knownDefault)
+			throw std::runtime_error(std::format("Enum: \"{}\" is not one of the choices", *p_default));
+
+		property.value = knownDefault ? *p_default : property.choices.front();
+		return property;
+	};
+
+	p_luaState["List"] = [](const std::string& p_itemType, sol::optional<sol::table> p_items)
+	{
+		const auto itemType = ListValue::ParseItemType(p_itemType);
+		if (!itemType)
+			throw std::runtime_error(std::format("List: \"{}\" is no item type (number, string or bool)", p_itemType));
+
+		ListValue property{ *itemType, {} };
+
+		for (size_t index = 1; p_items && index <= p_items->size(); ++index)
+		{
+			const sol::object item = (*p_items)[index];
+			const std::string text = item.is<bool>() ? (item.as<bool>() ? "true" : "false") : item.is<double>() ? std::format("{}", item.as<double>()) : item.is<std::string>() ? item.as<std::string>() : std::string{};
+
+			const auto normalized = ListValue::NormalizeItem(*itemType, text);
+			if (!normalized || (item.get_type() == sol::type::boolean) != (*itemType == ListValue::EItemType::BOOL))
+				throw std::runtime_error(std::format("List: item {} is not a {}", index, p_itemType));
+
+			property.items.push_back(*normalized);
+		}
+
+		return property;
+	};
+
+	// A scene, a hit and a ray's result come from the engine only: no script makes one
 	p_luaState.new_usertype<Scene>("Scene",
+		sol::no_constructor,
 		"FindActorByName", [](Scene& s, const std::string& name) -> std::optional<ActorRef> {
 			if (auto* actor = s.FindActorByName(name))
 				return ActorRef{actor->GetGUID()};
@@ -482,6 +586,33 @@ void BindLuaGlobal(sol::state& p_luaState)
 		{"BUTTON_MIDDLE",	EMouseButton::MOUSE_BUTTON_MIDDLE},
 	});
 
+	p_luaState.new_enum<EGamepadButton>("GamepadButton", {
+		{"A",				EGamepadButton::GAMEPAD_BUTTON_A},
+		{"B",				EGamepadButton::GAMEPAD_BUTTON_B},
+		{"X",				EGamepadButton::GAMEPAD_BUTTON_X},
+		{"Y",				EGamepadButton::GAMEPAD_BUTTON_Y},
+		{"LEFT_BUMPER",		EGamepadButton::GAMEPAD_BUTTON_LEFT_BUMPER},
+		{"RIGHT_BUMPER",	EGamepadButton::GAMEPAD_BUTTON_RIGHT_BUMPER},
+		{"BACK",			EGamepadButton::GAMEPAD_BUTTON_BACK},
+		{"START",			EGamepadButton::GAMEPAD_BUTTON_START},
+		{"GUIDE",			EGamepadButton::GAMEPAD_BUTTON_GUIDE},
+		{"LEFT_THUMB",		EGamepadButton::GAMEPAD_BUTTON_LEFT_THUMB},
+		{"RIGHT_THUMB",		EGamepadButton::GAMEPAD_BUTTON_RIGHT_THUMB},
+		{"DPAD_UP",			EGamepadButton::GAMEPAD_BUTTON_DPAD_UP},
+		{"DPAD_RIGHT",		EGamepadButton::GAMEPAD_BUTTON_DPAD_RIGHT},
+		{"DPAD_DOWN",		EGamepadButton::GAMEPAD_BUTTON_DPAD_DOWN},
+		{"DPAD_LEFT",		EGamepadButton::GAMEPAD_BUTTON_DPAD_LEFT},
+	});
+
+	p_luaState.new_enum<EGamepadAxis>("GamepadAxis", {
+		{"LEFT_X",			EGamepadAxis::GAMEPAD_AXIS_LEFT_X},
+		{"LEFT_Y",			EGamepadAxis::GAMEPAD_AXIS_LEFT_Y},
+		{"RIGHT_X",			EGamepadAxis::GAMEPAD_AXIS_RIGHT_X},
+		{"RIGHT_Y",			EGamepadAxis::GAMEPAD_AXIS_RIGHT_Y},
+		{"LEFT_TRIGGER",	EGamepadAxis::GAMEPAD_AXIS_LEFT_TRIGGER},
+		{"RIGHT_TRIGGER",	EGamepadAxis::GAMEPAD_AXIS_RIGHT_TRIGGER},
+	});
+
 	p_luaState.new_enum<Cursor::ECursorShape>("CursorShape", {
 		{"ARROW",		Cursor::ECursorShape::ARROW},
 		{"IBEAM",		Cursor::ECursorShape::IBEAM},
@@ -499,19 +630,114 @@ void BindLuaGlobal(sol::state& p_luaState)
 	);
 
 	p_luaState.create_named_table("Inputs",
-		"GetKeyDown", [](EKey p_key) { return OvCore::Helpers::InputHelpers::GetKeyDown(p_key); },
-		"GetKeyUp", [](EKey p_key) { return OvCore::Helpers::InputHelpers::GetKeyUp(p_key); },
-		"GetKey", [](EKey p_key) { return OvCore::Helpers::InputHelpers::GetKey(p_key); },
+		"GetKeyDown", [](EKey p_key, sol::optional<bool> p_includeConsumed) { return OvCore::Helpers::InputHelpers::GetKeyDown(p_key, p_includeConsumed.value_or(false)); },
+		"GetKeyUp", [](EKey p_key, sol::optional<bool> p_includeConsumed) { return OvCore::Helpers::InputHelpers::GetKeyUp(p_key, p_includeConsumed.value_or(false)); },
+		"GetKey", [](EKey p_key, sol::optional<bool> p_includeConsumed) { return OvCore::Helpers::InputHelpers::GetKey(p_key, p_includeConsumed.value_or(false)); },
 		"GetKeyName", [](EKey p_key) { return OVSERVICE(InputManager).GetKeyName(p_key); },
-		"GetMouseButtonDown", [](EMouseButton p_button) { return OvCore::Helpers::InputHelpers::GetMouseButtonDown(p_button); },
-		"GetMouseButtonUp", [](EMouseButton p_button) { return OvCore::Helpers::InputHelpers::GetMouseButtonUp(p_button); },
-		"GetMouseButton", [](EMouseButton p_button) { return OvCore::Helpers::InputHelpers::GetMouseButton(p_button); },
+		"GetKeyRepeatCount", [](EKey p_key, sol::optional<bool> p_includeConsumed) { return OvCore::Helpers::InputHelpers::GetKeyRepeatCount(p_key, p_includeConsumed.value_or(false)); },
+		"GetTypedText", [](sol::optional<bool> p_includeConsumed) { return OvCore::Helpers::InputHelpers::GetTypedText(p_includeConsumed.value_or(false)); },
+		"GetMouseButtonDown", [](EMouseButton p_button, sol::optional<bool> p_includeConsumed) { return OvCore::Helpers::InputHelpers::GetMouseButtonDown(p_button, p_includeConsumed.value_or(false)); },
+		"GetMouseButtonUp", [](EMouseButton p_button, sol::optional<bool> p_includeConsumed) { return OvCore::Helpers::InputHelpers::GetMouseButtonUp(p_button, p_includeConsumed.value_or(false)); },
+		"GetMouseButton", [](EMouseButton p_button, sol::optional<bool> p_includeConsumed) { return OvCore::Helpers::InputHelpers::GetMouseButton(p_button, p_includeConsumed.value_or(false)); },
 		"GetMousePos", []() { return OvCore::Helpers::InputHelpers::GetMousePosition(); },
 		"GetViewportSize", []() { return OvCore::Helpers::InputHelpers::GetViewportSize(); },
-		"GetMouseScroll", []() { return OvCore::Helpers::InputHelpers::GetMouseScroll(); },
+		"GetMouseScroll", [](sol::optional<bool> p_includeConsumed) { return OvCore::Helpers::InputHelpers::GetMouseScroll(p_includeConsumed.value_or(false)); },
 		"LockMouse", []() { OvCore::Helpers::InputHelpers::SetMouseLocked(true); },
 		"UnlockMouse", []() { OvCore::Helpers::InputHelpers::SetMouseLocked(false); },
-		"SetCursorShape", [](Cursor::ECursorShape p_shape) { OvCore::Helpers::InputHelpers::SetCursorShape(p_shape); }
+		"SetCursorShape", [](Cursor::ECursorShape p_shape) { OvCore::Helpers::InputHelpers::SetCursorShape(p_shape); },
+		"IsGamepadConnected", [](sol::optional<int> p_pad) { const auto pad = ResolveGamepad(p_pad); return pad && OvCore::Helpers::InputHelpers::IsGamepadConnected(*pad); },
+		"GetGamepadName", [](sol::optional<int> p_pad) { const auto pad = ResolveGamepad(p_pad); return pad ? OvCore::Helpers::InputHelpers::GetGamepadName(*pad) : std::string{}; },
+		"GetGamepadButton", [](EGamepadButton p_button, sol::optional<int> p_pad, sol::optional<bool> p_includeConsumed) { const auto pad = ResolveGamepad(p_pad); return pad && OvCore::Helpers::InputHelpers::GetGamepadButton(*pad, p_button, p_includeConsumed.value_or(false)); },
+		"GetGamepadButtonDown", [](EGamepadButton p_button, sol::optional<int> p_pad, sol::optional<bool> p_includeConsumed) { const auto pad = ResolveGamepad(p_pad); return pad && OvCore::Helpers::InputHelpers::GetGamepadButtonDown(*pad, p_button, p_includeConsumed.value_or(false)); },
+		"GetGamepadButtonUp", [](EGamepadButton p_button, sol::optional<int> p_pad, sol::optional<bool> p_includeConsumed) { const auto pad = ResolveGamepad(p_pad); return pad && OvCore::Helpers::InputHelpers::GetGamepadButtonUp(*pad, p_button, p_includeConsumed.value_or(false)); },
+		"GetGamepadAxis", [](EGamepadAxis p_axis, sol::optional<int> p_pad, sol::optional<bool> p_includeConsumed) { const auto pad = ResolveGamepad(p_pad); return pad ? OvCore::Helpers::InputHelpers::GetGamepadAxis(*pad, p_axis, p_includeConsumed.value_or(false)) : 0.0f; },
+		"SetGamepadDeadZone", [](float p_deadZone) { OvCore::Helpers::InputHelpers::SetGamepadDeadZone(p_deadZone); },
+		"GetGamepadDeadZone", []() { return OvCore::Helpers::InputHelpers::GetGamepadDeadZone(); },
+		"GetAction", [](const std::string& p_action) { return FindAction(p_action, "GetAction") && Actions().IsHeld(p_action); },
+		"GetActionDown", [](const std::string& p_action) { return FindAction(p_action, "GetActionDown") && Actions().IsPressed(p_action); },
+		"GetActionUp", [](const std::string& p_action) { return FindAction(p_action, "GetActionUp") && Actions().IsReleased(p_action); },
+		"GetActionValue", [](const std::string& p_action) { return FindAction(p_action, "GetActionValue") ? Actions().GetValue(p_action) : 0.0f; },
+		"GetActionNames", [](sol::this_state p_state) { return sol::as_table(Actions().GetActionNames()); },
+		"GetBindings", [](const std::string& p_action, sol::this_state p_state) -> sol::object
+		{
+			const auto bindings = Actions().GetBindings(p_action);
+			if (!bindings)
+			{
+				return sol::make_object(p_state, sol::lua_nil);
+			}
+
+			std::vector<std::string> names;
+			for (const auto& binding : *bindings)
+			{
+				names.push_back(binding ? OvCore::Input::GetInputName(*binding) : std::string{});
+			}
+
+			return sol::make_object(p_state, sol::as_table(names));
+		},
+		"SetBinding", [](const std::string& p_action, int p_slot, sol::optional<std::string> p_input) -> std::tuple<bool, sol::optional<std::string>>
+		{
+			std::optional<OvCore::Input::InputId> input;
+			if (p_input && !p_input->empty())
+			{
+				input = OvCore::Input::ParseInput(*p_input);
+				if (!input)
+				{
+					return { false, std::format("no input named \"{}\"", *p_input) };
+				}
+			}
+
+			std::string error;
+			if (p_slot < 1 || !Actions().SetBinding(p_action, static_cast<size_t>(p_slot - 1), input, error))
+			{
+				return { false, error.empty() ? std::format("no slot {}: an action has {}", p_slot, OvCore::Input::InputActions::kSlotCount) : error };
+			}
+
+			OvCore::Input::SaveBindings(OVSERVICE(OvTools::Filesystem::SaveStorage), Actions());
+			return { true, sol::nullopt };
+		},
+		"ResetBindings", [](sol::optional<std::string> p_action)
+		{
+			Actions().ResetBindings(p_action ? std::optional<std::string_view>(*p_action) : std::nullopt);
+			OvCore::Input::SaveBindings(OVSERVICE(OvTools::Filesystem::SaveStorage), Actions());
+		},
+		"GetPressedInput", []() -> sol::optional<std::string>
+		{
+			const auto input = Actions().GetPressedInput();
+			return input ? sol::optional<std::string>(OvCore::Input::GetInputName(*input)) : sol::nullopt;
+		},
+		"GetInputName", [](const std::string& p_input)
+		{
+			const auto input = OvCore::Input::ParseInput(p_input);
+			return input ? OvCore::Input::GetInputLabel(*input) : std::string{};
+		},
+		"Consume", [](const std::string& p_input, sol::optional<int> p_pad) -> std::tuple<bool, sol::optional<std::string>>
+		{
+			const auto input = OvCore::Input::ParseInput(p_input);
+			if (!input)
+			{
+				return { false, std::format("no input named \"{}\"", p_input) };
+			}
+
+			const bool gamepad = input->device == OvCore::Input::InputId::EDevice::GAMEPAD_BUTTON || input->device == OvCore::Input::InputId::EDevice::GAMEPAD_AXIS;
+			const auto pad = gamepad ? ResolveGamepad(p_pad) : std::optional<int>(0);
+			if (!pad)
+			{
+				return { false, sol::nullopt };
+			}
+
+			const bool hidden = OvCore::Helpers::InputHelpers::Consume(*input, *pad);
+
+			// The actions read this frame's inputs before the scripts: they leave the input out at once
+			Actions().Refresh(OvCore::Input::GameInputSource{});
+			return { hidden, sol::nullopt };
+		},
+		"ConsumeMouseScroll", []() { OvCore::Helpers::InputHelpers::ConsumeMouseScroll(); },
+		"SetKeyboardCaptured", [](bool p_captured)
+		{
+			OvCore::Helpers::InputHelpers::SetKeyboardCaptured(p_captured);
+			Actions().Refresh(OvCore::Input::GameInputSource{});
+		},
+		"IsKeyboardCaptured", []() { return OvCore::Helpers::InputHelpers::IsKeyboardCaptured(); }
 	);
 
 	p_luaState.create_named_table("Scenes",
@@ -529,6 +755,32 @@ void BindLuaGlobal(sol::state& p_luaState)
 		"CreateModel", &CreateModel
 	);
 
+	// The sandbox's own require: a module of the project's assets, or of the engine's with ":"
+	p_luaState.set_function("require", [](const std::string& p_path) { return OVSERVICE(ScriptEngine).RequireScript(p_path); });
+
+	// Frame events outside any Behaviour, for the modules that keep a clock (timers, tweens), and the game's end, for
+	// those that keep something to write (saves): an owner, an actor, ends its callback with it
+	using EFrameEvent = OvCore::Scripting::LuaScriptEngine::EFrameEvent;
+	const auto addFrameCallback = [](EFrameEvent p_event, std::string_view p_name)
+	{
+		return [p_event, p_name](const sol::object& p_callback, sol::optional<ActorRef> p_owner) -> uint64_t
+		{
+			if (p_callback.get_type() != sol::type::function)
+			{
+				throw std::runtime_error(std::format("Events.{}: a function is expected", p_name));
+			}
+
+			return OVSERVICE(ScriptEngine).AddFrameCallback(p_event, p_callback, p_owner ? std::optional<ActorRef>(*p_owner) : std::nullopt);
+		};
+	};
+
+	p_luaState.create_named_table("Events",
+		"AddUpdate", addFrameCallback(EFrameEvent::UPDATE, "AddUpdate"),
+		"AddLateUpdate", addFrameCallback(EFrameEvent::LATE_UPDATE, "AddLateUpdate"),
+		"AddQuit", addFrameCallback(EFrameEvent::QUIT, "AddQuit"),
+		"Remove", [](uint64_t p_id) { return OVSERVICE(ScriptEngine).RemoveFrameCallback(p_id); }
+	);
+
 	p_luaState.create_named_table("Math",
 		"RandomInt", [](int p_min, int p_max) { return OvTools::Utils::Random::Generate(p_min, p_max); },
 		"RandomFloat", [](float p_min, float p_max) { return OvTools::Utils::Random::Generate(p_min, p_max); },
@@ -537,12 +789,109 @@ void BindLuaGlobal(sol::state& p_luaState)
 	);
 
 	p_luaState.new_usertype<PhysicsWrapper::RaycastHit>("RaycastHit",
+		sol::no_constructor,
 		"FirstResultObject", &PhysicsWrapper::RaycastHit::FirstResultObject,
 		"ResultObjects", &PhysicsWrapper::RaycastHit::ResultObjects
 	);
 
+	// A layer from Lua is an index (0 to PhysicsSettings::kLayerCount - 1), as in the files and the project settings
+	const auto isLayer = [](int p_layer)
+	{
+		return p_layer >= 0 && p_layer < OvPhysics::Settings::PhysicsSettings::kLayerCount;
+	};
+
+	// A query's optional arguments: the layers it sees (a mask, every layer when nil) and whether it reports triggers
+	const auto querySettings = [](sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+	{
+		return OvPhysics::Settings::QuerySettings{
+			static_cast<uint16_t>(p_layerMask.value_or(0xFFFF) & 0xFFFF),
+			p_includeTriggers.value_or(false)
+		};
+	};
+
+	p_luaState.new_usertype<PhysicsWrapper::Hit>("PhysicsHit",
+		sol::no_constructor,
+		"Object", sol::readonly(&PhysicsWrapper::Hit::Object),
+		"Point", sol::readonly(&PhysicsWrapper::Hit::Point),
+		"Normal", sol::readonly(&PhysicsWrapper::Hit::Normal),
+		"Distance", sol::readonly(&PhysicsWrapper::Hit::Distance)
+	);
+
 	p_luaState.create_named_table("Physics",
-		"Raycast", [](const OvMaths::FVector3& p_origin, const OvMaths::FVector3& p_direction, float p_distance) { return PhysicsWrapper::Raycast(p_origin, p_direction, p_distance); }
+		"Raycast", [](const OvMaths::FVector3& p_origin, const OvMaths::FVector3& p_direction, float p_distance) { return PhysicsWrapper::Raycast(p_origin, p_direction, p_distance); },
+		"GetLayerIndex", [](const std::string& p_name) -> std::optional<int>
+		{
+			if (const auto layer = OVSERVICE(OvPhysics::Core::PhysicsEngine).FindLayer(p_name))
+			{
+				return static_cast<int>(*layer);
+			}
+
+			return std::nullopt;
+		},
+		"GetLayerName", [isLayer](int p_layer) -> std::string
+		{
+			return isLayer(p_layer) ? OVSERVICE(OvPhysics::Core::PhysicsEngine).GetLayerName(static_cast<uint16_t>(p_layer)) : std::string{};
+		},
+		"DoLayersCollide", [isLayer](int p_layer1, int p_layer2)
+		{
+			return isLayer(p_layer1) && isLayer(p_layer2) &&
+				OVSERVICE(OvPhysics::Core::PhysicsEngine).DoLayersCollide(static_cast<uint16_t>(p_layer1), static_cast<uint16_t>(p_layer2));
+		},
+		"SetLayersCollide", [isLayer](int p_layer1, int p_layer2, bool p_collide)
+		{
+			if (!isLayer(p_layer1) || !isLayer(p_layer2))
+			{
+				OVLOG_WARNING(std::format("Physics.SetLayersCollide: no layer {} or {}", p_layer1, p_layer2));
+				return;
+			}
+
+			OVSERVICE(OvPhysics::Core::PhysicsEngine).SetLayersCollide(static_cast<uint16_t>(p_layer1), static_cast<uint16_t>(p_layer2), p_collide);
+		},
+		"GetLayerMask", [isLayer](sol::variadic_args p_layers)
+		{
+			int mask = 0;
+
+			for (const auto layer : p_layers)
+			{
+				if (layer.get_type() == sol::type::number && isLayer(layer.as<int>()))
+				{
+					mask |= 1 << layer.as<int>();
+				}
+				else if (layer.get_type() == sol::type::string)
+				{
+					if (const auto index = OVSERVICE(OvPhysics::Core::PhysicsEngine).FindLayer(layer.as<std::string>()))
+					{
+						mask |= 1 << *index;
+					}
+					else
+					{
+						OVLOG_WARNING("Physics.GetLayerMask: no layer \"" + layer.as<std::string>() + "\"");
+					}
+				}
+				else
+				{
+					OVLOG_WARNING("Physics.GetLayerMask: a layer is a name or an index from 0 to 15");
+				}
+			}
+
+			return mask;
+		},
+		"CastRay", [querySettings](const OvMaths::FVector3& p_origin, const OvMaths::FVector3& p_direction, float p_distance, sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+		{
+			return sol::as_table(PhysicsWrapper::CastRay(p_origin, p_direction, p_distance, querySettings(p_layerMask, p_includeTriggers)));
+		},
+		"CastSphere", [querySettings](const OvMaths::FVector3& p_origin, float p_radius, const OvMaths::FVector3& p_direction, float p_distance, sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+		{
+			return sol::as_table(PhysicsWrapper::CastSphere(p_origin, p_radius, p_direction, p_distance, querySettings(p_layerMask, p_includeTriggers)));
+		},
+		"OverlapSphere", [querySettings](const OvMaths::FVector3& p_center, float p_radius, sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+		{
+			return sol::as_table(PhysicsWrapper::OverlapSphere(p_center, p_radius, querySettings(p_layerMask, p_includeTriggers)));
+		},
+		"OverlapBox", [querySettings](const OvMaths::FVector3& p_center, const OvMaths::FVector3& p_halfExtents, sol::optional<OvMaths::FQuaternion> p_rotation, sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+		{
+			return sol::as_table(PhysicsWrapper::OverlapBox(p_center, p_halfExtents, p_rotation.value_or(OvMaths::FQuaternion::Identity), querySettings(p_layerMask, p_includeTriggers)));
+		}
 	);
 
 	p_luaState.create_named_table("Time",
@@ -553,6 +902,8 @@ void BindLuaGlobal(sol::state& p_luaState)
 	);
 
 	p_luaState.create_named_table("Application",
-		"Quit", []() { OvCore::Global::QuitRequest::RequestedEvent.Invoke(); }
+		"Quit", []() { OvCore::Global::QuitRequest::RequestedEvent.Invoke(); },
+		"GetEngineVersion", []() { return std::string(LOST_VERSION); },
+		"GetApiVersion", []() { return std::make_tuple(OvCore::Scripting::LuaApi::kVersionMajor, OvCore::Scripting::LuaApi::kVersionMinor); }
 	);
 }

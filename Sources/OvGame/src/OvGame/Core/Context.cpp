@@ -4,9 +4,11 @@
 * @licence: MIT
 */
 
+#include <OvCore/Input/GameInput.h>
 #include <filesystem>
 
 #include <OvCore/Global/ServiceLocator.h>
+#include <OvCore/Helpers/ProjectSettings.h>
 #include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvCore/Scripting/ScriptEngine.h>
 
@@ -47,12 +49,14 @@ std::array<int, 4> CalculateOptimalWindowSizeAndPosition(
 	};
 }
 
-OvGame::Core::Context::Context() :
-	engineAssetsPath(std::filesystem::current_path() / "Data" / "Engine"),
-	projectAssetsPath(std::filesystem::current_path() / "Data" / "User" / "Assets"),
-	projectSettings((std::filesystem::current_path() / "Data" / "User" / "Game.ini").string()),
+OvGame::Core::Context::Context(const LaunchOptions& p_options) :
+	engineAssetsPath(p_options.engineAssets.value_or(std::filesystem::current_path() / "Data" / "Engine")),
+	projectAssetsPath(p_options.projectFile ? p_options.projectFile->parent_path() / "Assets" : std::filesystem::current_path() / "Data" / "User" / "Assets"),
+	projectSettings(p_options.projectFile.value_or(std::filesystem::current_path() / "Data" / "User" / "Game.ini").string()),
 	sceneManager(projectAssetsPath.string(), engineAssetsPath.string())
 {
+	startScene = p_options.scene.value_or(projectSettings.GetOrDefault<std::string>("start_scene", {}));
+
 	ModelManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	TextureManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	ShaderManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
@@ -66,7 +70,9 @@ OvGame::Core::Context::Context() :
 	uiResourceRegistry.ProvideDefinition({
 		.imageMaterialPath = ":Materials/Image.ovmat",
 		.textMaterialPath = ":Materials/Text.ovmat",
-		.defaultFontPath = ":Fonts/Roboto-Regular.ttf"
+		.defaultFontPath = ":Fonts/Roboto-Regular.ttf",
+		.litImageMaterialPath = ":Materials/ImageLit.ovmat",
+		.litTextMaterialPath = ":Materials/TextLit.ovmat"
 	});
 
 	/* Settings */
@@ -87,6 +93,7 @@ OvGame::Core::Context::Context() :
 	projectSettings.TryGet("resizable", windowSettings.resizable);
 	projectSettings.TryGet("fullscreen", windowSettings.fullscreen);
 	windowSettings.samples = static_cast<uint32_t>(samples);
+	windowSettings.visible = !p_options.hiddenWindow;
 
 	/* Window creation */
 	device = std::make_unique<OvWindowing::Context::Device>(deviceSettings);
@@ -155,10 +162,13 @@ OvGame::Core::Context::Context() :
 	uiManager->EnableDocking(false);
 
 	/* Audio */
-	audioEngine = std::make_unique<OvAudio::Core::AudioEngine>();
+	audioEngine = std::make_unique<OvAudio::Core::AudioEngine>(
+		p_options.nullAudio ? OvAudio::Core::EDriver::NULL_DRIVER : OvAudio::Core::EDriver::AUTO
+	);
+	audioEngine->SetBuses(OvCore::Helpers::ProjectSettings::ReadAudioBuses(projectSettings));
 
 	/* Physics engine */
-	physicsEngine = std::make_unique<OvPhysics::Core::PhysicsEngine>(OvPhysics::Settings::PhysicsSettings{ {0.0f, projectSettings.Get<float>("gravity"), 0.0f } });
+	physicsEngine = std::make_unique<OvPhysics::Core::PhysicsEngine>(OvCore::Helpers::ProjectSettings::ReadPhysicsSettings(projectSettings));
 
 	/* Scripting */
 	scriptEngine = std::make_unique<OvCore::Scripting::ScriptEngine>(
@@ -166,9 +176,16 @@ OvGame::Core::Context::Context() :
 		engineAssetsPath
 	);
 
+	/* What the scripts may do: their saves, their Json and the longest frame step */
+	const auto runtimeLimits = OvCore::Helpers::ProjectSettings::ReadRuntimeLimits(projectSettings);
+
 	saveStorage = std::make_unique<OvTools::Filesystem::SaveStorage>(
-		OvTools::Filesystem::SaveStorage::GetDefaultRoot(projectSettings.GetOrDefault<std::string>("executable_name", "Game"))
+		OvTools::Filesystem::SaveStorage::GetDefaultRoot(OvCore::Helpers::ProjectSettings::GetSaveName(projectSettings)),
+		runtimeLimits.storage
 	);
+
+	OvCore::Scripting::SetJsonLimits(runtimeLimits.json);
+	clock.SetMaxDeltaTime(runtimeLimits.maxFrameDelta);
 
 	/* Service Locator providing */
 	ServiceLocator::Provide<OvPhysics::Core::PhysicsEngine>(*physicsEngine);
@@ -185,6 +202,15 @@ OvGame::Core::Context::Context() :
 	ServiceLocator::Provide<OvAudio::Core::AudioEngine>(*audioEngine);
 	ServiceLocator::Provide<OvCore::Scripting::ScriptEngine>(*scriptEngine);
 	ServiceLocator::Provide<OvTools::Filesystem::SaveStorage>(*saveStorage);
+
+	/* The project's input actions, and the player's bindings from the save folder */
+	inputActions = std::make_unique<OvCore::Input::InputActions>();
+	OvCore::Input::LoadProjectActions(projectSettings, projectAssetsPath, *saveStorage, *inputActions);
+	ServiceLocator::Provide<OvCore::Input::InputActions>(*inputActions);
+
+	localization = std::make_unique<OvCore::Localization::Localization>();
+	OvCore::Localization::LoadProjectTranslations(projectSettings, projectAssetsPath, *saveStorage, *localization);
+	ServiceLocator::Provide<OvCore::Localization::Localization>(*localization);
 	ServiceLocator::Provide<OvTools::Time::Clock>(clock);
 
 	framebuffer = std::make_unique<baregl::Framebuffer>("Main");

@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <OvCore/Input/GameInput.h>
 #include <algorithm>
 #include <charconv>
 #include "OvDebug/Assertion.h"
@@ -20,9 +21,11 @@
 
 #include <OvDebug/Logger.h>
 
+#include <OvCore/ECS/Components/CAnimator.h>
 #include <OvCore/ECS/Components/CAudioSource.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
+#include <OvCore/ECS/Components/CVegetation.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
@@ -986,6 +989,13 @@ void OvEditor::Core::EditorActions::StartPlaying()
 			m_sceneBackup->InsertFirstChild(node);
 			m_context.sceneManager.GetCurrentScene()->OnSerialize(*m_sceneBackup, node);
 			OvCore::Helpers::InputHelpers::ResetGameInputGate();
+
+			// The actions file may have changed since the last session
+			OvCore::Input::LoadProjectActions(m_context.projectSettings, m_context.projectAssetsPath, *m_context.saveStorage, *m_context.inputActions);
+
+			// So may the translations, and the player's language
+			OvCore::Localization::LoadProjectTranslations(m_context.projectSettings, m_context.projectAssetsPath, *m_context.saveStorage, *m_context.localization);
+
 			m_panelsManager.GetPanelAs<OvEditor::Panels::GameView>("Game View").Focus();
 			m_context.sceneManager.GetCurrentScene()->Play();
 			SetEditorMode(EEditorMode::PLAY);
@@ -1009,10 +1019,13 @@ void OvEditor::Core::EditorActions::StopPlaying()
 {
 	if (m_editorMode != EEditorMode::EDIT)
 	{
+		// The game's scripts hear it end (Events.AddQuit), as a built game's do, before its scene goes
+		m_context.scriptEngine->NotifyQuit();
 		m_context.window->SetCursorMode(OvWindowing::Cursor::ECursorMode::NORMAL);
 		OvCore::Helpers::InputHelpers::UpdateGameInputGate(false, true); // The game's lock and cursor shape leave with it
 		OvCore::Helpers::InputHelpers::ResetGameInputGate();
 		m_context.clock.SetTimeScale(1.0f);
+		m_context.ApplyProjectSettings(); // A script may have changed which layers collide
 		SetEditorMode(EEditorMode::EDIT);
 		bool loadedFromDisk = m_context.sceneManager.IsCurrentSceneLoadedFromDisk();
 		std::string sceneSourcePath = m_context.sceneManager.GetCurrentSceneSourcePath();
@@ -1028,6 +1041,18 @@ void OvEditor::Core::EditorActions::StopPlaying()
 		if (loadedFromDisk)
 			m_context.sceneManager.StoreCurrentSceneSourcePath(sceneSourcePath); // To bo able to save or reload the scene whereas the scene is loaded from memory (Supposed to have no path)
 		m_sceneBackup.reset();
+
+		// The sounds the game played once go with it, as its sources' did, and the volumes it set
+		m_context.audioEngine->StopOneShots();
+		m_context.audioEngine->ResetVolumes();
+
+		// A game stopped while paused leaves the audio suspended, and the next one would start without it. Its sounds
+		// went with its scene, so resuming now plays none of them again
+		if (m_context.audioEngine->IsSuspended())
+		{
+			m_context.audioEngine->Unsuspend();
+		}
+
 		EDITOR_PANEL(Panels::SceneView, "Scene View").Focus();
 		if (auto actorInstance = m_context.sceneManager.GetCurrentScene()->FindActorByID(focusedActorID))
 			EDITOR_PANEL(Panels::Inspector, "Inspector").FocusActor(*actorInstance);
@@ -1552,7 +1577,7 @@ bool OvEditor::Core::EditorActions::ImportAsset(const std::string& p_initialDest
 	std::string textureFormats = "*.png;*.jpeg;*.jpg;*.tga;*.hdr;";
 	std::string shaderFormats = "*.ovfx;";
 	std::string shaderPartFormats = "*.ovfxh;";
-	std::string soundFormats = "*.mp3;*.ogg;*.wav;";
+	std::string soundFormats = "*.mp3;*.ogg;*.wav;*.flac;";
 	std::string scriptFormats = "*.lua;";
 	std::string fontFormats = "*.ttf;*.otf;";
 
@@ -1562,7 +1587,7 @@ bool OvEditor::Core::EditorActions::ImportAsset(const std::string& p_initialDest
 	selectAssetDialog.AddFileType("Texture (.png, .jpeg, .jpg, .tga, .hdr)", textureFormats);
 	selectAssetDialog.AddFileType("Shader (.ovfx)", shaderFormats);
 	selectAssetDialog.AddFileType("Shader Parts (.ovfxh)", shaderPartFormats);
-	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav)", soundFormats);
+	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav, .flac)", soundFormats);
 	selectAssetDialog.AddFileType("Script (.lua)", scriptFormats);
 	selectAssetDialog.AddFileType("Font (.ttf, .otf)", fontFormats);
 	selectAssetDialog.Show();
@@ -1639,7 +1664,7 @@ bool OvEditor::Core::EditorActions::ImportAssetAtLocation(const std::string& p_d
 	std::string textureFormats = "*.png;*.jpeg;*.jpg;*.tga;*.hdr;";
 	std::string shaderFormats = "*.ovfx;";
 	std::string shaderPartFormats = "*.ovfxh;";
-	std::string soundFormats = "*.mp3;*.ogg;*.wav;";
+	std::string soundFormats = "*.mp3;*.ogg;*.wav;*.flac;";
 	std::string scriptFormats = "*.lua;";
 	std::string fontFormats = "*.ttf;*.otf;";
 
@@ -1649,7 +1674,7 @@ bool OvEditor::Core::EditorActions::ImportAssetAtLocation(const std::string& p_d
 	selectAssetDialog.AddFileType("Texture (.png, .jpeg, .jpg, .tga, .hdr)", textureFormats);
 	selectAssetDialog.AddFileType("Shader (.ovfx)", shaderFormats);
 	selectAssetDialog.AddFileType("Shader Parts (.ovfxh)", shaderPartFormats);
-	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav)", soundFormats);
+	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav, .flac)", soundFormats);
 	selectAssetDialog.AddFileType("Script (.lua)", scriptFormats);
 	selectAssetDialog.AddFileType("Font (.ttf, .otf)", fontFormats);
 	selectAssetDialog.Show();
@@ -1971,8 +1996,13 @@ void OvEditor::Core::EditorActions::PropagateFileRename(std::string p_previousNa
 
 			if (auto currentScene = m_context.sceneManager.GetCurrentScene())
 				for (auto actor : currentScene->GetActors())
-					if (auto modelRenderer = actor->GetComponent<OvCore::ECS::Components::CModelRenderer>(); modelRenderer && modelRenderer->GetModel() == model)
-						modelRenderer->SetModel(nullptr);
+				{
+					if (auto modelRenderer = actor->GetComponent<OvCore::ECS::Components::CModelRenderer>())
+						modelRenderer->ForgetModel(model); // Its own model and its levels
+
+					if (auto vegetation = actor->GetComponent<OvCore::ECS::Components::CVegetation>())
+						vegetation->ForgetModel(model);
+				}
 
 			OvCore::Global::ServiceLocator::Get<OvCore::ResourceManagement::ModelManager>().UnloadResource(p_previousName);
 		}
@@ -1991,8 +2021,13 @@ void OvEditor::Core::EditorActions::PropagateFileRename(std::string p_previousNa
 
 			if (auto currentScene = m_context.sceneManager.GetCurrentScene())
 				for (auto actor : currentScene->GetActors())
+				{
 					if (auto materialRenderer = actor->GetComponent<OvCore::ECS::Components::CMaterialRenderer>(); materialRenderer)
 						materialRenderer->RemoveMaterialByInstance(*material);
+
+					if (auto vegetation = actor->GetComponent<OvCore::ECS::Components::CVegetation>())
+						vegetation->ForgetMaterial(material);
+				}
 
 			OvCore::Global::ServiceLocator::Get<OvCore::ResourceManagement::MaterialManager>().UnloadResource(p_previousName);
 		}
@@ -2059,6 +2094,15 @@ void OvEditor::Core::EditorActions::PropagateFileRename(std::string p_previousNa
 		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::MATERIAL);
 		break;
 	case OvTools::Utils::PathParser::EFileType::SOUND:
+		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::SCENE);
+		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::PREFAB);
+		break;
+	case OvTools::Utils::PathParser::EFileType::ANIMATION_GRAPH:
+		if (auto currentScene = m_context.sceneManager.GetCurrentScene())
+			for (auto actor : currentScene->GetActors())
+				if (auto animator = actor->GetComponent<OvCore::ECS::Components::CAnimator>(); animator && animator->GetGraphPath() == p_previousName)
+					animator->SetGraphPath(p_newName);
+
 		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::SCENE);
 		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::PREFAB);
 		break;

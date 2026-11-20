@@ -80,14 +80,20 @@ namespace
 	}
 }
 
-OvTools::Filesystem::SaveStorage::SaveStorage(std::filesystem::path p_root) :
-	m_root(std::move(p_root))
+OvTools::Filesystem::SaveStorage::SaveStorage(std::filesystem::path p_root, SaveStorageLimits p_limits) :
+	m_root(std::move(p_root)),
+	m_limits(p_limits)
 {
 }
 
 const std::filesystem::path& OvTools::Filesystem::SaveStorage::GetRoot() const
 {
 	return m_root;
+}
+
+const OvTools::Filesystem::SaveStorageLimits& OvTools::Filesystem::SaveStorage::GetLimits() const
+{
+	return m_limits;
 }
 
 bool OvTools::Filesystem::SaveStorage::IsValidName(std::string_view p_name)
@@ -235,17 +241,28 @@ bool OvTools::Filesystem::SaveStorage::IsSafe(const std::filesystem::path& p_rel
 bool OvTools::Filesystem::SaveStorage::HasRoomFor(const std::filesystem::path& p_target, size_t p_size, std::string& p_error) const
 {
 	std::error_code error;
-
-	if (!std::filesystem::exists(m_root, error))
-	{
-		return true;
-	}
-
 	size_t total = 0;
 	size_t entries = 0;
 	bool replaces = false;
 
-	// Links are never followed, and an entry the walk cannot read is left out rather than failing the write
+	// The folders the write makes on the way to the file are entries too
+	size_t newFolders = 0;
+	std::filesystem::path folder = m_root;
+	const std::filesystem::path relativeFolder = p_target.parent_path().lexically_relative(m_root);
+
+	for (const auto& name : relativeFolder)
+	{
+		folder /= name;
+
+		std::error_code statusError;
+		if (name != "." && !std::filesystem::exists(std::filesystem::symlink_status(folder, statusError)))
+		{
+			++newFolders;
+		}
+	}
+
+	// Links are never followed, and an entry the walk cannot read is left out rather than failing the write. A folder
+	// not made yet holds nothing: the walk then ends at once
 	for (auto it = std::filesystem::recursive_directory_iterator(m_root, std::filesystem::directory_options::skip_permission_denied, error);
 		!error && it != std::filesystem::recursive_directory_iterator();
 		it.increment(error))
@@ -272,7 +289,7 @@ bool OvTools::Filesystem::SaveStorage::HasRoomFor(const std::filesystem::path& p
 		}
 	}
 
-	if (total + p_size > kMaxTotalSize || entries + (replaces ? 0 : 1) > kMaxEntryCount)
+	if (total + p_size > m_limits.maxTotalSize || entries + newFolders + (replaces ? 0 : 1) > m_limits.maxEntryCount)
 	{
 		p_error = "storage full";
 		return false;
@@ -316,7 +333,7 @@ bool OvTools::Filesystem::SaveStorage::Write(std::string_view p_path, std::strin
 		return false;
 	}
 
-	if (p_data.size() > kMaxFileSize)
+	if (p_data.size() > m_limits.maxFileSize)
 	{
 		p_error = "file too large";
 		return false;
@@ -434,7 +451,7 @@ std::optional<std::string> OvTools::Filesystem::SaveStorage::Read(std::string_vi
 		return std::nullopt;
 	}
 
-	if (size > kMaxFileSize)
+	if (size > m_limits.maxFileSize)
 	{
 		p_error = "file too large";
 		return std::nullopt;

@@ -78,6 +78,16 @@ uint32_t OvPhysics::Entities::PhysicalMesh::GetTriangleCount() const
 	return static_cast<uint32_t>(m_indices.size() / 3);
 }
 
+const std::vector<float>& OvPhysics::Entities::PhysicalMesh::GetPositions() const
+{
+	return m_positions;
+}
+
+const std::vector<uint32_t>& OvPhysics::Entities::PhysicalMesh::GetIndices() const
+{
+	return m_indices;
+}
+
 bool OvPhysics::Entities::PhysicalMesh::MustBeStatic() const
 {
 	return true;

@@ -20,6 +20,7 @@
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/Helpers/Serializer.h>
+#include <OvCore/Localization/Localization.h>
 #include <OvCore/ResourceManagement/FontManager.h>
 #include <OvCore/ResourceManagement/MaterialManager.h>
 #include <OvCore/ResourceManagement/UIResourceRegistry.h>
@@ -33,6 +34,7 @@ namespace
 	constexpr float kMinimumFontSize = 1.0f;
 	constexpr float kSizeUpdateEpsilon = 0.0001f;
 	constexpr const char* kColorUniform = "u_Color";
+	constexpr const char* kFontAtlasUniform = "u_FontAtlas";
 
 	float ClampFinite(float p_value, float p_min)
 	{
@@ -155,12 +157,25 @@ std::string OvCore::ECS::Components::UI::CText::GetTypeName()
 void OvCore::ECS::Components::UI::CText::SetText(const std::string& p_text)
 {
 	m_text = p_text;
+	m_textKey.clear();
 	MarkMeshDirty();
 }
 
 const std::string& OvCore::ECS::Components::UI::CText::GetText() const
 {
+	ResolveTextKey();
 	return m_text;
+}
+
+void OvCore::ECS::Components::UI::CText::SetTextKey(const std::string& p_key)
+{
+	m_textKey = p_key;
+	m_textKeyDirty = true;
+}
+
+const std::string& OvCore::ECS::Components::UI::CText::GetTextKey() const
+{
+	return m_textKey;
 }
 
 void OvCore::ECS::Components::UI::CText::SetFontPath(const std::string& p_fontPath)
@@ -224,6 +239,16 @@ OvCore::ECS::Components::UI::CText::EVerticalAlignment OvCore::ECS::Components::
 	return m_verticalAlignment;
 }
 
+void OvCore::ECS::Components::UI::CText::SetLit(bool p_lit)
+{
+	m_lit = p_lit;
+}
+
+bool OvCore::ECS::Components::UI::CText::IsLit() const
+{
+	return m_lit;
+}
+
 OvRendering::Resources::Mesh* OvCore::ECS::Components::UI::CText::GetMesh() const
 {
 	RebuildMesh();
@@ -242,6 +267,12 @@ OvRendering::Data::Material* OvCore::ECS::Components::UI::CText::GetMaterial()
 	return m_material && m_material->IsValid() ? m_material.get() : nullptr;
 }
 
+OvRendering::Data::Material* OvCore::ECS::Components::UI::CText::GetLitMaterial()
+{
+	RefreshLitMaterial();
+	return m_litMaterial && m_litMaterial->IsValid() ? m_litMaterial.get() : nullptr;
+}
+
 const OvMaths::FVector2& OvCore::ECS::Components::UI::CText::GetSize() const
 {
 	RebuildLayout();
@@ -254,14 +285,22 @@ OvMaths::FVector2 OvCore::ECS::Components::UI::CText::GetSize(const OvMaths::FVe
 	return m_size;
 }
 
+OvMaths::FVector2 OvCore::ECS::Components::UI::CText::GetContentSize() const
+{
+	RebuildLayout();
+	return m_layout.contentSize;
+}
+
 void OvCore::ECS::Components::UI::CText::OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
 {
-	Helpers::Serializer::SerializeString(p_doc, p_node, "text", m_text);
+	Helpers::Serializer::SerializeString(p_doc, p_node, "text", GetText());
+	Helpers::Serializer::SerializeString(p_doc, p_node, "text_key", m_textKey);
 	Helpers::Serializer::SerializeString(p_doc, p_node, "font_path", m_fontPath);
 	Helpers::Serializer::SerializeFloat(p_doc, p_node, "font_size", m_fontSize);
 	Helpers::Serializer::SerializeVec4(p_doc, p_node, "color", m_color);
 	Helpers::Serializer::SerializeInt(p_doc, p_node, "horizontal_alignment", static_cast<int>(m_horizontalAlignment));
 	Helpers::Serializer::SerializeInt(p_doc, p_node, "vertical_alignment", static_cast<int>(m_verticalAlignment));
+	Helpers::Serializer::SerializeBoolean(p_doc, p_node, "lit", m_lit);
 }
 
 void OvCore::ECS::Components::UI::CText::OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
@@ -271,6 +310,14 @@ void OvCore::ECS::Components::UI::CText::OnDeserialize(tinyxml2::XMLDocument& p_
 		auto text = m_text;
 		Helpers::Serializer::DeserializeString(p_doc, p_node, "text", text);
 		SetText(text);
+	}
+
+	// After the text, which clears a key
+	if (p_node->FirstChildElement("text_key"))
+	{
+		auto textKey = m_textKey;
+		Helpers::Serializer::DeserializeString(p_doc, p_node, "text_key", textKey);
+		SetTextKey(textKey);
 	}
 
 	if (p_node->FirstChildElement("font_path"))
@@ -307,6 +354,13 @@ void OvCore::ECS::Components::UI::CText::OnDeserialize(tinyxml2::XMLDocument& p_
 		Helpers::Serializer::DeserializeInt(p_doc, p_node, "vertical_alignment", verticalAlignment);
 		SetVerticalAlignment(ToVerticalAlignment(verticalAlignment));
 	}
+
+	if (p_node->FirstChildElement("lit"))
+	{
+		auto lit = m_lit;
+		Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "lit", lit);
+		SetLit(lit);
+	}
 }
 
 void OvCore::ECS::Components::UI::CText::OnInspector(OvUI::Internal::WidgetContainer& p_root)
@@ -322,6 +376,14 @@ void OvCore::ECS::Components::UI::CText::OnInspector(OvUI::Internal::WidgetConta
 	auto& textDispatcher = textInput.AddPlugin<OvUI::Plugins::DataDispatcher<std::string>>();
 	textDispatcher.RegisterGatherer([this]() { return GetText(); });
 	textDispatcher.RegisterProvider([this](std::string p_value) { SetText(p_value); });
+
+	// A key shows its text above, in the current language; typing a text there clears the key
+	Helpers::GUIDrawer::DrawString(
+		p_root,
+		"Text Key",
+		[this]() { return GetTextKey(); },
+		[this](std::string p_value) { SetTextKey(p_value); }
+	);
 
 	Helpers::GUIDrawer::DrawAsset(
 		p_root,
@@ -367,19 +429,40 @@ void OvCore::ECS::Components::UI::CText::OnInspector(OvUI::Internal::WidgetConta
 		[this](OvUI::Types::Color p_value) { SetColor(ToVec4(p_value)); },
 		true
 	);
+
+	// Under a world space canvas only: a screen space text stays unlit
+	Helpers::GUIDrawer::DrawBoolean(
+		p_root,
+		"Lit",
+		[this]() { return IsLit(); },
+		[this](bool p_value) { SetLit(p_value); }
+	);
+}
+
+const std::string& OvCore::ECS::Components::UI::CText::GetDisplayedFontPath() const
+{
+	// The font that stands for this one in the current language (a table's "fonts")
+	if (Global::ServiceLocator::Has<Localization::Localization>())
+	{
+		return Global::ServiceLocator::Get<Localization::Localization>().GetFont(m_fontPath);
+	}
+
+	return m_fontPath;
 }
 
 OvRendering::Resources::Font* OvCore::ECS::Components::UI::CText::GetFont() const
 {
-	if (m_fontPath.empty() || m_fontPath == "?")
+	const std::string& fontPath = GetDisplayedFontPath();
+
+	if (fontPath.empty() || fontPath == "?")
 	{
 		return nullptr;
 	}
 
 	auto& fontManager = Global::ServiceLocator::Get<ResourceManagement::FontManager>();
-	if (m_unavailableFontPath == m_fontPath)
+	if (m_unavailableFontPath == fontPath)
 	{
-		auto* font = fontManager.GetResource(m_fontPath, false);
+		auto* font = fontManager.GetResource(fontPath, false);
 		if (font)
 		{
 			m_unavailableFontPath.clear();
@@ -388,13 +471,40 @@ OvRendering::Resources::Font* OvCore::ECS::Components::UI::CText::GetFont() cons
 		return font;
 	}
 
-	auto* font = fontManager.GetResource(m_fontPath);
+	auto* font = fontManager.GetResource(fontPath);
 	if (!font)
 	{
-		m_unavailableFontPath = m_fontPath;
+		m_unavailableFontPath = fontPath;
 	}
 
 	return font;
+}
+
+void OvCore::ECS::Components::UI::CText::ResolveTextKey() const
+{
+	if (m_textKey.empty())
+	{
+		return;
+	}
+
+	const bool localized = Global::ServiceLocator::Has<Localization::Localization>();
+	const uint64_t revision = localized ? Global::ServiceLocator::Get<Localization::Localization>().GetRevision() : 0;
+
+	if (!m_textKeyDirty && revision == m_textKeyRevision)
+	{
+		return;
+	}
+
+	m_textKeyDirty = false;
+	m_textKeyRevision = revision;
+
+	std::string text = localized ? Global::ServiceLocator::Get<Localization::Localization>().Get(m_textKey) : m_textKey;
+	if (text != m_text)
+	{
+		m_text = std::move(text);
+		m_layoutDirty = true;
+		m_meshDirty = true;
+	}
 }
 
 void OvCore::ECS::Components::UI::CText::MarkMeshDirty()
@@ -412,6 +522,7 @@ void OvCore::ECS::Components::UI::CText::MarkMaterialSourceDirty()
 void OvCore::ECS::Components::UI::CText::MarkMaterialColorDirty()
 {
 	m_materialColorDirty = true;
+	m_litColorDirty = true;
 }
 
 void OvCore::ECS::Components::UI::CText::RebuildLayout() const
@@ -421,6 +532,8 @@ void OvCore::ECS::Components::UI::CText::RebuildLayout() const
 
 void OvCore::ECS::Components::UI::CText::RebuildLayout(const OvMaths::FVector2& p_uiSize) const
 {
+	ResolveTextKey();
+
 	auto* font = GetFont();
 	const auto fontManagerRevision = Global::ServiceLocator::Get<ResourceManagement::FontManager>().GetResourcesRevision();
 	const uint64_t fontRevision = font ? font->GetRevision() : 0;
@@ -516,9 +629,10 @@ void OvCore::ECS::Components::UI::CText::RefreshMaterial()
 			nullptr :
 			materialManager.GetResource(textMaterialPath, false);
 		auto* currentShader = defaultMaterial && defaultMaterial->HasShader() ? defaultMaterial->GetShader() : nullptr;
-		auto* currentFont = m_fontPath.empty() || m_fontPath == "?" ?
+		const std::string& fontPath = GetDisplayedFontPath();
+		auto* currentFont = fontPath.empty() || fontPath == "?" ?
 			nullptr :
-			fontManager.GetResource(m_fontPath, false);
+			fontManager.GetResource(fontPath, false);
 
 		if (
 			materialManager.GetResourcesRevision() != m_materialManagerRevision ||
@@ -585,5 +699,64 @@ void OvCore::ECS::Components::UI::CText::RefreshMaterial()
 	{
 		m_material->TrySetProperty(kColorUniform, m_color);
 		m_materialColorDirty = false;
+	}
+}
+
+void OvCore::ECS::Components::UI::CText::RefreshLitMaterial()
+{
+	auto& materialManager = Global::ServiceLocator::Get<ResourceManagement::MaterialManager>();
+	const auto& litTextMaterialPath = Global::ServiceLocator::Get<ResourceManagement::UIResourceRegistry>().GetDefinition().litTextMaterialPath;
+	// Loaded once for each change of the manager's resources: a missing file is not looked for at every frame
+	const bool load = !m_litMaterial || materialManager.GetResourcesRevision() != m_litManagerRevision;
+	OvRendering::Data::Material* source = litTextMaterialPath.empty() ?
+		nullptr :
+		materialManager.GetResource(litTextMaterialPath, load);
+	auto* shader = source && source->HasShader() ? source->GetShader() : nullptr;
+	auto* font = GetFont();
+	auto* atlas = font ? font->GetAtlasTexture(m_fontSize) : nullptr;
+
+	if (!m_litMaterial)
+	{
+		m_litMaterial = std::make_unique<OvRendering::Data::Material>();
+		m_litSource = nullptr;
+	}
+
+	// A copy of the host's material, settings and uniforms included, made again whenever it may have changed
+	if (
+		source != m_litSource ||
+		shader != m_litShader ||
+		atlas != m_litAtlas ||
+		materialManager.GetResourcesRevision() != m_litManagerRevision
+	)
+	{
+		m_litSource = source;
+		m_litShader = shader;
+		m_litAtlas = atlas;
+		m_litManagerRevision = materialManager.GetResourcesRevision();
+		m_litColorDirty = true;
+
+		if (!source || !source->IsValid() || !atlas)
+		{
+			if (m_litMaterial->HasShader())
+			{
+				m_litMaterial->SetShader(nullptr);
+			}
+
+			return;
+		}
+
+		*m_litMaterial = *source;
+		m_litMaterial->TrySetProperty(kFontAtlasUniform, atlas);
+	}
+
+	if (!m_litMaterial->IsValid())
+	{
+		return;
+	}
+
+	if (m_litColorDirty)
+	{
+		m_litMaterial->TrySetProperty(kColorUniform, m_color);
+		m_litColorDirty = false;
 	}
 }

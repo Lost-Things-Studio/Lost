@@ -1,4 +1,4 @@
--- Function to read the version number from VERSION.txt
+-- Function to read the version number from VERSION.txt: Lost's own version
 local function readVersion()
 	local versionFile = io.open("VERSION.txt", "r")
 	if versionFile then
@@ -12,13 +12,18 @@ end
 
 local version = readVersion()
 
+-- The version of Overload the engine is based on
+-- The version of Overload that Lost is based on: update it with each sync from Overload
+local overloadVersion = "1.9"
+
 workspace "Overload"
 	configurations { "Debug", "Release", "Publish" }
 	platforms { "x64" }
 	startproject "OvEditor"
 	defines {
 		"LUA_SCRIPTING",
-		"OVERLOAD_VERSION=\"" .. version .. "\"",
+		"LOST_VERSION=\"" .. version .. "\"",
+		"OVERLOAD_VERSION=\"" .. overloadVersion .. "\"",
 		"SOL_NO_LUA_HPP"
 	}
 
@@ -63,12 +68,14 @@ group "Dependencies"
 	include "Dependencies/assimp"
 	include "Dependencies/glfw"
 	include "Dependencies/jolt"
+	include "Dependencies/recastnavigation"
 	include "Dependencies/baregl"
 group ""
 
 group "Dependencies/Prebuilt"
 	include "Dependencies/stb_image"
 	include "Dependencies/sol"
+	include "Dependencies/doctest"
 group ""
 
 group "Overload SDK"
@@ -86,6 +93,10 @@ group ""
 group "Overload Apps"
 	include "Sources/OvEditor"
 	include "Sources/OvGame"
+group ""
+
+group "Overload Tests"
+	include "Sources/OvTests"
 group ""
 
 include "Resources"

@@ -5,19 +5,25 @@
 */
 
 #include <algorithm>
+#include <cstring>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <tracy/Tracy.hpp>
 
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
+#include <OvCore/ECS/Components/CParticleSystem.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
+#include <OvCore/ECS/Components/CTerrain.h>
+#include <OvCore/ECS/Components/CVegetation.h>
 #include <OvCore/ECS/Components/UI/CCanvas.h>
 #include <OvCore/ECS/Components/UI/CImage.h>
 #include <OvCore/ECS/Components/UI/CText.h>
 #include <OvCore/Rendering/EngineDrawableDescriptor.h>
 #include <OvCore/Rendering/FrameBuilder.h>
 #include <OvCore/Rendering/InstancingDrawableDescriptor.h>
+#include <OvCore/Rendering/ParticleDrawableDescriptor.h>
 #include <OvCore/Rendering/ReflectionRenderFeature.h>
 #include <OvCore/Rendering/SceneDrawableDescriptor.h>
 #include <OvCore/Rendering/SkinningDrawableDescriptor.h>
@@ -40,6 +46,8 @@ namespace
 		return
 			p_drawable.mesh.has_value() &&
 			!p_drawable.HasDescriptor<SkinningDrawableDescriptor>() &&
+			!p_drawable.HasDescriptor<ParticleDrawableDescriptor>() &&
+			!p_drawable.HasDescriptor<InstancingDrawableDescriptor>() && // Instanced already (a vegetation layer)
 			p_drawable.TryGetDescriptor<EngineDrawableDescriptor>(engineDescriptor) &&
 			!engineDescriptor->viewMatrixOverride &&
 			!engineDescriptor->projectionMatrixOverride;
@@ -61,10 +69,12 @@ namespace
 		const OvMaths::FMatrix4& p_uiProjectionMatrix,
 		const OvMaths::FVector2& p_elementSize,
 		bool& p_outDepthTested,
+		std::optional<OvCore::Rendering::UIRenderingUtils::ResolvedUIElement>& p_outElement,
 		bool p_preserveAspect = false
 	)
 	{
 		p_outDepthTested = false;
+		p_outElement.reset();
 
 		EngineDrawableDescriptor descriptor{
 			.modelMatrix = p_owner.transform.GetFTransform().GetWorldMatrix(),
@@ -112,6 +122,94 @@ namespace
 			p_outDepthTested =
 				resolvedElement.canvas &&
 				resolvedElement.canvas->GetRenderMode() == OvCore::ECS::Components::UI::CCanvas::ERenderMode::WORLD_SPACE;
+
+			p_outElement = resolvedElement;
+		}
+
+		return descriptor;
+	}
+
+	/**
+	* Sets a material property only when its value changes, so that an unchanged clip uploads nothing
+	*/
+	void SetClipProperty(OvRendering::Data::Material& p_material, const std::string& p_name, const OvRendering::Data::MaterialPropertyType& p_value)
+	{
+		const auto property = p_material.GetProperty(p_name);
+		if (!property.has_value())
+		{
+			return;
+		}
+
+		const auto& current = property.value().value;
+		bool same = false;
+
+		if (const auto* currentBool = std::get_if<bool>(&current); currentBool && std::holds_alternative<bool>(p_value))
+		{
+			same = *currentBool == std::get<bool>(p_value);
+		}
+		else if (const auto* currentMatrix = std::get_if<OvMaths::FMatrix4>(&current); currentMatrix && std::holds_alternative<OvMaths::FMatrix4>(p_value))
+		{
+			same = std::memcmp(currentMatrix->data, std::get<OvMaths::FMatrix4>(p_value).data, sizeof(currentMatrix->data)) == 0;
+		}
+
+		if (!same)
+		{
+			p_material.TrySetProperty(p_name, p_value);
+		}
+	}
+
+	/**
+	* Gives the drawable's material the clip it is drawn inside, if any. Returns false when the element lies entirely
+	* outside it, and is not to be drawn
+	*/
+	bool ApplyUIClip(
+		OvRendering::Data::Material& p_material,
+		const OvCore::Rendering::UIRenderingUtils::UIClip* p_clip,
+		const std::optional<OvCore::Rendering::UIRenderingUtils::ResolvedUIElement>& p_element
+	)
+	{
+		if (p_clip && (p_clip->empty || (p_element && OvCore::Rendering::UIRenderingUtils::IsOutsideUIClip(*p_clip, *p_element))))
+		{
+			return false;
+		}
+
+		SetClipProperty(p_material, "u_ClipEnabled", p_clip != nullptr);
+
+		if (p_clip)
+		{
+			SetClipProperty(p_material, "u_ClipMatrix", p_clip->matrix);
+		}
+
+		return true;
+	}
+
+	/**
+	* The scene's description of a user interface drawable. A lit one is drawn among the scene's transparent surfaces,
+	* sorted by the distance to its canvas: the elements of a canvas keep the order of the hierarchy between them
+	*/
+	SceneDrawableDescriptor CreateUISceneDescriptor(
+		OvCore::ECS::Actor& p_owner,
+		int p_drawOrder,
+		bool p_lit,
+		const std::optional<OvCore::Rendering::UIRenderingUtils::ResolvedUIElement>& p_element
+	)
+	{
+		SceneDrawableDescriptor descriptor{
+			.actor = p_owner,
+			.visibilityFlags = EVisibilityFlags::GEOMETRY,
+			.bounds = std::nullopt,
+			.drawOrderOverride = p_drawOrder,
+			.isUserInterface = true
+		};
+
+		if (p_lit)
+		{
+			descriptor.drawOrderOverride = std::nullopt;
+
+			if (p_element && p_element->canvasActor)
+			{
+				descriptor.sortPosition = p_element->canvasActor->transform.GetWorldPosition();
+			}
 		}
 
 		return descriptor;
@@ -122,11 +220,34 @@ namespace
 		OvCore::ECS::Components::UI::CImage& p_image,
 		const OvCore::Rendering::UIRenderingUtils::UIFrameResolver& p_uiFrameResolver,
 		const OvMaths::FMatrix4& p_uiProjectionMatrix,
+		const OvCore::Rendering::UIRenderingUtils::UIClip* p_clip,
 		int p_drawOrder
 	)
 	{
 		auto& owner = p_image.owner;
-		auto* material = p_image.GetMaterial();
+
+		bool depthTested = false;
+		std::optional<OvCore::Rendering::UIRenderingUtils::ResolvedUIElement> element;
+
+		auto engineDescriptor = CreateUIDrawableDescriptor(
+			owner,
+			p_uiFrameResolver,
+			p_uiProjectionMatrix,
+			p_image.GetIntrinsicSize(),
+			depthTested,
+			element,
+			p_image.GetPreserveAspect()
+		);
+
+		// Without a lit material from the host, a lit image is drawn as any other
+		bool lit = OvCore::Rendering::UIRenderingUtils::IsDrawnLit(p_image.IsLit(), element ? &element.value() : nullptr);
+		OvRendering::Data::Material* material = lit ? p_image.GetLitMaterial() : nullptr;
+		if (!material)
+		{
+			lit = false;
+			material = p_image.GetMaterial();
+		}
+
 		if (!material) return;
 
 		OvRendering::Entities::Drawable drawable{
@@ -135,26 +256,13 @@ namespace
 			.stateMask = material->GenerateStateMask()
 		};
 
-		drawable.AddDescriptor<SceneDrawableDescriptor>({
-			.actor = owner,
-			.visibilityFlags = EVisibilityFlags::GEOMETRY,
-			.bounds = std::nullopt,
-			.drawOrderOverride = p_drawOrder,
-			.isUserInterface = true
-		});
+		drawable.AddDescriptor<SceneDrawableDescriptor>(CreateUISceneDescriptor(owner, p_drawOrder, lit, element));
+		drawable.AddDescriptor<EngineDrawableDescriptor>(std::move(engineDescriptor));
 
-		bool depthTested = false;
-
-		drawable.AddDescriptor<EngineDrawableDescriptor>(
-			CreateUIDrawableDescriptor(
-				owner,
-				p_uiFrameResolver,
-				p_uiProjectionMatrix,
-				p_image.GetIntrinsicSize(),
-				depthTested,
-				p_image.GetPreserveAspect()
-			)
-		);
+		if (!ApplyUIClip(*material, p_clip, element))
+		{
+			return;
+		}
 
 		drawable.stateMask.depthTest = drawable.stateMask.depthTest || depthTested;
 
@@ -166,12 +274,11 @@ namespace
 		OvCore::ECS::Components::UI::CText& p_text,
 		const OvCore::Rendering::UIRenderingUtils::UIFrameResolver& p_uiFrameResolver,
 		const OvMaths::FMatrix4& p_uiProjectionMatrix,
+		const OvCore::Rendering::UIRenderingUtils::UIClip* p_clip,
 		int p_drawOrder
 	)
 	{
 		auto& owner = p_text.owner;
-		auto* material = p_text.GetMaterial();
-		if (!material) return;
 
 		const auto baseTextSize = p_text.GetSize();
 		OvCore::Rendering::UIRenderingUtils::ResolvedUIElement resolvedElement;
@@ -191,31 +298,42 @@ namespace
 		if (!mesh) return;
 		const auto renderedTextSize = p_text.GetSize(textLayoutSize);
 
+		bool depthTested = false;
+		std::optional<OvCore::Rendering::UIRenderingUtils::ResolvedUIElement> element;
+
+		auto engineDescriptor = CreateUIDrawableDescriptor(
+			owner,
+			p_uiFrameResolver,
+			p_uiProjectionMatrix,
+			renderedTextSize,
+			depthTested,
+			element
+		);
+
+		// Without a lit material from the host, a lit text is drawn as any other
+		bool lit = OvCore::Rendering::UIRenderingUtils::IsDrawnLit(p_text.IsLit(), element ? &element.value() : nullptr);
+		OvRendering::Data::Material* material = lit ? p_text.GetLitMaterial() : nullptr;
+		if (!material)
+		{
+			lit = false;
+			material = p_text.GetMaterial();
+		}
+
+		if (!material) return;
+
 		OvRendering::Entities::Drawable drawable{
 			.mesh = *mesh,
 			.material = *material,
 			.stateMask = material->GenerateStateMask()
 		};
 
-		drawable.AddDescriptor<SceneDrawableDescriptor>({
-			.actor = owner,
-			.visibilityFlags = EVisibilityFlags::GEOMETRY,
-			.bounds = std::nullopt,
-			.drawOrderOverride = p_drawOrder,
-			.isUserInterface = true
-		});
+		drawable.AddDescriptor<SceneDrawableDescriptor>(CreateUISceneDescriptor(owner, p_drawOrder, lit, element));
+		drawable.AddDescriptor<EngineDrawableDescriptor>(std::move(engineDescriptor));
 
-		bool depthTested = false;
-
-		drawable.AddDescriptor<EngineDrawableDescriptor>(
-			CreateUIDrawableDescriptor(
-				owner,
-				p_uiFrameResolver,
-				p_uiProjectionMatrix,
-				renderedTextSize,
-				depthTested
-			)
-		);
+		if (!ApplyUIClip(*material, p_clip, element))
+		{
+			return;
+		}
 
 		drawable.stateMask.depthTest = drawable.stateMask.depthTest || depthTested;
 
@@ -228,6 +346,7 @@ namespace
 		const OvCore::Rendering::UIRenderingUtils::UIFrameResolver& p_uiFrameResolver,
 		const OvCore::ECS::Components::UI::CCanvas* p_canvas,
 		const OvMaths::FMatrix4& p_uiProjectionMatrix,
+		const OvCore::Rendering::UIRenderingUtils::UIClip* p_clip,
 		int& p_drawOrder
 	)
 	{
@@ -236,9 +355,11 @@ namespace
 			return;
 		}
 
+		// A canvas has a space of its own: a clip from around it does not apply inside
 		if (auto* canvas = p_actor.GetComponent<OvCore::ECS::Components::UI::CCanvas>())
 		{
 			p_canvas = canvas;
+			p_clip = nullptr;
 		}
 
 		if (p_canvas)
@@ -250,6 +371,7 @@ namespace
 					*image,
 					p_uiFrameResolver,
 					p_uiProjectionMatrix,
+					p_clip,
 					p_drawOrder++
 				);
 			}
@@ -261,8 +383,28 @@ namespace
 					*text,
 					p_uiFrameResolver,
 					p_uiProjectionMatrix,
+					p_clip,
 					p_drawOrder++
 				);
+			}
+		}
+
+		// An element that clips its children passes them its rectangle, crossed with the clip it is inside
+		std::optional<OvCore::Rendering::UIRenderingUtils::UIClip> childrenClip;
+
+		if (p_canvas && p_actor.transform.GetUIClipChildren() && p_actor.transform.HasActiveUIData())
+		{
+			OvCore::Rendering::UIRenderingUtils::ResolvedUIElement element;
+
+			if (p_uiFrameResolver.ResolveElement(p_actor, p_uiFrameResolver.GetElementSize(p_actor), element))
+			{
+				childrenClip = OvCore::Rendering::UIRenderingUtils::CreateUIClip(element, p_clip);
+
+				// Nothing of them can show
+				if (childrenClip->empty)
+				{
+					return;
+				}
 			}
 		}
 
@@ -276,6 +418,7 @@ namespace
 					p_uiFrameResolver,
 					p_canvas,
 					p_uiProjectionMatrix,
+					childrenClip ? &childrenClip.value() : p_clip,
 					p_drawOrder
 				);
 			}
@@ -301,8 +444,177 @@ namespace
 					p_uiFrameResolver,
 					nullptr,
 					uiProjectionMatrix,
+					nullptr,
 					drawOrder
 				);
+			}
+		}
+	}
+
+	// A particle system is one drawable per mesh (a quad for billboards), with an instance per particle the shader
+	// places from the system's buffer. Only the geometry pass draws it: it casts no shadow and no reflection
+	void AppendParticleDrawables(
+		OvCore::Rendering::FrameBuilder::ParsingResult& p_result,
+		OvCore::SceneSystem::Scene& p_scene
+	)
+	{
+		for (auto* particleSystem : p_scene.GetFastAccessComponents().particleSystems)
+		{
+			auto& owner = particleSystem->owner;
+			if (!owner.IsActive()) continue;
+
+			const auto range = particleSystem->GetEmitter().GetDrawRange();
+			if (range.count == 0) continue;
+
+			auto* material = particleSystem->ResolveMaterial();
+			if (!material) continue;
+
+			const auto bounds = particleSystem->GetWorldBounds();
+
+			const auto append = [&](OvRendering::Resources::IMesh& p_mesh) {
+				OvRendering::Entities::Drawable drawable{
+					.mesh = p_mesh,
+					.material = *material,
+					.stateMask = material->GenerateStateMask(),
+				};
+
+				drawable.gpuInstancesOverride = range.count;
+
+				drawable.AddDescriptor<SceneDrawableDescriptor>({
+					.actor = owner,
+					.visibilityFlags = EVisibilityFlags::GEOMETRY,
+					.bounds = bounds,
+					.boundsInWorld = true
+				});
+
+				// The particles are in the world already: the shader places each one, the model matrix is not used
+				drawable.AddDescriptor<EngineDrawableDescriptor>({
+					OvMaths::FMatrix4::Identity,
+					OvMaths::FMatrix4::Identity
+				});
+
+				drawable.AddDescriptor<ParticleDrawableDescriptor>({ particleSystem });
+
+				p_result.drawables.push_back(std::move(drawable));
+			};
+
+			if (auto* model = particleSystem->GetModel())
+			{
+				for (auto* mesh : model->GetMeshes())
+				{
+					append(*mesh);
+				}
+			}
+			else
+			{
+				append(particleSystem->GetQuad());
+			}
+		}
+	}
+}
+
+namespace
+{
+	// A terrain is one drawable per chunk, at the level of detail its distance to the camera chooses, the same in
+	// every pass of the frame. Its chunks are in the actor's space, so the frustum test goes through its transform
+	void AppendTerrainDrawables(
+		OvCore::Rendering::FrameBuilder::ParsingResult& p_result,
+		OvCore::SceneSystem::Scene& p_scene,
+		const std::optional<OvMaths::FVector3>& p_viewPosition,
+		bool p_mainView
+	)
+	{
+		std::vector<OvCore::ECS::Components::CTerrain::ChunkDraw> chunks;
+
+		for (auto* terrain : p_scene.GetFastAccessComponents().terrains)
+		{
+			auto& owner = terrain->owner;
+			if (!owner.IsActive()) continue;
+
+			auto* material = terrain->ResolveMaterial();
+			if (!material) continue;
+
+			chunks.clear();
+			terrain->PrepareDraw(p_viewPosition, p_mainView, chunks);
+
+			for (const auto& chunk : chunks)
+			{
+				OvRendering::Entities::Drawable drawable{
+					.mesh = *chunk.mesh,
+					.material = *material,
+					.stateMask = material->GenerateStateMask(),
+				};
+
+				drawable.AddDescriptor<SceneDrawableDescriptor>({
+					.actor = owner,
+					.visibilityFlags = EVisibilityFlags::ALL,
+					.bounds = chunk.bounds
+				});
+
+				drawable.AddDescriptor<EngineDrawableDescriptor>({
+					owner.transform.GetWorldMatrix(),
+					OvMaths::FMatrix4::Identity
+				});
+
+				p_result.drawables.push_back(std::move(drawable));
+			}
+		}
+	}
+}
+
+namespace
+{
+	// A vegetation is one instanced draw per chunk, layer and mesh of the layer's model, its instances prepared once
+	// in the world: culled by the frustum with the chunk's bounds, by distance when the vegetation prepares its draws
+	void AppendVegetationDrawables(
+		OvCore::Rendering::FrameBuilder::ParsingResult& p_result,
+		OvCore::SceneSystem::Scene& p_scene,
+		const std::optional<OvMaths::FVector3>& p_viewPosition,
+		bool p_mainView
+	)
+	{
+		std::vector<OvCore::ECS::Components::CVegetation::LayerDraw> draws;
+
+		for (auto* vegetation : p_scene.GetFastAccessComponents().vegetations)
+		{
+			auto& owner = vegetation->owner;
+			if (!owner.IsActive()) continue;
+
+			draws.clear();
+			vegetation->PrepareDraw(p_viewPosition, p_mainView, draws);
+
+			for (const auto& draw : draws)
+			{
+				for (auto* mesh : draw.model->GetMeshes())
+				{
+					OvRendering::Entities::Drawable drawable{
+						.mesh = *mesh,
+						.material = *draw.material,
+						.stateMask = draw.material->GenerateStateMask(),
+					};
+
+					drawable.AddDescriptor<SceneDrawableDescriptor>({
+						.actor = owner,
+						.visibilityFlags = draw.castShadows ? EVisibilityFlags::GEOMETRY | EVisibilityFlags::SHADOW : EVisibilityFlags::GEOMETRY,
+						.bounds = draw.bounds,
+						.boundsInWorld = true
+					});
+
+					// Each instance carries its own matrices in the world
+					drawable.AddDescriptor<EngineDrawableDescriptor>({
+						OvMaths::FMatrix4::Identity,
+						OvMaths::FMatrix4::Identity
+					});
+
+					drawable.AddDescriptor<OvCore::Rendering::InstancingDrawableDescriptor>({
+						.instances = nullptr,
+						.count = draw.count,
+						.prepared = draw.instances
+					});
+					drawable.gpuInstancesOverride = draw.count;
+
+					p_result.drawables.push_back(std::move(drawable));
+				}
 			}
 		}
 	}
@@ -353,7 +665,10 @@ OvCore::Rendering::FrameBuilder::ParsingResult OvCore::Rendering::FrameBuilder::
 		const auto& transform = owner.transform.GetFTransform();
 		const auto& materials = materialRenderer->GetMaterials();
 
-		for (auto& mesh : model->GetMeshes())
+		// The level of detail for this view, the same in every pass of the frame, drawn with the renderer's materials
+		const auto* drawnModel = modelRenderer->SelectLod(p_input.viewPosition, p_input.mainView);
+
+		for (auto& mesh : drawnModel->GetMeshes())
 		{
 			OvTools::Utils::OptRef<OvRendering::Data::Material> material;
 
@@ -373,7 +688,7 @@ OvCore::Rendering::FrameBuilder::ParsingResult OvCore::Rendering::FrameBuilder::
 				switch (modelRenderer->GetFrustumBehaviour())
 				{
 				case MESH_BOUNDS: return mesh->GetBoundingSphere();
-				case DEPRECATED_MODEL_BOUNDS: return model->GetBoundingSphere();
+				case DEPRECATED_MODEL_BOUNDS: return drawnModel->GetBoundingSphere();
 				case CUSTOM_BOUNDS: return modelRenderer->GetCustomBoundingSphere();
 				default: return std::nullopt;
 				}
@@ -383,7 +698,8 @@ OvCore::Rendering::FrameBuilder::ParsingResult OvCore::Rendering::FrameBuilder::
 			drawable.AddDescriptor<SceneDrawableDescriptor>({
 				.actor = modelRenderer->owner,
 				.visibilityFlags = materialRenderer->GetVisibilityFlags(),
-				.bounds = bounds
+				.bounds = bounds,
+				.skinnedMeshRenderer = skinnedRenderer
 			});
 
 			drawable.AddDescriptor<EngineDrawableDescriptor>({
@@ -400,6 +716,9 @@ OvCore::Rendering::FrameBuilder::ParsingResult OvCore::Rendering::FrameBuilder::
 		}
 	}
 
+	AppendTerrainDrawables(result, scene, p_input.viewPosition, p_input.mainView);
+	AppendVegetationDrawables(result, scene, p_input.viewPosition, p_input.mainView);
+	AppendParticleDrawables(result, scene);
 	AppendHierarchyUIDrawables(result, scene, uiFrameResolver);
 
 	return result;
@@ -478,9 +797,16 @@ OvCore::Rendering::FrameBuilder::FilteringResult OvCore::Rendering::FrameBuilder
 			}
 		}
 
+		// A model with a skinned mesh renderer some pass draws is visible, whether its bones move it this frame or not:
+		// one set to update only when visible goes on being worked out, and its spring bones go on swinging
+		if (desc.skinnedMeshRenderer)
+		{
+			desc.skinnedMeshRenderer->NotifyDrawn();
+		}
+
 		// Calculate distance to camera for sorting
 		const float distanceToCamera = OvMaths::FVector3::Distance(
-			desc.actor.transform.GetWorldPosition(),
+			desc.sortPosition.has_value() ? desc.sortPosition.value() : desc.actor.transform.GetWorldPosition(),
 			camera.GetPosition()
 		);
 
@@ -545,6 +871,11 @@ bool OvCore::Rendering::FrameBuilder::IsInFrustum(
 
 	auto cullingBounds = desc.bounds.value();
 
+	if (desc.boundsInWorld)
+	{
+		return p_frustum.SphereInFrustum(cullingBounds.position.x, cullingBounds.position.y, cullingBounds.position.z, cullingBounds.radius);
+	}
+
 	OvTools::Utils::OptRef<const SkinningDrawableDescriptor> skinningDescriptor;
 	if (p_drawable.TryGetDescriptor<SkinningDrawableDescriptor>(skinningDescriptor))
 	{
@@ -573,10 +904,23 @@ OvRendering::Entities::Drawable OvCore::Rendering::FrameBuilder::Prepare(
 		material;
 
 	// Copy the parsed drawable to avoid modifying the original one.
-	auto drawable = p_filteredDrawable.drawable.get();
+	const auto& parsedDrawable = p_filteredDrawable.drawable.get();
+	auto drawable = parsedDrawable;
 	drawable.material = targetMaterial;
 	drawable.stateMask = targetMaterial.GenerateStateMask();
 	drawable.pass = p_input.pass;
+
+	// A UI element on a world space canvas is depth-tested against the scene, though its material, made for the
+	// screen, is not (see CreateUIDrawableDescriptor): it keeps that when drawn with its own material
+	if (
+		&targetMaterial == &material &&
+		parsedDrawable.stateMask.depthTest &&
+		parsedDrawable.HasDescriptor<SceneDrawableDescriptor>() &&
+		parsedDrawable.GetDescriptor<SceneDrawableDescriptor>().isUserInterface
+	)
+	{
+		drawable.stateMask.depthTest = true;
+	}
 
 	// Skinning is only applied if both the resolved and target materials support it.
 	if (

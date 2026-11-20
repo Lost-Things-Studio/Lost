@@ -55,6 +55,16 @@ namespace OvCore::ECS::Components
 		uint32_t GetTriangleCount() const;
 
 		/**
+		* Returns the vertices, in the actor's space, three floats each (x, y, z)
+		*/
+		const std::vector<float>& GetPositions() const;
+
+		/**
+		* Returns the vertex indices, three a triangle
+		*/
+		const std::vector<uint32_t>& GetIndices() const;
+
+		/**
 		* Serialize the component (the triangles are not: they are made at run time)
 		* @param p_doc
 		* @param p_node

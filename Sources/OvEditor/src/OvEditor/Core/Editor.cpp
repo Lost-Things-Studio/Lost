@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <OvCore/Input/GameInput.h>
 #include "OvEditor/Core/EditorActions.h"
 #include <tracy/Tracy.hpp>
 
@@ -62,6 +63,13 @@ OvEditor::Core::Editor::Editor(Context& p_context) :
 OvEditor::Core::Editor::~Editor()
 {
 	Settings::EditorSettings::Save();
+
+	// Closed while a game plays: its scripts hear it end (Events.AddQuit), as when it is stopped
+	if (m_editorActions.GetCurrentEditorMode() != EditorActions::EEditorMode::EDIT)
+	{
+		m_context.scriptEngine->NotifyQuit();
+	}
+
 	m_context.sceneManager.UnloadCurrentScene();
 }
 
@@ -142,7 +150,7 @@ void OvEditor::Core::Editor::SetupUI()
 			{
 				EDITOR_EXEC(LoadSceneFromDisk(path));
 			}
-			else if (fileType == EFileType::SCRIPT || fileType == EFileType::SHADER || fileType == EFileType::SHADER_PART)
+			else if (fileType == EFileType::SCRIPT || fileType == EFileType::SHADER || fileType == EFileType::SHADER_PART || fileType == EFileType::ANIMATION_GRAPH)
 			{
 				EDITOR_EXEC(OpenInCodeEditor(m_editorActions.GetRealPath(path)));
 			}
@@ -232,11 +240,15 @@ void OvEditor::Core::Editor::PreUpdate()
 {
 	ZoneScopedN("Editor Pre-Update");
 	m_context.device->PollEvents();
+	m_context.inputManager->UpdateGamepads();
 }
 
 void OvEditor::Core::Editor::Update(float p_deltaTime)
 {
 	UpdateGameInputGate();
+
+	// The actions read the input the gate lets through
+	m_context.inputActions->Update(OvCore::Input::GameInputSource{});
 
 	// Disable mouse input when the cursor is locked during gameplay or view interaction.
 	const bool mouseEnabled = m_context.window->GetCursorMode() != OvWindowing::Cursor::ECursorMode::DISABLED;
@@ -352,6 +364,9 @@ void OvEditor::Core::Editor::UpdatePlayMode(float p_deltaTime)
 		currentScene->FixedUpdate(p_deltaTime);
 	}
 
+	// The rest of the frame sees the interpolated bodies between their last two steps
+	m_context.physicsEngine->Interpolate();
+
 	{
 		ZoneScopedN("Update");
 		currentScene->Update(p_deltaTime);
@@ -364,21 +379,29 @@ void OvEditor::Core::Editor::UpdatePlayMode(float p_deltaTime)
 
 	{
 		ZoneScopedN("Audio Update");
-		m_context.audioEngine->Update();
+		m_context.audioEngine->Update(m_context.clock.GetDeltaTimeUnscaled());
 	}
 
 	if (m_editorActions.GetCurrentEditorMode() == EditorActions::EEditorMode::FRAME_BY_FRAME)
 		m_editorActions.PauseGame();
 
-	// Escape belongs to the game (its own menus): F5 stops playing, as it starts
-	if (m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_F5))
+	// The stop key is the editor's setting (F5 by default, as it starts), so that a game may keep Escape for itself
+	if (const int stopKey = Settings::EditorSettings::StopKey.Get();
+		stopKey != static_cast<int>(OvWindowing::Inputs::EKey::KEY_UNKNOWN) &&
+		m_context.inputManager->IsKeyPressed(static_cast<OvWindowing::Inputs::EKey>(stopKey)))
+	{
 		m_editorActions.StopPlaying();
+	}
 }
 
 void OvEditor::Core::Editor::UpdateEditMode(float p_deltaTime)
 {
-	if (m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_F5))
+	if (const int playKey = Settings::EditorSettings::PlayKey.Get();
+		playKey != static_cast<int>(OvWindowing::Inputs::EKey::KEY_UNKNOWN) &&
+		m_context.inputManager->IsKeyPressed(static_cast<OvWindowing::Inputs::EKey>(playKey)))
+	{
 		m_editorActions.StartPlaying();
+	}
 }
 
 void OvEditor::Core::Editor::UpdateEditorPanels(float p_deltaTime)

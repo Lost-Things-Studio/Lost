@@ -4,31 +4,45 @@
 * @licence: MIT
 */
 
+#include <algorithm>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
 
-#include <sol/sol.hpp>
+#include <OvCore/Scripting/Lua/LuaComponentRef.h>
 
 #include <OvCore/ECS/Actor.h>  
 #include <OvCore/ECS/Components/CAmbientBoxLight.h>  
 #include <OvCore/ECS/Components/CAmbientSphereLight.h>  
 #include <OvCore/ECS/Components/CAudioListener.h>  
+#include <OvAudio/Core/AudioEngine.h>
 #include <OvCore/ECS/Components/CAudioSource.h>  
 #include <OvCore/ECS/Components/CBoneAttachment.h>
+#include <OvCore/ECS/Components/CAnimator.h>
+#include <OvCore/Global/ServiceLocator.h>
+#include <OvCore/ResourceManagement/MaterialManager.h>
+#include <OvCore/ResourceManagement/ModelManager.h>
+#include <OvCore/ECS/Components/CLookAt.h>
+#include <OvCore/ECS/Components/CSpringBones.h>
 #include <OvCore/ECS/Components/CCamera.h>  
 #include <OvCore/ECS/Components/CDirectionalLight.h>  
 #include <OvCore/ECS/Components/CMaterialRenderer.h>  
 #include <OvCore/ECS/Components/CModelRenderer.h>  
 #include <OvCore/ECS/Components/CPhysicalBox.h>  
+#include <OvCore/ECS/Components/CCharacterController.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>  
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
+#include <OvCore/ECS/Components/CTerrain.h>
+#include <OvCore/ECS/Components/CVegetation.h>
+#include <OvCore/Terrain/Heightmap.h>
 #include <OvCore/ECS/Components/CPhysicalMesh.h>
 #include <OvCore/Helpers/DistanceField.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>  
+#include <OvCore/ECS/Components/CParticleSystem.h>
 #include <OvCore/ECS/Components/CPointLight.h>  
 #include <OvCore/ECS/Components/CPostProcessStack.h>  
 #include <OvCore/ECS/Components/CReflectionProbe.h>  
@@ -42,9 +56,63 @@
 #include <OvCore/ECS/Components/UI/CText.h>
 #include <OvCore/ECS/Components/UI/CVerticalLayout.h>
 #include <OvCore/Scripting/Common/ScriptPropertyValue.h>
+#include <OvPhysics/Settings/PhysicsSettings.h>
 
 namespace
 {
+	using OvCore::ECS::Components::CParticleSystem;
+	using OvCore::Particles::ParticleSettings;
+
+	// A setting of a particle system, read from and written to a copy of its settings
+	template<typename F>
+	void ChangeParticleSettings(CParticleSystem& p_system, F&& p_change)
+	{
+		ParticleSettings settings = p_system.GetSettings();
+		p_change(settings);
+		p_system.SetSettings(settings);
+	}
+
+	uint32_t ToParticleCount(double p_count, const char* p_function)
+	{
+		if (!std::isfinite(p_count) || p_count < 0.0 || std::floor(p_count) != p_count || p_count > ParticleSettings::kMaxParticles)
+		{
+			throw sol::error(std::format("ParticleSystem:{} takes a whole number from 0 to {}", p_function, ParticleSettings::kMaxParticles));
+		}
+
+		return static_cast<uint32_t>(p_count);
+	}
+
+	// The overrides of ParticleSystem:Emit, from a table: a key it does not know raises an error, a misspelt key
+	// would otherwise be silently dropped
+	OvCore::Particles::ParticleOverrides ToParticleOverrides(const sol::table& p_table)
+	{
+		OvCore::Particles::ParticleOverrides overrides;
+
+		for (const auto& [key, value] : p_table)
+		{
+			const auto name = key.is<std::string>() ? key.as<std::string>() : std::string{};
+
+			const auto expect = [&]<typename T>(const char* p_type) -> T
+			{
+				if (!value.is<T>())
+				{
+					throw sol::error(std::format("ParticleSystem:Emit: '{}' must be a {}", name, p_type));
+				}
+				return value.as<T>();
+			};
+
+			if (name == "position") overrides.position = expect.operator()<OvMaths::FVector3>("Vector3");
+			else if (name == "direction") overrides.direction = expect.operator()<OvMaths::FVector3>("Vector3");
+			else if (name == "color") overrides.color = expect.operator()<OvMaths::FVector4>("Vector4");
+			else if (name == "speed") overrides.speed = expect.operator()<float>("number");
+			else if (name == "size") overrides.size = expect.operator()<float>("number");
+			else if (name == "lifetime") overrides.lifetime = expect.operator()<float>("number");
+			else throw sol::error(std::format("ParticleSystem:Emit: unknown override '{}' (position, direction, color, speed, size, lifetime)", name));
+		}
+
+		return overrides;
+	}
+
 	constexpr uint32_t kMinimumHeightFieldSampleCount = 3;
 	constexpr uint32_t kMaximumHeightFieldSampleCount = 4096;
 
@@ -99,6 +167,156 @@ namespace
 
 		p_heightField.SetHeights(sampleCount, static_cast<float>(*spacing), std::move(heights));
 		return { true, std::nullopt };
+	}
+
+	// true, or false and why: a colour per sample, as flat red, green and blue values from 0 to 1
+	std::tuple<bool, std::optional<std::string>> SetTerrainColors(
+		OvCore::ECS::Components::CTerrain& p_terrain,
+		const sol::object& p_sampleCount,
+		const sol::object& p_colors
+	)
+	{
+		const auto count = p_sampleCount.as<sol::optional<double>>();
+		if (!count || *count != std::floor(*count) || *count < 1 || *count > kMaximumHeightFieldSampleCount)
+		{
+			return { false, std::format("the sample count must be a whole number from 1 to {}", kMaximumHeightFieldSampleCount) };
+		}
+
+		if (p_colors.get_type() != sol::type::table)
+		{
+			return { false, "the colours must be an array of numbers (red, green and blue per sample)" };
+		}
+
+		const auto sampleCount = static_cast<uint32_t>(*count);
+		const sol::table table = p_colors.as<sol::table>();
+		const size_t expectedSize = static_cast<size_t>(sampleCount) * sampleCount * 3;
+		const size_t size = table.size();
+
+		if (size != 0 && size != expectedSize)
+		{
+			return { false, std::format("{} values given for {} samples (3 per sample)", size, expectedSize / 3) };
+		}
+
+		std::vector<float> colors(size);
+
+		for (size_t index = 0; index < size; ++index)
+		{
+			const auto value = table.raw_get<sol::optional<double>>(index + 1);
+			if (!value || !std::isfinite(*value))
+			{
+				return { false, std::format("the value {} is not a finite number", index + 1) };
+			}
+
+			colors[index] = static_cast<float>(*value);
+		}
+
+		p_terrain.SetColors(sampleCount, colors);
+		return { true, std::nullopt };
+	}
+
+	// The settings of a vegetation layer a table gives, over the layer's current ones: an unknown key or a value of
+	// the wrong kind raises an error naming it
+	void ApplyVegetationSettings(OvCore::ECS::Components::CVegetation::Layer& p_layer, const sol::table& p_settings, std::string_view p_function)
+	{
+		const auto fail = [&](const std::string& p_why) { throw sol::error(std::format("Vegetation:{}: {}", p_function, p_why)); };
+
+		const auto number = [&](const std::string& p_key, const sol::object& p_value, float p_min, float p_max) {
+			const auto value = p_value.as<sol::optional<double>>();
+			if (!value || !std::isfinite(*value) || *value < p_min || *value > p_max)
+			{
+				fail(std::format("'{}' must be a number from {} to {}", p_key, p_min, p_max));
+			}
+			return static_cast<float>(*value);
+		};
+
+		const auto boolean = [&](const std::string& p_key, const sol::object& p_value) {
+			if (p_value.get_type() != sol::type::boolean)
+			{
+				fail(std::format("'{}' must be true or false", p_key));
+			}
+			return p_value.as<bool>();
+		};
+
+		const auto text = [&](const std::string& p_key, const sol::object& p_value) {
+			if (p_value.get_type() != sol::type::string)
+			{
+				fail(std::format("'{}' must be a string", p_key));
+			}
+			return p_value.as<std::string>();
+		};
+
+		for (const auto& [key, value] : p_settings)
+		{
+			if (key.get_type() != sol::type::string)
+			{
+				fail("the settings are named, as { density = 2 }");
+			}
+
+			const std::string name = key.as<std::string>();
+			auto& scatter = p_layer.scatter;
+
+			if (name == "name") p_layer.name = text(name, value);
+			else if (name == "model")
+			{
+				const auto model = value.as<sol::optional<OvRendering::Resources::Model*>>();
+				if (!model || !*model) fail("'model' must be a model (Resources.GetModel)");
+				p_layer.model = *model;
+			}
+			else if (name == "material")
+			{
+				const auto material = value.as<sol::optional<OvCore::Resources::Material*>>();
+				if (!material || !*material) fail("'material' must be a material (Resources.GetMaterial)");
+				p_layer.material = *material;
+			}
+			else if (name == "density") scatter.density = number(name, value, 0.0f, OvCore::Terrain::kMaxScatterDensity);
+			else if (name == "minScale") scatter.minScale = number(name, value, 0.0f, 100.0f);
+			else if (name == "maxScale") scatter.maxScale = number(name, value, 0.0f, 100.0f);
+			else if (name == "randomYaw") scatter.randomYaw = boolean(name, value);
+			else if (name == "slopeAlignment") scatter.slopeAlignment = number(name, value, 0.0f, 1.0f);
+			else if (name == "maxSlope") scatter.maxSlope = number(name, value, 0.0f, 90.0f);
+			else if (name == "minHeight") scatter.minHeight = number(name, value, -10000.0f, 10000.0f);
+			else if (name == "maxHeight") scatter.maxHeight = number(name, value, -10000.0f, 10000.0f);
+			else if (name == "seed")
+			{
+				const float seed = number(name, value, 0.0f, 4294967295.0f);
+				if (seed != std::floor(seed)) fail("'seed' must be a whole number");
+				scatter.seed = static_cast<uint32_t>(seed);
+			}
+			else if (name == "drawDistance") p_layer.drawDistance = number(name, value, 0.0f, 100000.0f);
+			else if (name == "castShadows") p_layer.castShadows = boolean(name, value);
+			else if (name == "densityMap") p_layer.densityMap = text(name, value);
+			else fail(std::format("unknown setting '{}'", name));
+		}
+	}
+
+	sol::table VegetationLayerTable(sol::state_view p_lua, const OvCore::ECS::Components::CVegetation::Layer& p_layer)
+	{
+		sol::table table = p_lua.create_table();
+		table["name"] = p_layer.name;
+		table["model"] = p_layer.model;
+		table["material"] = p_layer.material;
+		table["density"] = p_layer.scatter.density;
+		table["minScale"] = p_layer.scatter.minScale;
+		table["maxScale"] = p_layer.scatter.maxScale;
+		table["randomYaw"] = p_layer.scatter.randomYaw;
+		table["slopeAlignment"] = p_layer.scatter.slopeAlignment;
+		table["maxSlope"] = p_layer.scatter.maxSlope;
+		table["minHeight"] = p_layer.scatter.minHeight;
+		table["maxHeight"] = p_layer.scatter.maxHeight;
+		table["seed"] = p_layer.scatter.seed;
+		table["drawDistance"] = p_layer.drawDistance;
+		table["castShadows"] = p_layer.castShadows;
+		table["densityMap"] = p_layer.densityMap;
+		return table;
+	}
+
+	uint32_t ToVegetationLayer(OvCore::ECS::Components::CVegetation& p_vegetation, int p_index, std::string_view p_function)
+	{
+		if (p_index < 0 || static_cast<uint32_t>(p_index) >= p_vegetation.GetLayerCount())
+		{
+			throw sol::error(std::format("Vegetation:{}: no layer {} (layers from 0 to {})", p_function, p_index, static_cast<int>(p_vegetation.GetLayerCount()) - 1));
+		}
+		return static_cast<uint32_t>(p_index);
 	}
 
 	// true, or false and why: the triangles are only applied when both arrays are valid
@@ -166,8 +384,10 @@ void BindLuaComponents(sol::state& p_luaState)
 	using namespace OvCore::ECS;
 	using namespace OvCore::ECS::Components;
 
+	// Lua holds components through handles checked on every use (LuaComponentRef.h)
 	p_luaState.new_usertype<AComponent>("Component",
-		"GetOwner", [](AComponent& p_component) { return OvCore::Scripting::ActorRef{ p_component.owner.GetGUID() }; }
+		"GetOwner", [](AComponent& p_component) { return OvCore::Scripting::ActorRef{ p_component.owner.GetGUID() }; },
+		"IsAlive", &OvCore::Scripting::LuaComponentIsAlive
 	);
 
 	p_luaState.new_usertype<CTransform>("Transform",
@@ -214,7 +434,9 @@ void BindLuaComponents(sol::state& p_luaState)
 		"GetUIPivot", [](CTransform& p_this) -> FVector2 { return p_this.GetUIPivot(); },
 		"SetUIPivot", &CTransform::SetUIPivot,
 		"GetUIAnchorPreset", &CTransform::GetUIAnchorPreset,
-		"SetUIAnchorPreset", &CTransform::SetUIAnchorPreset
+		"SetUIAnchorPreset", &CTransform::SetUIAnchorPreset,
+		"GetUIClipChildren", &CTransform::GetUIClipChildren,
+		"SetUIClipChildren", &CTransform::SetUIClipChildren
 	);
 
 	p_luaState.new_enum<OvCore::ECS::Components::CModelRenderer::EFrustumBehaviour>("FrustumBehaviour", {
@@ -234,7 +456,75 @@ void BindLuaComponents(sol::state& p_luaState)
 		"GetFrustumBehaviour", &CModelRenderer::GetFrustumBehaviour,
 		"SetFrustumBehaviour", &CModelRenderer::SetFrustumBehaviour,
 		"GetMaxDrawDistance", &CModelRenderer::GetMaxDrawDistance,
-		"SetMaxDrawDistance", &CModelRenderer::SetMaxDrawDistance
+		"SetMaxDrawDistance", &CModelRenderer::SetMaxDrawDistance,
+		"SetLodModels", [](CModelRenderer& p_this, sol::table p_levels)
+		{
+			const size_t count = p_levels.size();
+			if (count > CModelRenderer::kMaxLodLevels)
+			{
+				throw sol::error(std::format("ModelRenderer:SetLodModels: at most {} levels besides the model", CModelRenderer::kMaxLodLevels));
+			}
+
+			std::vector<CModelRenderer::LodLevel> levels;
+			float previous = 0.0f;
+
+			for (size_t i = 1; i <= count; ++i)
+			{
+				const auto entry = p_levels.get<sol::object>(i);
+				if (entry.get_type() != sol::type::table)
+				{
+					throw sol::error(std::format("ModelRenderer:SetLodModels: level {} is not a table {{ model, distance }}", i));
+				}
+
+				const auto level = entry.as<sol::table>();
+				const auto model = level.get<sol::optional<OvRendering::Resources::Model*>>(1);
+				const auto distance = level.get<sol::optional<float>>(2);
+
+				if (!model || !model.value())
+				{
+					throw sol::error(std::format("ModelRenderer:SetLodModels: level {} has no model", i));
+				}
+
+				if (!distance || !std::isfinite(distance.value()) || distance.value() <= previous)
+				{
+					throw sol::error(std::format("ModelRenderer:SetLodModels: level {} must start beyond the level before ({} m)", i, previous));
+				}
+
+				if (const auto* own = p_this.GetModel())
+				{
+					if (const auto why = OvCore::Rendering::LodSelection::CompareBones(own->GetSkeleton(), model.value()->GetSkeleton()))
+					{
+						throw sol::error(std::format("ModelRenderer:SetLodModels: level {} cannot take the model's pose: {}", i, why.value()));
+					}
+				}
+
+				levels.push_back({ model.value(), distance.value() });
+				previous = distance.value();
+			}
+
+			p_this.SetLods(levels);
+		},
+		"GetLodModels", [](CModelRenderer& p_this, sol::this_state p_state)
+		{
+			sol::state_view lua{ p_state };
+			sol::table result = lua.create_table();
+			for (const auto& level : p_this.GetLods())
+			{
+				result.add(lua.create_table_with(1, level.model, 2, level.distance));
+			}
+			return result;
+		},
+		"GetLodLevel", &CModelRenderer::GetLodLevel,
+		"GetLodError", [](CModelRenderer& p_this) { return p_this.GetLodError(); },
+		"SetLodBias", [](CModelRenderer& p_this, float p_bias)
+		{
+			if (!std::isfinite(p_bias) || p_bias <= 0.0f)
+			{
+				throw sol::error("ModelRenderer:SetLodBias: the bias must be a positive number");
+			}
+			p_this.SetLodBias(p_bias);
+		},
+		"GetLodBias", &CModelRenderer::GetLodBias
 	);
 
 	p_luaState.new_enum<OvCore::Rendering::EVisibilityFlags>("VisibilityFlags", {
@@ -274,6 +564,11 @@ void BindLuaComponents(sol::state& p_luaState)
 		"IsAttached", &CBoneAttachment::IsAttached
 	);
 
+	p_luaState.new_enum<CSkinnedMeshRenderer::EUpdateMode>("AnimationUpdateMode", {
+		{ "ALWAYS", CSkinnedMeshRenderer::EUpdateMode::ALWAYS },
+		{ "WHEN_VISIBLE", CSkinnedMeshRenderer::EUpdateMode::WHEN_VISIBLE }
+	});
+
 	p_luaState.new_usertype<CSkinnedMeshRenderer>("SkinnedMeshRenderer",
 		sol::base_classes, sol::bases<AComponent>(),
 		"GetLayerCount", &CSkinnedMeshRenderer::GetLayerCount,
@@ -293,6 +588,40 @@ void BindLuaComponents(sol::state& p_luaState)
 		"GetLayerMask", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetLayerMask(p_layer.value_or(0)); },
 		"SetMeshBoundsScale", &CSkinnedMeshRenderer::SetMeshBoundsScale,
 		"GetMeshBoundsScale", &CSkinnedMeshRenderer::GetMeshBoundsScale,
+		"SetAnimationBoneMap", [](CSkinnedMeshRenderer& p_this, sol::table p_map, std::optional<uint32_t> p_layer)
+		{
+			OvCore::Animation::BoneMap boneMap;
+
+			for (const auto& [key, value] : p_map)
+			{
+				if (!key.is<std::string>() || !value.is<std::string>())
+				{
+					throw sol::error("SkinnedMeshRenderer:SetAnimationBoneMap takes a table of model bone names to clip bone names");
+				}
+
+				boneMap[key.as<std::string>()] = value.as<std::string>();
+			}
+
+			p_this.SetAnimationBoneMap(boneMap, p_layer.value_or(0));
+		},
+		"GetAnimationBoneMap", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer, sol::this_state p_state)
+		{
+			sol::state_view lua(p_state);
+			sol::table result = lua.create_table();
+
+			for (const auto& [modelBone, clipBone] : p_this.GetAnimationBoneMap(p_layer.value_or(0)))
+			{
+				result[modelBone] = clipBone;
+			}
+
+			return result;
+		},
+		"GetAnimationSourceError", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetAnimationSourceError(p_layer.value_or(0)); },
+		"SetUpdateMode", &CSkinnedMeshRenderer::SetUpdateMode,
+		"GetUpdateMode", &CSkinnedMeshRenderer::GetUpdateMode,
+		"WasVisible", &CSkinnedMeshRenderer::WasVisible,
+		"GetPoseEvaluationCount", &CSkinnedMeshRenderer::GetPoseEvaluationCount,
+		"GetSkeletonUpdateCount", &CSkinnedMeshRenderer::GetSkeletonUpdateCount,
 		"SetTime", [](CSkinnedMeshRenderer& p_this, float p_timeSeconds, std::optional<uint32_t> p_layer) { p_this.SetTime(p_timeSeconds, p_layer.value_or(0)); },
 		"GetTime", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetTime(p_layer.value_or(0)); },
 		"SetAnimationSourceModel", sol::overload(
@@ -387,23 +716,31 @@ void BindLuaComponents(sol::state& p_luaState)
 		"GetCollisionMode", &CPhysicalObject::GetCollisionDetectionMode,
 		"SetKinematic", &CPhysicalObject::SetKinematic,
 		"IsStatic", &CPhysicalObject::IsStatic,
-		"SetStatic", &CPhysicalObject::SetStatic
+		"SetStatic", &CPhysicalObject::SetStatic,
+		"IsInterpolated", &CPhysicalObject::IsInterpolated,
+		"SetInterpolated", &CPhysicalObject::SetInterpolated,
+		"GetCollisionLayer", [](CPhysicalObject& p_this) { return static_cast<int>(p_this.GetCollisionLayer()); },
+		"SetCollisionLayer", [](CPhysicalObject& p_this, int p_layer)
+		{
+			constexpr int kLastLayer = OvPhysics::Settings::PhysicsSettings::kLayerCount - 1;
+			p_this.SetCollisionLayer(static_cast<uint16_t>(std::clamp(p_layer, 0, kLastLayer)));
+		}
 	);
 
 	p_luaState.new_usertype<CPhysicalBox>("PhysicalBox",
-		sol::base_classes, sol::bases<CPhysicalObject>(),
+		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
 		"GetSize", &CPhysicalBox::GetSize,
 		"SetSize", &CPhysicalBox::SetSize
 	);
 
 	p_luaState.new_usertype<CPhysicalSphere>("PhysicalSphere",
-		sol::base_classes, sol::bases<CPhysicalObject>(),
+		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
 		"GetRadius", &CPhysicalSphere::GetRadius,
 		"SetRadius", &CPhysicalSphere::SetRadius
 	);
 
 	p_luaState.new_usertype<CPhysicalCapsule>("PhysicalCapsule",
-		sol::base_classes, sol::bases<CPhysicalObject>(),
+		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
 		"GetRadius", &CPhysicalCapsule::GetRadius,
 		"SetRadius", &CPhysicalCapsule::SetRadius,
 		"GetHeight", &CPhysicalCapsule::GetHeight,
@@ -413,8 +750,68 @@ void BindLuaComponents(sol::state& p_luaState)
 	p_luaState.new_usertype<CPhysicalHeightField>("PhysicalHeightField",
 		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
 		"SetHeights", &SetHeights,
+		"GetHeights", [](CPhysicalHeightField& p_this) {
+			// A hole as math.huge, as SetHeights takes it
+			std::vector<double> heights(p_this.GetHeights().begin(), p_this.GetHeights().end());
+			for (double& height : heights)
+			{
+				if (OvCore::Terrain::IsHole(static_cast<float>(height)))
+				{
+					height = std::numeric_limits<double>::infinity();
+				}
+			}
+			return sol::as_table(std::move(heights));
+		},
 		"GetSampleCount", &CPhysicalHeightField::GetSampleCount,
-		"GetSpacing", &CPhysicalHeightField::GetSpacing
+		"GetSpacing", &CPhysicalHeightField::GetSpacing,
+		"SetSpacing", [](CPhysicalHeightField& p_this, float p_spacing) {
+			if (!std::isfinite(p_spacing) || p_spacing <= 0.0f)
+			{
+				throw sol::error("PhysicalHeightField:SetSpacing: the spacing must be a positive number");
+			}
+			p_this.SetSpacing(p_spacing);
+		},
+		"SetHeightmap", [](CPhysicalHeightField& p_this, const std::string& p_path) { p_this.SetHeightmap(p_path); },
+		"GetHeightmap", &CPhysicalHeightField::GetHeightmap,
+		"GetHeightmapError", [](CPhysicalHeightField& p_this) { return p_this.GetHeightmapError(); },
+		"SetHeightScale", &CPhysicalHeightField::SetHeightScale,
+		"GetHeightScale", &CPhysicalHeightField::GetHeightScale,
+		"SetHeightOffset", &CPhysicalHeightField::SetHeightOffset,
+		"GetHeightOffset", &CPhysicalHeightField::GetHeightOffset,
+		"GetHeightAt", &CPhysicalHeightField::GetHeightAt,
+		"GetNormalAt", &CPhysicalHeightField::GetNormalAt
+	);
+
+	p_luaState.new_enum<CCharacterController::EGroundState>("CharacterGroundState", {
+		{"ON_GROUND", CCharacterController::EGroundState::ON_GROUND},
+		{"ON_STEEP_GROUND", CCharacterController::EGroundState::ON_STEEP_GROUND},
+		{"NOT_SUPPORTED", CCharacterController::EGroundState::NOT_SUPPORTED},
+		{"IN_AIR", CCharacterController::EGroundState::IN_AIR}
+	});
+
+	p_luaState.new_usertype<CCharacterController>("CharacterController",
+		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
+		"GetRadius", &CCharacterController::GetRadius,
+		"SetRadius", &CCharacterController::SetRadius,
+		"GetHeight", &CCharacterController::GetHeight,
+		"SetHeight", &CCharacterController::SetHeight,
+		"GetMaxSlopeAngle", &CCharacterController::GetMaxSlopeAngle,
+		"SetMaxSlopeAngle", &CCharacterController::SetMaxSlopeAngle,
+		"GetStepHeight", &CCharacterController::GetStepHeight,
+		"SetStepHeight", &CCharacterController::SetStepHeight,
+		"GetGroundSnapDistance", &CCharacterController::GetGroundSnapDistance,
+		"SetGroundSnapDistance", &CCharacterController::SetGroundSnapDistance,
+		"GetGravityFactor", &CCharacterController::GetGravityFactor,
+		"SetGravityFactor", &CCharacterController::SetGravityFactor,
+		"GetPushStrength", &CCharacterController::GetPushStrength,
+		"SetPushStrength", &CCharacterController::SetPushStrength,
+		"GetRealVelocity", &CCharacterController::GetRealVelocity,
+		"GetGroundState", &CCharacterController::GetGroundState,
+		"IsGrounded", &CCharacterController::IsGrounded,
+		"GetGroundNormal", &CCharacterController::GetGroundNormal,
+		"GetGroundPoint", &CCharacterController::GetGroundPoint,
+		"GetGroundVelocity", &CCharacterController::GetGroundVelocity,
+		"GetGroundObject", &CCharacterController::GetGroundObject
 	);
 
 	p_luaState.new_usertype<CPhysicalMesh>("PhysicalMesh",
@@ -552,7 +949,9 @@ void BindLuaComponents(sol::state& p_luaState)
 		"GetTint", [](UI::CImage& p_this) -> FVector4 { return p_this.GetTint(); },
 		"SetTint", &UI::CImage::SetTint,
 		"GetPreserveAspect", &UI::CImage::GetPreserveAspect,
-		"SetPreserveAspect", &UI::CImage::SetPreserveAspect
+		"SetPreserveAspect", &UI::CImage::SetPreserveAspect,
+		"IsLit", &UI::CImage::IsLit,
+		"SetLit", &UI::CImage::SetLit
 	);
 
 	p_luaState.new_usertype<UI::CLayoutGroup>("LayoutGroup",
@@ -621,6 +1020,7 @@ void BindLuaComponents(sol::state& p_luaState)
 		sol::base_classes, sol::bases<AComponent>(),
 		"GetText", &UI::CText::GetText,
 		"SetText", &UI::CText::SetText,
+		"GetContentSize", &UI::CText::GetContentSize,
 		"GetFontPath", &UI::CText::GetFontPath,
 		"SetFontPath", &UI::CText::SetFontPath,
 		"GetFontSize", &UI::CText::GetFontSize,
@@ -630,7 +1030,11 @@ void BindLuaComponents(sol::state& p_luaState)
 		"GetHorizontalAlignment", &UI::CText::GetHorizontalAlignment,
 		"SetHorizontalAlignment", &UI::CText::SetHorizontalAlignment,
 		"GetVerticalAlignment", &UI::CText::GetVerticalAlignment,
-		"SetVerticalAlignment", &UI::CText::SetVerticalAlignment
+		"SetVerticalAlignment", &UI::CText::SetVerticalAlignment,
+		"IsLit", &UI::CText::IsLit,
+		"SetLit", &UI::CText::SetLit,
+		"GetTextKey", &UI::CText::GetTextKey,
+		"SetTextKey", &UI::CText::SetTextKey
 	);
 
 	p_luaState.new_usertype<CLight>("Light",
@@ -642,7 +1046,7 @@ void BindLuaComponents(sol::state& p_luaState)
 	);
 
 	p_luaState.new_usertype<CPointLight>("PointLight",
-		sol::base_classes, sol::bases<CLight>(),
+		sol::base_classes, sol::bases<CLight, AComponent>(),
 		"GetConstant", &CPointLight::GetConstant,
 		"GetLinear", &CPointLight::GetLinear,
 		"GetQuadratic", &CPointLight::GetQuadratic,
@@ -652,7 +1056,7 @@ void BindLuaComponents(sol::state& p_luaState)
 	);
 
 	p_luaState.new_usertype<CSpotLight>("SpotLight",
-		sol::base_classes, sol::bases<CLight>(),
+		sol::base_classes, sol::bases<CLight, AComponent>(),
 		"GetConstant", &CSpotLight::GetConstant,
 		"GetLinear", &CSpotLight::GetLinear,
 		"GetQuadratic", &CSpotLight::GetQuadratic,
@@ -666,13 +1070,13 @@ void BindLuaComponents(sol::state& p_luaState)
 	);
 
 	p_luaState.new_usertype<CAmbientBoxLight>("AmbientBoxLight",
-		sol::base_classes, sol::bases<CLight>(),
+		sol::base_classes, sol::bases<CLight, AComponent>(),
 		"GetSize", &CAmbientBoxLight::GetSize,
 		"SetSize", &CAmbientBoxLight::SetSize
 	);
 
 	p_luaState.new_usertype<CAmbientSphereLight>("AmbientSphereLight",
-		sol::base_classes, sol::bases<CLight>(),
+		sol::base_classes, sol::bases<CLight, AComponent>(),
 		"GetRadius", &CAmbientSphereLight::GetRadius,
 		"SetRadius", &CAmbientSphereLight::SetRadius
 	);
@@ -683,7 +1087,7 @@ void BindLuaComponents(sol::state& p_luaState)
 	});
 
 	p_luaState.new_usertype<CDirectionalLight>("DirectionalLight",
-		sol::base_classes, sol::bases<CLight>(),
+		sol::base_classes, sol::bases<CLight, AComponent>(),
 		"GetCastShadow", &CDirectionalLight::GetCastShadows,
 		"SetCastShadow", &CDirectionalLight::SetCastShadows,
 		"GetShadowAreaSize", &CDirectionalLight::GetShadowAreaSize,
@@ -697,9 +1101,44 @@ void BindLuaComponents(sol::state& p_luaState)
 		"RequestShadowMapUpdate", &CDirectionalLight::RequestShadowMapUpdate
 	);
 
+	p_luaState.new_enum<OvAudio::Settings::EAttenuationModel>("AttenuationModel", {
+		{ "NONE", OvAudio::Settings::EAttenuationModel::NONE },
+		{ "INVERSE_DISTANCE", OvAudio::Settings::EAttenuationModel::INVERSE_DISTANCE },
+		{ "LINEAR_DISTANCE", OvAudio::Settings::EAttenuationModel::LINEAR_DISTANCE },
+		{ "EXPONENTIAL_DISTANCE", OvAudio::Settings::EAttenuationModel::EXPONENTIAL_DISTANCE }
+	});
+
 	p_luaState.new_usertype<CAudioSource>("AudioSource",
 		sol::base_classes, sol::bases<AComponent>(),
 		"Play", &CAudioSource::Play,
+		"PlayOneShot", [](CAudioSource& p_this, OvAudio::Resources::Sound* p_sound, sol::optional<float> p_volume)
+		{
+			if (!p_sound)
+			{
+				throw sol::error("AudioSource:PlayOneShot: a sound is needed (Resources.GetSound)");
+			}
+			p_this.PlayOneShot(*p_sound, p_volume.value_or(1.0f));
+		},
+		"SetBus", [](CAudioSource& p_this, const std::string& p_bus)
+		{
+			if (!p_bus.empty() && !OVSERVICE(OvAudio::Core::AudioEngine).HasBus(p_bus))
+			{
+				throw sol::error("AudioSource:SetBus: no bus '" + p_bus + "' (Master, or one of the project's audio_buses)");
+			}
+			p_this.SetBus(p_bus);
+		},
+		"GetBus", [](CAudioSource& p_this)
+		{
+			return p_this.GetBus().empty() ? std::string(OvAudio::Core::AudioEngine::kMasterBus) : p_this.GetBus();
+		},
+		"SetPitchVariation", &CAudioSource::SetPitchVariation,
+		"GetPitchVariation", &CAudioSource::GetPitchVariation,
+		"SetAttenuationModel", &CAudioSource::SetAttenuationModel,
+		"GetAttenuationModel", &CAudioSource::GetAttenuationModel,
+		"SetRolloff", &CAudioSource::SetRolloff,
+		"GetRolloff", &CAudioSource::GetRolloff,
+		"SetMaxDistance", &CAudioSource::SetMaxDistance,
+		"GetMaxDistance", &CAudioSource::GetMaxDistance,
 		"Stop", &CAudioSource::Stop,
 		"Pause", &CAudioSource::Pause,
 		"Resume", &CAudioSource::Resume,
@@ -831,7 +1270,617 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetBrightness", &CReflectionProbe::SetBrightness,
 		"GetBrightness", &CReflectionProbe::GetBrightness,
 		"IsBoxProjectionEnabled", &CReflectionProbe::IsBoxProjectionEnabled,
-		"RequestCapture", &CReflectionProbe::RequestCapture,
+		// The argument is optional in Lua as in C++: sol gives no default to a bound member function
+		"RequestCapture", [](CReflectionProbe& p_probe, sol::optional<bool> p_forceImmediate) { p_probe.RequestCapture(p_forceImmediate.value_or(false)); },
 		"GetCubemap", &CReflectionProbe::GetCubemap
 	);
+
+	p_luaState.new_enum<OvCore::Particles::EParticleShape>("ParticleShape", {
+		{ "POINT", OvCore::Particles::EParticleShape::POINT },
+		{ "SPHERE", OvCore::Particles::EParticleShape::SPHERE },
+		{ "HEMISPHERE", OvCore::Particles::EParticleShape::HEMISPHERE },
+		{ "CONE", OvCore::Particles::EParticleShape::CONE },
+		{ "BOX", OvCore::Particles::EParticleShape::BOX }
+	});
+
+	p_luaState.new_enum<OvCore::Particles::EParticleSpace>("ParticleSpace", {
+		{ "WORLD", OvCore::Particles::EParticleSpace::WORLD },
+		{ "LOCAL", OvCore::Particles::EParticleSpace::LOCAL }
+	});
+
+	p_luaState.new_usertype<CTerrain>("Terrain",
+		sol::base_classes, sol::bases<AComponent>(),
+		"SetChunkSize", [](CTerrain& p_this, int p_cells) {
+			if (p_cells < 1 || p_cells > 256)
+			{
+				throw sol::error("Terrain:SetChunkSize: a chunk is 1 to 256 cells wide");
+			}
+			p_this.SetChunkSize(static_cast<uint32_t>(p_cells));
+		},
+		"GetChunkSize", &CTerrain::GetChunkSize,
+		"SetLodCount", [](CTerrain& p_this, int p_count) {
+			if (p_count < 1 || p_count > static_cast<int>(OvCore::Terrain::kMaxLodCount))
+			{
+				throw sol::error(std::format("Terrain:SetLodCount: from 1 to {} levels", OvCore::Terrain::kMaxLodCount));
+			}
+			p_this.SetLodCount(static_cast<uint32_t>(p_count));
+		},
+		"GetLodCount", &CTerrain::GetLodCount,
+		"SetLodDistance", &CTerrain::SetLodDistance,
+		"GetLodDistance", &CTerrain::GetLodDistance,
+		"SetMaterialPath", &CTerrain::SetMaterialPath,
+		"GetMaterialPath", &CTerrain::GetMaterialPath,
+		"SetColorMap", &CTerrain::SetColorMap,
+		"GetColorMap", &CTerrain::GetColorMap,
+		"SetColors", &SetTerrainColors,
+		"HasColors", &CTerrain::HasColors,
+		"GetError", &CTerrain::GetError,
+		"GetChunkCount", &CTerrain::GetChunkCount,
+		"GetChunkLod", [](CTerrain& p_this, int p_chunk) {
+			return p_chunk >= 0 ? p_this.GetChunkLod(static_cast<uint32_t>(p_chunk)) : std::nullopt;
+		},
+		"GetTriangleCount", &CTerrain::GetTriangleCount
+	);
+
+	p_luaState.new_usertype<CVegetation>("Vegetation",
+		sol::base_classes, sol::bases<AComponent>(),
+		"AddLayer", [](CVegetation& p_this, sol::optional<sol::table> p_settings) {
+			if (p_this.GetLayerCount() >= CVegetation::kMaxLayers)
+			{
+				throw sol::error(std::format("Vegetation:AddLayer: at most {} layers", CVegetation::kMaxLayers));
+			}
+
+			CVegetation::Layer layer;
+			layer.name = std::format("Layer {}", p_this.GetLayerCount() + 1);
+			if (OvCore::Global::ServiceLocator::Has<OvCore::ResourceManagement::MaterialManager>())
+			{
+				layer.material = OVSERVICE(OvCore::ResourceManagement::MaterialManager).GetResource(":Materials/Default.ovmat");
+			}
+
+			if (p_settings)
+			{
+				ApplyVegetationSettings(layer, *p_settings, "AddLayer");
+			}
+
+			return p_this.AddLayer(layer).value_or(0);
+		},
+		"SetLayer", [](CVegetation& p_this, int p_index, sol::table p_settings) {
+			const uint32_t index = ToVegetationLayer(p_this, p_index, "SetLayer");
+			auto layer = p_this.GetLayer(index).value();
+			ApplyVegetationSettings(layer, p_settings, "SetLayer");
+			p_this.SetLayer(index, layer);
+		},
+		"GetLayer", [](CVegetation& p_this, int p_index, sol::this_state p_state) -> sol::object {
+			if (p_index < 0)
+			{
+				return sol::lua_nil;
+			}
+			const auto layer = p_this.GetLayer(static_cast<uint32_t>(p_index));
+			return layer ? sol::object(VegetationLayerTable(p_state, *layer)) : sol::object(sol::lua_nil);
+		},
+		"RemoveLayer", [](CVegetation& p_this, int p_index) {
+			p_this.RemoveLayer(ToVegetationLayer(p_this, p_index, "RemoveLayer"));
+		},
+		"GetLayerCount", &CVegetation::GetLayerCount,
+		"SetDensityMap", [](CVegetation& p_this, int p_index, const sol::object& p_size, const sol::object& p_weights) -> std::tuple<bool, std::optional<std::string>> {
+			const uint32_t index = ToVegetationLayer(p_this, p_index, "SetDensityMap");
+			const auto size = p_size.as<sol::optional<double>>();
+			if (!size || *size != std::floor(*size) || *size < 0 || *size > 4096)
+			{
+				return { false, std::string{ "the size must be a whole number from 2 to 4096, or 0 to clear the map" } };
+			}
+
+			std::vector<float> weights;
+			if (p_weights.get_type() == sol::type::table)
+			{
+				const auto table = p_weights.as<sol::table>();
+				weights.resize(table.size());
+				for (size_t i = 0; i < weights.size(); ++i)
+				{
+					const auto value = table.raw_get<sol::optional<double>>(i + 1);
+					if (!value)
+					{
+						return { false, std::format("the weight {} is not a number", i + 1) };
+					}
+					weights[i] = static_cast<float>(*value);
+				}
+			}
+			else if (*size != 0)
+			{
+				return { false, std::string{ "the weights must be an array of numbers from 0 to 1" } };
+			}
+
+			if (auto error = p_this.SetDensityMap(index, static_cast<uint32_t>(*size), weights))
+			{
+				return { false, error };
+			}
+			return { true, std::nullopt };
+		},
+		"GetError", &CVegetation::GetError,
+		"GetInstanceCount", [](CVegetation& p_this, sol::optional<int> p_index) {
+			if (p_index)
+			{
+				return p_this.GetInstanceCount(ToVegetationLayer(p_this, *p_index, "GetInstanceCount"));
+			}
+			return p_this.GetInstanceCount();
+		}
+	);
+
+	p_luaState.new_usertype<CParticleSystem>("ParticleSystem",
+		sol::base_classes, sol::bases<AComponent>(),
+		"Play", &CParticleSystem::Play,
+		"Stop", &CParticleSystem::Stop,
+		"Clear", &CParticleSystem::Clear,
+		"IsPlaying", &CParticleSystem::IsPlaying,
+		"GetAliveCount", &CParticleSystem::GetAliveCount,
+		"Emit", [](CParticleSystem& p_this, double p_count, sol::optional<sol::table> p_overrides) {
+			const uint32_t count = ToParticleCount(p_count, "Emit");
+			return p_this.Emit(count, p_overrides ? ToParticleOverrides(*p_overrides) : OvCore::Particles::ParticleOverrides{});
+		},
+		"GetModel", &CParticleSystem::GetModel,
+		"SetModel", [](CParticleSystem& p_this, OvRendering::Resources::Model* p_model) { p_this.SetModel(p_model); },
+		"GetMaterial", &CParticleSystem::GetMaterial,
+		"SetMaterial", [](CParticleSystem& p_this, OvCore::Resources::Material* p_material) { p_this.SetMaterial(p_material); },
+		"GetMaxParticles", [](CParticleSystem& p_this) { return p_this.GetSettings().maxParticles; },
+		"SetMaxParticles", [](CParticleSystem& p_this, double p_count) {
+			const uint32_t count = ToParticleCount(p_count, "SetMaxParticles");
+			ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.maxParticles = count; });
+		},
+		"GetRate", [](CParticleSystem& p_this) { return p_this.GetSettings().rate; },
+		"SetRate", [](CParticleSystem& p_this, float p_rate) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.rate = p_rate; }); },
+		"GetBursts", [](CParticleSystem& p_this, sol::this_state p_state) {
+			sol::state_view lua(p_state);
+			sol::table bursts = lua.create_table();
+			for (const auto& burst : p_this.GetSettings().bursts)
+			{
+				bursts.add(lua.create_table_with("time", burst.time, "count", burst.count));
+			}
+			return bursts;
+		},
+		"SetBursts", [](CParticleSystem& p_this, sol::table p_bursts) {
+			std::vector<OvCore::Particles::ParticleBurst> bursts;
+			for (size_t i = 1; i <= p_bursts.size(); ++i)
+			{
+				const sol::optional<sol::table> entry = p_bursts[i];
+				const sol::optional<float> time = entry ? (*entry)["time"] : sol::optional<float>{};
+				const sol::optional<double> count = entry ? (*entry)["count"] : sol::optional<double>{};
+				if (!time || !count)
+				{
+					throw sol::error(std::format("ParticleSystem:SetBursts: burst {} must be a table {{ time = seconds, count = particles }}", i));
+				}
+				bursts.push_back({ *time, ToParticleCount(*count, "SetBursts") });
+			}
+			ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.bursts = std::move(bursts); });
+		},
+		"GetDuration", [](CParticleSystem& p_this) { return p_this.GetSettings().duration; },
+		"SetDuration", [](CParticleSystem& p_this, float p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.duration = p_value; }); },
+		"IsLooping", [](CParticleSystem& p_this) { return p_this.GetSettings().looping; },
+		"SetLooping", [](CParticleSystem& p_this, bool p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.looping = p_value; }); },
+		"GetPlayOnStart", [](CParticleSystem& p_this) { return p_this.GetSettings().playOnStart; },
+		"SetPlayOnStart", [](CParticleSystem& p_this, bool p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.playOnStart = p_value; }); },
+		"GetLifetime", [](CParticleSystem& p_this) { return std::make_tuple(p_this.GetSettings().lifetimeMin, p_this.GetSettings().lifetimeMax); },
+		"SetLifetime", [](CParticleSystem& p_this, float p_min, sol::optional<float> p_max) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.lifetimeMin = p_min; s.lifetimeMax = p_max.value_or(p_min); }); },
+		"GetSpeed", [](CParticleSystem& p_this) { return std::make_tuple(p_this.GetSettings().speedMin, p_this.GetSettings().speedMax); },
+		"SetSpeed", [](CParticleSystem& p_this, float p_min, sol::optional<float> p_max) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.speedMin = p_min; s.speedMax = p_max.value_or(p_min); }); },
+		"GetShape", [](CParticleSystem& p_this) { return p_this.GetSettings().shape; },
+		"SetShape", [](CParticleSystem& p_this, OvCore::Particles::EParticleShape p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.shape = p_value; }); },
+		"GetShapeRadius", [](CParticleSystem& p_this) { return p_this.GetSettings().shapeRadius; },
+		"SetShapeRadius", [](CParticleSystem& p_this, float p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.shapeRadius = p_value; }); },
+		"GetShapeAngle", [](CParticleSystem& p_this) { return p_this.GetSettings().shapeAngle; },
+		"SetShapeAngle", [](CParticleSystem& p_this, float p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.shapeAngle = p_value; }); },
+		"GetShapeSize", [](CParticleSystem& p_this) { return p_this.GetSettings().shapeSize; },
+		"SetShapeSize", [](CParticleSystem& p_this, const OvMaths::FVector3& p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.shapeSize = p_value; }); },
+		"GetGravity", [](CParticleSystem& p_this) { return p_this.GetSettings().gravity; },
+		"SetGravity", [](CParticleSystem& p_this, const OvMaths::FVector3& p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.gravity = p_value; }); },
+		"GetDrag", [](CParticleSystem& p_this) { return p_this.GetSettings().drag; },
+		"SetDrag", [](CParticleSystem& p_this, float p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.drag = p_value; }); },
+		"GetSize", [](CParticleSystem& p_this) { return std::make_tuple(p_this.GetSettings().sizeStart, p_this.GetSettings().sizeEnd); },
+		"SetSize", [](CParticleSystem& p_this, float p_start, sol::optional<float> p_end) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.sizeStart = p_start; s.sizeEnd = p_end.value_or(p_start); }); },
+		"GetColor", [](CParticleSystem& p_this) { return std::make_tuple(p_this.GetSettings().colorStart, p_this.GetSettings().colorEnd); },
+		"SetColor", [](CParticleSystem& p_this, const OvMaths::FVector4& p_start, sol::optional<OvMaths::FVector4> p_end) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.colorStart = p_start; s.colorEnd = p_end.value_or(p_start); }); },
+		"GetFade", [](CParticleSystem& p_this) { return std::make_tuple(p_this.GetSettings().fadeIn, p_this.GetSettings().fadeOut); },
+		"SetFade", [](CParticleSystem& p_this, float p_in, float p_out) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.fadeIn = p_in; s.fadeOut = p_out; }); },
+		"GetSpin", [](CParticleSystem& p_this) { return std::make_tuple(p_this.GetSettings().spinMin, p_this.GetSettings().spinMax); },
+		"SetSpin", [](CParticleSystem& p_this, float p_min, sol::optional<float> p_max) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.spinMin = p_min; s.spinMax = p_max.value_or(p_min); }); },
+		"HasRandomRotation", [](CParticleSystem& p_this) { return p_this.GetSettings().randomRotation; },
+		"SetRandomRotation", [](CParticleSystem& p_this, bool p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.randomRotation = p_value; }); },
+		"GetSpace", [](CParticleSystem& p_this) { return p_this.GetSettings().space; },
+		"SetSpace", [](CParticleSystem& p_this, OvCore::Particles::EParticleSpace p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.space = p_value; }); },
+		"IsUnscaled", [](CParticleSystem& p_this) { return p_this.GetSettings().unscaled; },
+		"SetUnscaled", [](CParticleSystem& p_this, bool p_value) { ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.unscaled = p_value; }); },
+		"GetSeed", [](CParticleSystem& p_this) { return p_this.GetSettings().seed; },
+		"SetSeed", [](CParticleSystem& p_this, double p_seed) {
+			if (!std::isfinite(p_seed) || p_seed < 0.0 || std::floor(p_seed) != p_seed || p_seed > std::numeric_limits<uint32_t>::max())
+			{
+				throw sol::error("ParticleSystem:SetSeed takes a whole number from 0 to 4294967295");
+			}
+			ChangeParticleSettings(p_this, [&](ParticleSettings& s) { s.seed = static_cast<uint32_t>(p_seed); });
+		}
+	);
+
+	// The look's bounds and speed, one setter each over the whole settings
+	const auto lookAtSetting = [](float OvCore::Animation::LookAtSettings::* p_field)
+	{
+		return [p_field](CLookAt& p_this, float p_value)
+		{
+			auto settings = p_this.GetSettings();
+			settings.*p_field = p_value;
+			p_this.SetSettings(settings);
+		};
+	};
+
+	const auto lookAtGetting = [](float OvCore::Animation::LookAtSettings::* p_field)
+	{
+		return [p_field](CLookAt& p_this) { return p_this.GetSettings().*p_field; };
+	};
+
+	p_luaState.new_usertype<CLookAt>("LookAt",
+		sol::base_classes, sol::bases<AComponent>(),
+		"SetBones", [](CLookAt& p_this, sol::table p_bones)
+		{
+			std::vector<CLookAt::BonePart> parts;
+
+			for (size_t i = 1; i <= p_bones.size(); ++i)
+			{
+				const auto entry = p_bones.get<sol::object>(i);
+				if (entry.get_type() != sol::type::table)
+				{
+					throw sol::error("LookAt:SetBones takes a list of { bone, weight } pairs, from the root to the tip");
+				}
+
+				const sol::table pair = entry.as<sol::table>();
+				const auto bone = pair.get<sol::object>(1);
+				const auto weight = pair.get<sol::object>(2);
+
+				if (bone.get_type() != sol::type::string || (weight.valid() && weight.get_type() != sol::type::number && weight.get_type() != sol::type::lua_nil))
+				{
+					throw sol::error("LookAt:SetBones takes a list of { bone, weight } pairs, from the root to the tip");
+				}
+
+				parts.push_back({ bone.as<std::string>(), weight.get_type() == sol::type::number ? weight.as<float>() : 1.0f });
+			}
+
+			p_this.SetBones(parts);
+		},
+		"GetBones", [](CLookAt& p_this, sol::this_state p_state)
+		{
+			sol::state_view lua(p_state);
+			sol::table result = lua.create_table();
+			for (const auto& part : p_this.GetBones())
+			{
+				result.add(lua.create_table_with(1, part.bone, 2, part.weight));
+			}
+			return result;
+		},
+		"SetTarget", [](CLookAt& p_this, std::optional<OvCore::Scripting::ActorRef> p_target)
+		{
+			p_this.SetTarget(p_target && p_target->guid != 0 ? &p_target->Resolve() : nullptr);
+		},
+		"GetTarget", [](CLookAt& p_this) -> std::optional<OvCore::Scripting::ActorRef>
+		{
+			if (p_this.GetTargetGUID() == 0) return std::nullopt;
+			return OvCore::Scripting::ActorRef{ p_this.GetTargetGUID() };
+		},
+		"SetTargetPosition", &CLookAt::SetTargetPosition,
+		"GetTargetPosition", &CLookAt::GetTargetPosition,
+		"ClearTarget", &CLookAt::ClearTarget,
+		"HasTarget", &CLookAt::HasTarget,
+		"SetTargetOffset", &CLookAt::SetTargetOffset,
+		"GetTargetOffset", [](CLookAt& p_this) { return p_this.GetTargetOffset(); },
+		"SetMaxYaw", lookAtSetting(&OvCore::Animation::LookAtSettings::maxYaw),
+		"GetMaxYaw", lookAtGetting(&OvCore::Animation::LookAtSettings::maxYaw),
+		"SetMinPitch", lookAtSetting(&OvCore::Animation::LookAtSettings::minPitch),
+		"GetMinPitch", lookAtGetting(&OvCore::Animation::LookAtSettings::minPitch),
+		"SetMaxPitch", lookAtSetting(&OvCore::Animation::LookAtSettings::maxPitch),
+		"GetMaxPitch", lookAtGetting(&OvCore::Animation::LookAtSettings::maxPitch),
+		"SetTurnTime", lookAtSetting(&OvCore::Animation::LookAtSettings::turnTime),
+		"GetTurnTime", lookAtGetting(&OvCore::Animation::LookAtSettings::turnTime),
+		"SetMaxTurnSpeed", lookAtSetting(&OvCore::Animation::LookAtSettings::maxTurnSpeed),
+		"GetMaxTurnSpeed", lookAtGetting(&OvCore::Animation::LookAtSettings::maxTurnSpeed),
+		"SetWeight", &CLookAt::SetWeight,
+		"GetWeight", &CLookAt::GetWeight,
+		"GetCurrentWeight", &CLookAt::GetCurrentWeight,
+		"SetFadeTime", &CLookAt::SetFadeTime,
+		"GetFadeTime", &CLookAt::GetFadeTime,
+		"GetYaw", &CLookAt::GetYaw,
+		"GetPitch", &CLookAt::GetPitch,
+		"GetLookDirection", &CLookAt::GetLookDirection,
+		"IsAtRest", &CLookAt::IsAtRest,
+		"Reset", &CLookAt::Reset,
+		"GetError", [](CLookAt& p_this) { return p_this.GetError(); }
+	);
+
+	// A spring group's settings from a table: a key it does not know raises an error, a misspelt one would be lost
+	const auto readSpringSettings = [](const sol::optional<sol::table>& p_table, OvCore::Animation::SpringSettings p_settings)
+	{
+		if (!p_table)
+		{
+			return p_settings;
+		}
+
+		for (const auto& [key, value] : *p_table)
+		{
+			const std::string name = key.is<std::string>() ? key.as<std::string>() : std::string{};
+			float* setting =
+				name == "stiffness" ? &p_settings.stiffness :
+				name == "damping" ? &p_settings.damping :
+				name == "gravity" ? &p_settings.gravity :
+				name == "radius" ? &p_settings.radius :
+				name == "maxAngle" ? &p_settings.maxAngle :
+				name == "link" ? &p_settings.link :
+				nullptr;
+
+			if (!setting)
+			{
+				throw sol::error("SpringBones: unknown setting '" + name + "' (stiffness, damping, gravity, radius, maxAngle, link)");
+			}
+
+			if (value.get_type() != sol::type::number)
+			{
+				throw sol::error("SpringBones: setting '" + name + "' must be a number");
+			}
+
+			*setting = value.as<float>();
+		}
+
+		return p_settings;
+	};
+
+	const auto readNames = [](const sol::table& p_table, const char* p_what)
+	{
+		std::vector<std::string> names;
+		for (size_t i = 1; i <= p_table.size(); ++i)
+		{
+			const auto entry = p_table.get<sol::object>(i);
+			if (entry.get_type() != sol::type::string)
+			{
+				throw sol::error(std::string{ "SpringBones: " } + p_what + " takes a list of names");
+			}
+			names.push_back(entry.as<std::string>());
+		}
+		return names;
+	};
+
+	const auto writeNames = [](sol::this_state p_state, const std::vector<std::string>& p_names)
+	{
+		sol::state_view lua(p_state);
+		sol::table result = lua.create_table();
+		for (const auto& name : p_names)
+		{
+			result.add(name);
+		}
+		return result;
+	};
+
+	p_luaState.new_usertype<CSpringBones>("SpringBones",
+		sol::base_classes, sol::bases<AComponent>(),
+		"SetGroup", [readSpringSettings](CSpringBones& p_this, const std::string& p_name, sol::optional<sol::table> p_settings)
+		{
+			const auto* group = p_this.FindGroup(p_name);
+			p_this.SetGroup(p_name, readSpringSettings(p_settings, group ? group->settings : OvCore::Animation::SpringSettings{}));
+		},
+		"GetGroupSettings", [](CSpringBones& p_this, const std::string& p_name, sol::this_state p_state) -> sol::object
+		{
+			const auto* group = p_this.FindGroup(p_name);
+			if (!group) return sol::lua_nil;
+			sol::state_view lua(p_state);
+			const auto& s = group->settings;
+			return lua.create_table_with("stiffness", s.stiffness, "damping", s.damping, "gravity", s.gravity, "radius", s.radius, "maxAngle", s.maxAngle, "link", s.link);
+		},
+		"RemoveGroup", &CSpringBones::RemoveGroup,
+		"GetGroupNames", [writeNames](CSpringBones& p_this, sol::this_state p_state)
+		{
+			std::vector<std::string> names;
+			for (const auto& group : p_this.GetGroups()) names.push_back(group.name);
+			return writeNames(p_state, names);
+		},
+		"SetGroupChains", [readNames](CSpringBones& p_this, const std::string& p_name, sol::table p_chains)
+		{
+			return p_this.SetGroupChains(p_name, readNames(p_chains, "SetGroupChains"));
+		},
+		"GetGroupChains", [writeNames](CSpringBones& p_this, const std::string& p_name, sol::this_state p_state) -> sol::object
+		{
+			const auto* group = p_this.FindGroup(p_name);
+			if (!group) return sol::lua_nil;
+			return writeNames(p_state, group->chains);
+		},
+		"SetGroupColliders", [readNames](CSpringBones& p_this, const std::string& p_name, sol::table p_colliders)
+		{
+			return p_this.SetGroupColliders(p_name, readNames(p_colliders, "SetGroupColliders"));
+		},
+		"GetGroupColliders", [writeNames](CSpringBones& p_this, const std::string& p_name, sol::this_state p_state) -> sol::object
+		{
+			const auto* group = p_this.FindGroup(p_name);
+			if (!group) return sol::lua_nil;
+			return writeNames(p_state, group->colliders);
+		},
+		"SetCollider", [](CSpringBones& p_this, const std::string& p_name, sol::table p_spec)
+		{
+			CSpringBones::Collider collider;
+			collider.name = p_name;
+
+			for (const auto& [key, value] : p_spec)
+			{
+				const std::string field = key.is<std::string>() ? key.as<std::string>() : std::string{};
+				const bool isText = field == "from" || field == "to" || field == "away";
+				const bool isNumber = field == "start" || field == "end" || field == "radius";
+
+				if (!isText && !isNumber)
+				{
+					throw sol::error("SpringBones:SetCollider: unknown field '" + field + "' (from, to, away, start, end, radius)");
+				}
+
+				if ((isText && value.get_type() != sol::type::string) || (isNumber && value.get_type() != sol::type::number))
+				{
+					throw sol::error("SpringBones:SetCollider: field '" + field + "' must be a " + (isText ? "bone name" : "number"));
+				}
+
+				if (field == "from") collider.from = value.as<std::string>();
+				else if (field == "to") collider.to = value.as<std::string>();
+				else if (field == "away") collider.away = value.as<std::string>();
+				else if (field == "start") collider.start = value.as<float>();
+				else if (field == "end") collider.end = value.as<float>();
+				else collider.radius = value.as<float>();
+			}
+
+			if (collider.from.empty() || (collider.to.empty() == collider.away.empty()))
+			{
+				throw sol::error("SpringBones:SetCollider takes a 'from' bone, and either a 'to' bone or an 'away' bone");
+			}
+
+			p_this.SetCollider(collider);
+		},
+		"RemoveCollider", &CSpringBones::RemoveCollider,
+		"GetColliderNames", [writeNames](CSpringBones& p_this, sol::this_state p_state)
+		{
+			std::vector<std::string> names;
+			for (const auto& collider : p_this.GetColliders()) names.push_back(collider.name);
+			return writeNames(p_state, names);
+		},
+		"SetGround", [](CSpringBones& p_this, bool p_enabled, sol::optional<float> p_offset) { p_this.SetGround(p_enabled, p_offset.value_or(0.0f)); },
+		"IsGroundEnabled", &CSpringBones::IsGroundEnabled,
+		"GetGroundOffset", &CSpringBones::GetGroundOffset,
+		"SetSleepWhenHidden", &CSpringBones::SetSleepWhenHidden,
+		"GetSleepWhenHidden", &CSpringBones::GetSleepWhenHidden,
+		"Reset", &CSpringBones::Reset,
+		"IsAsleep", &CSpringBones::IsAsleep,
+		"GetChainCount", &CSpringBones::GetChainCount,
+		"GetJointPosition", &CSpringBones::GetJointPosition,
+		"GetError", [](CSpringBones& p_this) { return p_this.GetError(); }
+	);
+
+	// A layer given by its index (from 0) or its name; the first layer when none is given
+	const auto animatorLayer = [](CAnimator& p_this, const sol::optional<sol::object>& p_layer) -> std::optional<size_t>
+	{
+		if (!p_layer || p_layer->get_type() == sol::type::lua_nil)
+		{
+			return 0;
+		}
+
+		if (p_layer->get_type() == sol::type::number)
+		{
+			const double index = p_layer->as<double>();
+			return index >= 0.0 ? std::optional<size_t>{ static_cast<size_t>(index) } : std::nullopt;
+		}
+
+		if (p_layer->get_type() == sol::type::string)
+		{
+			return p_this.FindLayer(p_layer->as<std::string>());
+		}
+
+		throw sol::error("Animator: a layer is given by its index, from 0, or its name");
+	};
+
+	const auto animatorNames = [](sol::this_state p_state, const std::vector<std::string>& p_names)
+	{
+		sol::state_view lua(p_state);
+		sol::table result = lua.create_table();
+		for (const auto& name : p_names)
+		{
+			result.add(name);
+		}
+		return result;
+	};
+
+	p_luaState.new_usertype<CAnimator>("Animator",
+		sol::base_classes, sol::bases<AComponent>(),
+		"SetGraphPath", &CAnimator::SetGraphPath,
+		"GetGraphPath", &CAnimator::GetGraphPath,
+		"SetAnimationSourceModel", sol::overload(
+			[](CAnimator& p_this, OvRendering::Resources::Model* p_model) { p_this.SetAnimationSource(p_model); },
+			[](CAnimator& p_this, const OvCore::Scripting::AssetRef& p_asset)
+			{
+				p_this.SetAnimationSource(p_asset.path.empty() ? nullptr : OVSERVICE(OvCore::ResourceManagement::ModelManager).GetResource(p_asset.path));
+			}
+		),
+		"GetAnimationSourceModel", &CAnimator::GetAnimationSource,
+		"SetBoneMap", [](CAnimator& p_this, sol::table p_map)
+		{
+			OvCore::Animation::BoneMap boneMap;
+
+			for (const auto& [key, value] : p_map)
+			{
+				if (!key.is<std::string>() || !value.is<std::string>())
+				{
+					throw sol::error("Animator:SetBoneMap takes a table of model bone names to clip bone names");
+				}
+
+				boneMap[key.as<std::string>()] = value.as<std::string>();
+			}
+
+			p_this.SetBoneMap(boneMap);
+		},
+		"GetBoneMap", [](CAnimator& p_this, sol::this_state p_state)
+		{
+			sol::state_view lua(p_state);
+			sol::table result = lua.create_table();
+
+			for (const auto& [modelBone, clipBone] : p_this.GetBoneMap())
+			{
+				result[modelBone] = clipBone;
+			}
+
+			return result;
+		},
+		"Reload", &CAnimator::Reload,
+		"IsLoaded", &CAnimator::IsLoaded,
+		"GetError", [](CAnimator& p_this) { return p_this.GetError(); },
+		"SetFloat", &CAnimator::SetFloat,
+		"GetFloat", &CAnimator::GetFloat,
+		"SetBool", &CAnimator::SetBool,
+		"GetBool", &CAnimator::GetBool,
+		"SetTrigger", &CAnimator::SetTrigger,
+		"ResetTrigger", &CAnimator::ResetTrigger,
+		"GetParameterNames", [animatorNames](CAnimator& p_this, sol::this_state p_state) { return animatorNames(p_state, p_this.GetParameterNames()); },
+		"GetLayerNames", [animatorNames](CAnimator& p_this, sol::this_state p_state) { return animatorNames(p_state, p_this.GetLayerNames()); },
+		"GetState", [animatorLayer](CAnimator& p_this, sol::optional<sol::object> p_layer) -> std::optional<std::string>
+		{
+			const auto layer = animatorLayer(p_this, p_layer);
+			return layer ? p_this.GetState(*layer) : std::nullopt;
+		},
+		"GetStateTime", [animatorLayer](CAnimator& p_this, sol::optional<sol::object> p_layer)
+		{
+			const auto layer = animatorLayer(p_this, p_layer);
+			return layer ? p_this.GetStateTime(*layer) : 0.0f;
+		},
+		"IsInTransition", [animatorLayer](CAnimator& p_this, sol::optional<sol::object> p_layer)
+		{
+			const auto layer = animatorLayer(p_this, p_layer);
+			return layer && p_this.IsInTransition(*layer);
+		},
+		"SetLayerWeight", [animatorLayer](CAnimator& p_this, sol::object p_layer, float p_weight)
+		{
+			const auto layer = animatorLayer(p_this, p_layer);
+			return layer && p_this.SetLayerWeight(*layer, p_weight);
+		},
+		"GetLayerWeight", [animatorLayer](CAnimator& p_this, sol::optional<sol::object> p_layer) -> std::optional<float>
+		{
+			const auto layer = animatorLayer(p_this, p_layer);
+			return layer ? p_this.GetLayerWeight(*layer) : std::nullopt;
+		},
+		"Play", [animatorLayer](CAnimator& p_this, const std::string& p_state, sol::optional<float> p_fade, sol::optional<sol::object> p_layer)
+		{
+			std::optional<size_t> layer;
+			if (p_layer && p_layer->get_type() != sol::type::lua_nil)
+			{
+				layer = animatorLayer(p_this, p_layer);
+				if (!layer)
+				{
+					return false;
+				}
+			}
+
+			return p_this.Play(p_state, p_fade.value_or(0.0f), layer);
+		},
+		"Reset", &CAnimator::Reset
+	);
+
+	OvCore::Scripting::MarkComponentUsertypes<
+		AComponent, CTransform, CModelRenderer, CMaterialRenderer, CBoneAttachment, CSkinnedMeshRenderer,
+		CPhysicalObject, CPhysicalBox, CPhysicalSphere, CPhysicalCapsule, CPhysicalHeightField, CPhysicalMesh, CCharacterController,
+		CCamera, UI::CCanvas, UI::CImage, UI::CLayoutGroup, UI::CHorizontalLayout, UI::CVerticalLayout, UI::CText,
+		CLight, CPointLight, CSpotLight, CAmbientBoxLight, CAmbientSphereLight, CDirectionalLight,
+		CAudioSource, CAudioListener, CPostProcessStack, CReflectionProbe, CParticleSystem, CLookAt, CSpringBones, CAnimator,
+		CTerrain, CVegetation
+	>(p_luaState.lua_state());
 }

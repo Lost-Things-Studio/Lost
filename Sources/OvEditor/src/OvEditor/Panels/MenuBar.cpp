@@ -187,6 +187,20 @@ void OvEditor::Panels::MenuBar::InitializeSettingsMenu()
 	debuggingMenu.CreateWidget<MenuItem>("Editor Frustum Geometry Culling", "", true, Settings::EditorSettings::EditorFrustumGeometryCulling).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::EditorFrustumGeometryCulling = p_value; };
 	debuggingMenu.CreateWidget<MenuItem>("Editor Frustum Light Culling", "", true, Settings::EditorSettings::EditorFrustumLightCulling).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::EditorFrustumLightCulling = p_value; };
 	
+	auto& playShortcutsMenu = m_settingsMenu->CreateWidget<MenuList>("Play Shortcuts");
+	const auto createKeyChoice = [&playShortcutsMenu](const std::string& p_label, Settings::EditorSettings::Property<int>& p_setting)
+	{
+		playShortcutsMenu.CreateWidget<Texts::Text>(p_label);
+		auto& keyChoice = playShortcutsMenu.CreateWidget<Selection::ComboBox>(p_setting.Get());
+		for (const auto& [key, name] : Settings::EditorSettings::GetPlayShortcutKeys())
+		{
+			keyChoice.choices.emplace(key, name);
+		}
+		keyChoice.ValueChangedEvent += [&p_setting](int p_key) { p_setting = p_key; };
+	};
+	createKeyChoice("Start playing", Settings::EditorSettings::PlayKey);
+	createKeyChoice("Stop playing (the game receives the key too)", Settings::EditorSettings::StopKey);
+
 	auto& scriptingMenu = m_settingsMenu->CreateWidget<MenuList>("Scripting");
 	scriptingMenu.CreateWidget<MenuItem>("Regenerate Scripting Project Files On Startup", "", true, Settings::EditorSettings::RegenerateScriptingProjectFilesOnStartup).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::RegenerateScriptingProjectFilesOnStartup = p_value; };
 
@@ -274,11 +288,11 @@ void OvEditor::Panels::MenuBar::CreateLayoutMenu()
 
 void OvEditor::Panels::MenuBar::CreateHelpMenu()
 {
-	const std::string repoURL = "https://github.com/Overload-Technologies/Overload";
+	const std::string repoURL = "https://github.com/Lost-Things-Studio/lost";
 
 	auto& helpMenu = CreateWidget<MenuList>("Help");
 	helpMenu.CreateWidget<MenuItem>("GitHub").ClickedEvent += [repoURL] {OvTools::Utils::SystemCalls::OpenURL(repoURL); };
-	helpMenu.CreateWidget<MenuItem>("Wiki").ClickedEvent += [repoURL] {OvTools::Utils::SystemCalls::OpenURL(repoURL + "/wiki"); };
+	helpMenu.CreateWidget<MenuItem>("Manual").ClickedEvent += [repoURL] {OvTools::Utils::SystemCalls::OpenURL(repoURL + "/tree/main/Docs"); };
 	helpMenu.CreateWidget<MenuItem>("Lua Reference").ClickedEvent += [] {
 		const std::filesystem::path luaDefinitions = EDITOR_CONTEXT(engineAssetsPath) / "Lua";
 		if (!EDITOR_EXEC(OpenInCodeEditor(luaDefinitions, luaDefinitions)))
@@ -291,7 +305,7 @@ void OvEditor::Panels::MenuBar::CreateHelpMenu()
 	helpMenu.CreateWidget<MenuItem>("Bug Report").ClickedEvent += [repoURL] {OvTools::Utils::SystemCalls::OpenURL(repoURL + "/issues/new?assignees=&labels=Bug&template=bug_report.md&title="); };
 	helpMenu.CreateWidget<MenuItem>("Feature Request").ClickedEvent += [repoURL] {OvTools::Utils::SystemCalls::OpenURL(repoURL + "/issues/new?assignees=&labels=Feature&template=feature_request.md&title="); };
 	helpMenu.CreateWidget<Visual::Separator>();
-	helpMenu.CreateWidget<Texts::Text>("Version: " + std::string(OVERLOAD_VERSION));
+	helpMenu.CreateWidget<Texts::Text>("Version: Lost " + std::string(LOST_VERSION) + " (Overload " + std::string(OVERLOAD_VERSION) + ")");
 }
 
 void OvEditor::Panels::MenuBar::RegisterPanel(const std::string& p_name, OvUI::Panels::PanelWindow& p_panel)

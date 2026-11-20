@@ -1,0 +1,161 @@
+# Rendering
+
+## Per-renderer values
+
+- `MaterialRenderer:SetUserMatrixElement(row, col, value)` feeds a per-renderer 4×4 matrix to the shader
+  (`ubo_UserMatrix`), so one material can show a different colour or fill on every instance.
+- The matrix is stored row-major. Write off-diagonal values in symmetric pairs so the shader reads the same whatever
+  the order, and only write a value that changed.
+- `ModelRenderer:SetMaxDrawDistance(metres)` (`max_draw_distance` in a file): beyond it, the model is not drawn. It is
+  measured from the actor's position, in every pass.
+- `SetVisibilityFlags` chooses the passes a renderer takes part in (geometry, shadows, reflections).
+
+## Levels of detail
+
+A `ModelRenderer` can stand lighter models for its own from a distance on, as a far rock or tree costs a few hundred
+triangles instead of thousands.
+
+- **The levels**: its own model is level 0, and up to 7 lighter ones follow, each with the distance it starts at, the
+  distances rising:
+  - in Lua, `SetLodModels({ { Resources.GetModel("Models/Rock_LOD1.fbx"), 15 }, { Resources.GetModel("Models/Rock_LOD2.fbx"), 40 } })`;
+  - in a file, `lods` (a `lod` per level, with its `model` and `distance`);
+  - in the inspector, under *Levels of Detail*: a model and a distance per level, *Add Level* and *Remove Level*.
+- **The materials**: every level draws with the renderer's materials, by slot. A level's meshes should use the slots
+  its model's meshes use.
+- **The distance**: from the camera to the centre of the model's bounds in the world (its custom bounds when the
+  renderer uses them), not to the actor's position. A model whose geometry stands far from its pivot picks the level
+  of where it is drawn.
+  - Leaving a level needs the distance past its boundary by a tenth, so a model standing at a boundary does not
+    flicker.
+  - `SetLodBias(factor)` (`lod_bias`, 1 by default) multiplies every distance: above 1 keeps the detail further away.
+  - Every pass of a frame (shadows, reflections, the view) draws the same level. In the editor, the scene view keeps a
+    level of its own; what the renderer reports (`GetLodLevel()`) follows the scene's main camera.
+  - Beyond the last level, the max draw distance keeps its role, measured as before from the actor.
+- **Bones**: a model with bones takes levels with the same bones in the same order (lighter meshes skinned to the same
+  rig), which share its pose. `SetLodModels` refuses another; set in a file or the inspector, such a level is left out.
+- **What it reports**: `GetLodLevel()` (0 for the model itself), and `GetLodError()`, which names a level left out and
+  why (no model, not beyond the level before, other bones); the inspector shows both.
+
+## Culling
+
+- Frustum culling places a model's bounding sphere through its world matrix, so a mirrored model (a negative scale on
+  any axis) is culled where it is drawn. The sphere's radius grows with the largest scale.
+- A renderer whose vertices are moved far by its shader also needs custom bounds that hold them all. A particle system
+  keeps its own (see [Particles](Particles.md)).
+
+## Blend modes
+
+- A blendable material is drawn in the transparent pass, after the opaque ones, and combined with what is already
+  drawn by its blend mode (`blend_mode` in a `.ovmat`, "Blend Mode" in the material editor):
+
+  | Mode | `blend_mode` | Result | For |
+  | --- | --- | --- | --- |
+  | Alpha | 0 (default) | source × alpha + destination × (1 − alpha) | glass, smoke, fades |
+  | Additive | 1 | source × alpha + destination | light that adds up: sparks, glows, fire |
+  | Premultiplied | 2 | source + destination × (1 − alpha) | a colour already multiplied by its alpha |
+
+- The blend mode does nothing on a material that is not blendable.
+- Alpha keeps the blend function of the pass, which is alpha blending in every scene pass. A post process effect that
+  sets its own, as bloom does, keeps it for its alpha materials.
+- A material saved before blend modes has none, and blends as it always did.
+- A blendable material usually writes no depth (`depth_writing` false). Blended objects are sorted by their centres,
+  so two that cross each other would otherwise hide parts of one another. Additive ones add up in any order.
+
+## Particles
+
+Particle systems, drawn by the GPU in one draw each, have a page of their own: [Particles](Particles.md).
+
+## The post process stack
+
+- A scene's render settings live on its post process stack: tonemapping, auto exposure, bloom, FXAA; colour grading
+  (`grading_temperature`, `grading_tint`, `grading_saturation`, `grading_contrast`) and the vignette
+  (`vignette_intensity`, `vignette_smoothness`), applied in the tonemapping pass; the distance fog (`fog_enabled`,
+  `fog_color`, `fog_intensity`, `fog_start`, `fog_density`, `fog_max_opacity`).
+- From Lua, they are read and written as a whole with `Get`/`SetFogSettings`, `Get`/`SetTonemappingSettings` and
+  `Get`/`SetAutoExposureSettings`. A key missing from a scene keeps the neutral default: no fog, no grading.
+
+## Custom shaders
+
+The shader API, its version, the public includes, `Standard`'s extension points, the fog's material option and the
+rules of a custom shader are in [Shaders](Shaders.md).
+
+- A directional light renders its shadow map only when the light or something drawn into it changes
+  (`ShadowMapUpdateMode.ON_CHANGE`, the default). It sees a change through the resource managers: a caster whose
+  texture or mesh is rewritten in place (a render target, a mesh rebuilt by a script) asks for a new map with
+  `RequestShadowMapUpdate()`, or its light renders one every frame (`ShadowMapUpdateMode.REALTIME`).
+
+## Models built from Lua
+
+- `Resources.CreateModel(path, geometry, materialName)` builds a model of one mesh from flat arrays (`Positions`,
+  `Indices` from 0 and counter-clockwise, and optional `Normals`, `TexCoords`, `Tangents`, `Bitangents`), registered
+  under a path that needs no file. Built again at the same path, it is replaced in place under every renderer using it.
+
+## UI text
+
+- A `Text` component draws a UTF-8 string with a TrueType font, Roboto (`:Fonts/Roboto-Regular.ttf`) by default.
+- **Glyphs**:
+  - a font keeps one glyph atlas for each whole pixel size it is drawn at, from 1 to 256: a game that uses few sizes
+    keeps few atlases;
+  - Basic Latin and Latin-1 are baked with an atlas; any other character the font has (Latin Extended, Greek,
+    Cyrillic in Roboto) is baked the first time a text needs it, and the atlas grows, up to 4096 pixels a side;
+  - a character the font lacks is drawn as `?`, and a byte that starts no valid UTF-8 sequence as U+FFFD (or `?`
+    when the font lacks that too). Roboto has no CJK and no emoji: a project that needs them sets a font that has
+    them.
+- `Text:GetContentSize()` gives the size the lines take, in canvas pixels, wrapped at the element's width when it has
+  one: what a label sizes itself to.
+- **A custom text shader** samples `u_FontAtlas` at the texture coordinates divided by
+  `textureSize(u_FontAtlas, 0)`. They are in atlas pixels, which stay put when the atlas grows.
+
+## UI clipping
+
+- An element with `Transform:SetUIClipChildren(true)` ("Clip Children" in the inspector) hides what its descendants
+  draw outside its rectangle. It is not clipped itself, and a canvas below it starts afresh.
+- **Clips inside clips**: upright elements of a canvas show what all their clips let through. A turned element, or one
+  inside a turned clip, clips to its own rectangle: the innermost cuts.
+- The test is made by the `Image` and `Text` shaders, pixel by pixel, rather than by a scissor rectangle: it holds on a
+  world space canvas, on a turned element, and in the editor's views. A drawable entirely outside an upright clip is not
+  drawn at all.
+- **A custom image or text shader** clips when it declares `uniform mat4 u_ClipMatrix` and `uniform bool
+  u_ClipEnabled`, takes `(u_ClipMatrix * ubo_Model * vec4(geo_Pos, 1.0)).xy` to the fragment stage, and discards there
+  when it is enabled and either coordinate is beyond -1 or 1, as `Image.ovfx` does. Without them, its drawables are
+  only left out when entirely outside.
+- **Limit**: the editor's picking still sees the clipped part of an element.
+
+## Lit UI in the world
+
+- `Text:SetLit(true)` and `Image:SetLit(true)` ("Lit" in the inspector, `lit` in a file) light an element under a
+  world space canvas as the scene is: by its lights, ambient ones included, with the shadows it receives and the
+  distance fog, tonemapped with the rest. A sign, a name over a head or a price tag then darkens in the shade and at
+  night.
+- **Under a screen space canvas** the setting is kept and has no effect: the HUD stays drawn over the scene, unlit,
+  also when the editor's scene view shows such a canvas in the world.
+- **How it is drawn**:
+  - with a copy of the host's lit material, `:Materials/TextLit.ovmat` or `:Materials/ImageLit.ovmat`
+    (`UIResourceRegistry::Definition::litTextMaterialPath` and `litImageMaterialPath`), given the text's atlas and
+    colour, or the image's texture and tint. The copy is made again when the material manager's resources change. A
+    host that gives no lit material draws a lit element as any other;
+  - among the scene's transparent surfaces, before the post processing, depth tested without writing depth;
+  - sorted by the distance of its canvas: the elements of a canvas keep the order of the hierarchy between them, and
+    a canvas nearer the camera is drawn over a farther one.
+  - before every unlit element, which the UI pass draws after the post processing: an unlit element covers a lit one
+    wherever they meet. Light a text and the background it stands on together (`DLabel:SetLit` does).
+- **The shaders**, `TextLit.ovfx` and `ImageLit.ovfx`, light through `PBRLightingModel` (`Lighting/PBR.ovfxh`) and keep
+  the clip of `Text.ovfx` and `Image.ovfx`. The side the camera sees is lit as the front. Their materials set:
+  - `u_Metallic` (0) and `u_Roughness` (0.8);
+  - `u_EmissiveIntensity` (0): how much of its own colour the element gives off whatever the light, for a sign that
+    stays readable in the dark;
+  - `u_Fog` (on).
+- **Limits**:
+  - a flat element casts no shadow, and has neither thickness nor outline: lettering in relief stays a model;
+  - reflection probes neither light it nor see it;
+  - the engine's ambient lights add the same light whatever a surface's colour, `Standard` included: in full shadow, a
+    lit text and its lit background turn the same colour. A lamp, or `u_EmissiveIntensity`, keeps it readable.
+
+## Textures
+
+- Textures wrap in `REPEAT` by default. A UI texture needs a `.png.meta` that switches it to clamp, or seams appear:
+
+  ```ini
+  HORIZONTAL_WRAP=1
+  VERTICAL_WRAP=1
+  ```

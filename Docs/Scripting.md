@@ -1,0 +1,164 @@
+# Scripting
+
+## The Lua sandbox and modules
+
+- Lua 5.4, with the `base`, `math`, `string`, `table`, `coroutine` and `utf8` libraries. There is no `io`, `os` or
+  `package`: files go through `Storage`, in the save folder only (see [Saving](Saving.md)).
+- A module is loaded with `require(path)`, or with `Resources.GetScript(path)`:
+  - the path is relative to the project's `Assets` (`"Scripts/Core/Signal"`), `.lua` optional for `require`;
+  - a leading colon resolves in the engine's resources (`":Libraries/UI/Init"`);
+  - nothing outside the two assets folders can be loaded, and `load`, `loadfile` and `dofile` do not exist;
+  - the module's value is cached, so every caller shares one instance, whichever function loaded it: module-level
+    tables are process-wide;
+  - a module that cannot be loaded (missing, outside the assets, a syntax or runtime error, no `return`, or still
+    loading because the dependency is circular) makes `require` raise an error that says why, where it was called,
+    and `Resources.GetScript` log that error and return `nil`. Neither caches a failure: a circular dependency is
+    loaded lazily, and its outcome remembered.
+- Modules outlive a scene change: `Scenes.Load(path)` replaces the actors at the next frame and keeps the Lua state, so
+  what a module holds carries into the next scene. A registry of actors must drop the entries it can no longer reach
+  (`IsAlive`). The editor rebuilds the state when play starts and stops.
+- The engine ships a standard library of such modules (`require(":Libraries/Std/Init")`): classes, signals, timers,
+  tweens, easing curves, pools and state machines. See [Standard library](StandardLibrary.md).
+- The engine's functions are `userdata` to Lua: `type(Inputs.GetKeyName)` is `"userdata"`, never `"function"`, so a
+  `type(...) == "function"` check silently skips them.
+
+## API version and deprecation
+
+The API the engine gives to scripts, the names of `Resources/Engine/Lua`, carries a version of its own, which
+`Application.GetApiVersion()` returns as two integers, major and minor:
+
+- **A name added** (a table, a function, a field, an enum value) raises the minor version.
+- **A name deprecated** keeps working, with its definition marked `---@deprecated` and the replacement it points to,
+  and the `CHANGELOG.md` lists it under "Deprecated". It stays for the rest of the major version.
+- **A name removed or changing meaning** only happens to a deprecated name, and raises the major version.
+
+A script made for API 1.2 thus runs on any 1.x from 1.2 on; it checks the version it needs with
+`local nMajor, nMinor = Application.GetApiVersion()`.
+
+`OvGame --dump-lua-api` prints the API, one name per line (see [Command line](CommandLine.md)): comparing the output of
+two engine versions shows what changed. The engine's tests check that this API and the definitions of
+`Resources/Engine/Lua` hold the same names, so a binding never ships undocumented, nor a definition without its
+binding.
+
+## Behaviours
+
+- A Behaviour is a script returning a table. Its fields with default values become inspector properties:
+  - a number, a string, a boolean, a `Vector2`, a `Vector3` or a `Vector4`;
+  - an asset (`Model()`, `Texture()`, `Material()`…) or `Actor()` for an actor reference;
+  - `Color(r, g, b[, a])`, a colour picker, which the script receives as a `Vector4`;
+  - `Enum({ "Walk", "Run" }[, "Run"])`, a list of choices, which the script receives as the chosen string;
+  - `List("number" | "string" | "bool"[, { ... }])`, edited as one comma-separated line, which the script receives
+    as a plain table.
+  Any other table stays a field of the script, out of the inspector.
+- Values set in a prefab or a scene are saved as `script_properties` and override the script defaults: the value in
+  play is the prefab's or the scene's.
+- In a prefab or a scene file, the property types are `bool`, `number`, `string`, `asset`, `actor`, `vector2`,
+  `vector3`, `vector4`, `color` (`r g b a`), `enum` and `list` (with `itemType` and one `<item>` per item). Any other
+  type is logged as an error, and a type the script no longer declares as a warning; the script's default is kept.
+- `self.owner` is the actor the Behaviour sits on.
+- A Behaviour's script is a path of the project's assets (`Scripts/Door.lua`), or of the engine's resources with a
+  leading colon (`:Behaviours/Spin.lua`), in a scene file as with `actor:AddBehaviour(path)`. `actor:GetBehaviour`
+  finds either by its file name (`"Spin"`).
+- Callbacks: `OnAwake`, `OnStart`; `OnEnable`, `OnDisable`, `OnDestroy`; `OnUpdate(dt)`, `OnFixedUpdate(dt)`,
+  `OnLateUpdate(dt)`; `OnCollisionEnter/Stay/Exit`, `OnTriggerEnter/Stay/Exit`.
+- The Behaviours of one actor run in their declared order, the order of the prefab or the scene file, for every
+  callback. Across actors, the order follows the scene. A Behaviour asked for something by a sibling before its own
+  `OnStart` should build its state lazily.
+- A Behaviour's script is compiled once per Lua state and run for each Behaviour, which gets a table of its own: a
+  field written on that table belongs to that Behaviour. State shared by every copy lives in a module.
+- `Actor:SetBehaviourUpdating(behaviour, false)` stops a Behaviour's `OnUpdate`, `OnFixedUpdate` and `OnLateUpdate`
+  until it is set back to `true`; its other callbacks still come. A Behaviour with nothing to do should sleep this way.
+- `GetBehaviour(name)` accepts a script stem (`"Health"`) or a path. It is a linear scan: cache hot lookups.
+
+## Actors and references
+
+- Lua holds actors as handles: calling a method on a destroyed actor raises `attempt to use a destroyed actor`, and
+  `IsAlive()` tests a handle without raising.
+- **Components are handles too**, checked on every use, whichever way they reached Lua: an actor's `Get*` and `Add*`,
+  a collision or trigger callback, a physics query's hits.
+  - A component removed from its actor, or whose actor was freed, raises `attempt to use a component that was removed,
+    or whose actor was destroyed` when it is used, as self or as an argument.
+  - `Component:IsAlive()` tests a handle without raising.
+  - An actor marked by `Destroy()` keeps its components usable until it is freed at the end of the frame, so its
+    `OnDestroy` still reaches them.
+  - Two handles on one component are equal (`==`), whichever usertype they came as (`GetLight()` and
+    `GetPointLight()`), and stay so once it is gone.
+  - A component method called with `.` instead of `:`, or on a value that is not that component, raises
+    `a method of ... was called on a value that is not one` instead of reading it as one.
+- `FindChild` and `GetParent` return `nil` when there is none. `GetChildren` and `Scene:FindActorsByName/ByTag` return
+  plain Lua tables.
+- Every instantiated actor gets a new GUID. An actor property that names another actor of the same prefab follows it:
+  the instance's property names that actor's instance. One that names an actor outside the prefab keeps its GUID, and
+  the script receives `nil` when no actor of the scene has it.
+- `Destroy()` marks an actor and its children; the engine frees them at the end of the frame, in a built game as in the
+  editor's play mode. Until then the actor is still there: switch it off with `SetActive(false)` first if it must vanish
+  at once. Its handles then fail (`IsAlive()` is `false`).
+- A prefab spawned under an inactive parent starts once the parent is switched on: its `OnAwake` and `OnStart` wait.
+- An actor switched off receives no callback until it is switched on again.
+- When a scene goes (`Scenes.Load`, quitting, stopping play in the editor), every actor receives `OnDisable` (if
+  active) and `OnDestroy` while the scene is still the current one and all its actors are still there. Only then are
+  they deleted, so these callbacks may use their own actor and any other one.
+- Instantiating a prefab from Lua:
+
+  ```lua
+  local oPrefab = Prefab()
+  oPrefab.path = "Prefabs/Item.ovprefab"
+
+  local oActor = Scenes.GetCurrentScene():InstantiatePrefab(oPrefab, oParent)
+  ```
+
+  It is safe from any callback, `OnStart` included.
+
+## Maths values
+
+- `Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Matrix3` and `Matrix4` are usertypes. A function that takes one takes
+  only that: a value made by `.new`, by an operator or by the engine. `nil`, a plain table such as
+  `{ x = 1, y = 2, z = 3 }`, a number, another maths type or a table given a vector's metatable raises an error, in
+  Lua's words: `bad argument #2 to 'Distance' (Vector3 expected, got table)`, or `calling 'Dot' on bad self (...)`
+  for a method. Convert a table to a vector before handing it to the engine:
+  `Vector3.new(tPoint.x, tPoint.y, tPoint.z)`.
+- An optional maths argument (`Navigation.FindNearestPoint(point[, extents])`) may still be left out or `nil`.
+- The self of an operator or a field (`v.x`, the left operand of `v + w`) is only checked to be a userdata: Lua hands
+  them the value it found them on, so that `nil + v` and a table given a vector's metatable are refused, at next to no
+  cost on the most frequent calls. Another maths type reaches them only from a script calling a metatable's function
+  itself (`getmetatable(m4).__add(m3, m4)`), which is not checked.
+- Every other maths argument is checked in full, by one field of its metatable: about 30 ns for each.
+- An engine value's metatable (`getmetatable(v)`) belongs to it. A table given one is refused where a vector is taken,
+  but its `__gc` comes with it: when the table is collected, sol finalizes it as the value it is not, which crashes a
+  Debug build. This holds for every engine usertype; copy what a script needs instead.
+
+## Update order and time
+
+- Actors update in scene order, the order of the scene file. Actors instantiated at run time come last.
+- A frame runs, in this order: the global `Update` callbacks, every Behaviour's `OnUpdate`, every Behaviour's
+  `OnLateUpdate`, the global `LateUpdate` callbacks, then the bone attachments (`OnFixedUpdate` comes first, with the
+  physics, on the frames that step it; the interpolated bodies move between it and the rest of the frame, see
+  [Physics](Physics.md)).
+- **Global events** run a module every frame without an actor in the scene (a timer, a tween, a registry):
+  - `Events.AddUpdate(callback[, owner])` and `Events.AddLateUpdate(callback[, owner])` return an id;
+    `Events.Remove(id)` removes the callback at once, even while its event runs;
+  - the callback receives the same step as `OnUpdate`, and runs from the next frame on;
+  - one that raises an error is logged and removed; one given an owner, an actor, is removed once that actor is no
+    longer alive;
+  - the callbacks live with the Lua state, like the modules: they outlive a scene change, and the editor drops them
+    when play starts and stops. They run only while the scene plays.
+  - The standard library's timers and tweens run this way, in `LateUpdate` (see [Standard library](StandardLibrary.md)).
+- **The game's end**: `Events.AddQuit(callback[, owner])` calls a function once, with nothing, as the game ends:
+  - a built game quitting (`Application.Quit`) or its window closed, the end of `OvGame --frames`, a game stopped in the
+    editor, or the editor closed during one;
+  - the scene is still current, and its actors alive, so a module can still read them. It is the last chance to write
+    what was kept for later, a save above all;
+  - `Events.Remove(id)` removes it before then; one that raises an error is logged, and the others still run; one
+    whose owner is no longer alive is skipped; one added while the game ends is not called. A scene change is not the
+    game's end.
+- A `BoneAttachment` is placed after every script, so a script reading such an actor's place during the frame sees
+  where it was the frame before.
+- The frame step handed to the Behaviours is in [0, 0.1] seconds, times the time scale, which is never below 0. A
+  project sets that ceiling with `max_frame_delta` (see [Projects](Projects.md)).
+- `Time.SetScale(scale)` scales every step handed to the Behaviours, the physics and the animations, so the whole world
+  slows down together. What must keep its pace runs on `Time.GetUnscaledDeltaTime()`. Stopping play in the editor sets
+  the scale back to 1. `Time.GetGameTime()` is the scaled clock, also `ubo_GameTime` in the shaders.
+- Never assume a short frame: on a slow machine a frame can last the whole ceiling. A watchdog counting seconds
+  allows for one frame's length.
+- `Application.Quit()` closes a built game once the frame is over and leaves play mode in the editor.
+- `Application.GetEngineVersion()` returns the engine's version, so that a project can check the one it was made for.

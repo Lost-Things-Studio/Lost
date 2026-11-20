@@ -51,6 +51,16 @@ namespace OvPhysics::Entities
 		*/
 		uint32_t GetTriangleCount() const;
 
+		/**
+		* Returns the vertices, three floats each (x, y, z), as SetTriangles took them
+		*/
+		const std::vector<float>& GetPositions() const;
+
+		/**
+		* Returns the vertex indices, three a triangle, as SetTriangles took them
+		*/
+		const std::vector<uint32_t>& GetIndices() const;
+
 	protected:
 		virtual bool MustBeStatic() const override;
 

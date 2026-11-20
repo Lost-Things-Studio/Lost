@@ -45,6 +45,16 @@ uint32_t OvCore::ECS::Components::CPhysicalMesh::GetTriangleCount() const
 	return GetPhysicalObjectAs<PhysicalMesh>().GetTriangleCount();
 }
 
+const std::vector<float>& OvCore::ECS::Components::CPhysicalMesh::GetPositions() const
+{
+	return GetPhysicalObjectAs<PhysicalMesh>().GetPositions();
+}
+
+const std::vector<uint32_t>& OvCore::ECS::Components::CPhysicalMesh::GetIndices() const
+{
+	return GetPhysicalObjectAs<PhysicalMesh>().GetIndices();
+}
+
 void OvCore::ECS::Components::CPhysicalMesh::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
 {
 	CPhysicalObject::OnSerialize(p_doc, p_node);

@@ -8,8 +8,9 @@ would bring to the UI library. Missing engine primitives are listed in
 
 - **Done:** `LuaScriptEngine::CreateContext` opens them, with `coroutine`, and the generated
   `.luarc.json` enables them (#246). None of them gives access to files or to the operating system.
-- **Left for the library:** `DTextEntry` could now split a text into UTF-8 characters, and
-  `Core/Array.lua`, which reimplements insertion, removal and sorting, could be removed.
+- **Done in the library:** `DTextEntry` splits its text into UTF-8 characters.
+- **Left for the library:** `Core/Array.lua`, which reimplements insertion, removal and sorting, could
+  be removed.
 
 ## 2. Resolved canvas scale and size
 
@@ -32,10 +33,9 @@ would bring to the UI library. Missing engine primitives are listed in
 
 ## 4. Text measurement
 
-- **Exists:** `CText::GetSize()` (bounds of the generated text) and `TextLayoutEngine::Layout`, whose
-  output lists the rectangle of every glyph.
-- **Proposal:** `Text:GetSize()` and a glyph or caret position query, such as
-  `Text:GetCaretPosition(index)`.
+- **Exists:** `Text:GetContentSize()` (the size the lines take, since the Lua API 1.7) and
+  `TextLayoutEngine::Layout`, whose output lists the rectangle of every glyph.
+- **Proposal:** a glyph or caret position query, such as `Text:GetCaretPosition(index)`.
 - **Why:** it enables `SizeToContents` and `GetTextSize` on labels, a caret drawn as a separate panel
   instead of a `|` inserted in the text (which shifts the following characters), placing the caret
   under the cursor on click, and horizontal scrolling of long `DTextEntry` values.

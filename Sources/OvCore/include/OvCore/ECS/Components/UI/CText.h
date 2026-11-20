@@ -59,15 +59,27 @@ namespace OvCore::ECS::Components::UI
 		virtual std::string GetTypeName() override;
 
 		/**
-		* Sets the text content
+		* Sets the text content. A text key the text had is cleared: the text is now this one
 		* @param p_text
 		*/
 		void SetText(const std::string& p_text);
 
 		/**
-		* Returns the text content
+		* Returns the text content: the text set, or the text its key gives in the current language
 		*/
 		const std::string& GetText() const;
+
+		/**
+		* Shows the text a key gives in the current language (Localization::Get), again each time the language changes.
+		* An empty key leaves the text as it is. Without the localization service, the key itself is shown
+		* @param p_key
+		*/
+		void SetTextKey(const std::string& p_key);
+
+		/**
+		* Returns the text key, or "" when the text is set as it is
+		*/
+		const std::string& GetTextKey() const;
 
 		/**
 		* Sets the font resource path
@@ -125,6 +137,18 @@ namespace OvCore::ECS::Components::UI
 		EVerticalAlignment GetVerticalAlignment() const;
 
 		/**
+		* Sets whether the text is lit as the scene is: by its lights, its shadows and its fog. It only applies under a
+		* world space canvas: a screen space text is drawn over the scene, unlit
+		* @param p_lit
+		*/
+		void SetLit(bool p_lit);
+
+		/**
+		* Returns whether the text is lit under a world space canvas
+		*/
+		bool IsLit() const;
+
+		/**
 		* Returns the generated text mesh, or nullptr if the text cannot be rendered
 		*/
 		OvRendering::Resources::Mesh* GetMesh() const;
@@ -140,6 +164,12 @@ namespace OvCore::ECS::Components::UI
 		OvRendering::Data::Material* GetMaterial();
 
 		/**
+		* Returns the material the text is drawn with when it is lit: a copy of the host's lit text material, given the
+		* text's atlas and colour. Returns nullptr if the host has none or it cannot be initialized
+		*/
+		OvRendering::Data::Material* GetLitMaterial();
+
+		/**
 		* Returns the generated text bounds size
 		*/
 		const OvMaths::FVector2& GetSize() const;
@@ -148,6 +178,11 @@ namespace OvCore::ECS::Components::UI
 		* Returns the generated text bounds size for a resolved UI size
 		*/
 		OvMaths::FVector2 GetSize(const OvMaths::FVector2& p_resolvedSize) const;
+
+		/**
+		* Returns the size the text's lines take, wrapped at the element's width when it has one
+		*/
+		OvMaths::FVector2 GetContentSize() const;
 
 		/**
 		* Serialize the component
@@ -170,7 +205,9 @@ namespace OvCore::ECS::Components::UI
 		virtual void OnInspector(OvUI::Internal::WidgetContainer& p_root) override;
 
 	private:
+		const std::string& GetDisplayedFontPath() const;
 		OvRendering::Resources::Font* GetFont() const;
+		void ResolveTextKey() const;
 		void MarkMeshDirty();
 		void MarkMaterialSourceDirty();
 		void MarkMaterialColorDirty();
@@ -179,9 +216,13 @@ namespace OvCore::ECS::Components::UI
 		void RebuildMesh() const;
 		void RebuildMesh(const OvMaths::FVector2& p_uiSize) const;
 		void RefreshMaterial();
+		void RefreshLitMaterial();
 
 	private:
-		std::string m_text = "Text";
+		mutable std::string m_text = "Text"; // Given again by its key when the language changes
+		std::string m_textKey;
+		mutable uint64_t m_textKeyRevision = 0;
+		mutable bool m_textKeyDirty = false;
 		std::string m_fontPath;
 		float m_fontSize = 32.0f;
 		OvMaths::FVector4 m_color = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -208,6 +249,14 @@ namespace OvCore::ECS::Components::UI
 		uint64_t m_materialManagerRevision = 0;
 		bool m_materialSourceDirty = true;
 		bool m_materialColorDirty = true;
+
+		bool m_lit = false;
+		std::unique_ptr<OvRendering::Data::Material> m_litMaterial;
+		const OvRendering::Data::Material* m_litSource = nullptr;
+		OvRendering::Resources::Shader* m_litShader = nullptr;
+		OvRendering::Resources::Texture* m_litAtlas = nullptr;
+		uint64_t m_litManagerRevision = 0;
+		bool m_litColorDirty = true;
 	};
 }
 

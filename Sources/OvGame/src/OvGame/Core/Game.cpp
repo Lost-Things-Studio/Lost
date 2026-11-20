@@ -4,6 +4,8 @@
 * @licence: MIT
 */
 
+#include <OvCore/Helpers/InputHelpers.h>
+#include <OvCore/Input/GameInput.h>
 #include <tracy/Tracy.hpp>
 
 #include <OvDebug/Logger.h>
@@ -36,14 +38,23 @@ OvGame::Core::Game::Game(Context & p_context) :
 	>();
 	#endif
 
-	std::string startupScenePath = m_context.projectSettings.Get<std::string>("start_scene");
-	startupScenePath = OvTools::Utils::PathParser::MakeNonWindowsStyle(startupScenePath);
-	m_context.sceneManager.LoadScene(startupScenePath);
+	const std::string startupScenePath = OvTools::Utils::PathParser::MakeNonWindowsStyle(m_context.startScene);
+
+	// A scene that cannot be loaded leaves an empty one, so that the run ends cleanly and says why
+	if (!m_context.sceneManager.LoadScene(startupScenePath))
+	{
+		OVLOG_ERROR("The start scene \"" + startupScenePath + "\" cannot be loaded");
+		m_startSceneLoaded = false;
+		m_context.sceneManager.LoadEmptyScene();
+	}
+
 	m_context.sceneManager.GetCurrentScene()->Play();
 }
 
 OvGame::Core::Game::~Game()
 {
+	// The scripts hear the game end (Events.AddQuit) while their scene is still there
+	m_context.scriptEngine->NotifyQuit();
 	m_context.sceneManager.UnloadCurrentScene();
 }
 
@@ -52,6 +63,9 @@ void OvGame::Core::Game::PreUpdate()
 	ZoneScoped;
 
 	m_context.device->PollEvents();
+	m_context.inputManager->UpdateGamepads();
+	OvCore::Helpers::InputHelpers::BeginFrame();
+	m_context.inputActions->Update(OvCore::Input::GameInputSource{});
 }
 
 void RenderCurrentScene(
@@ -105,6 +119,9 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 
 			if (m_context.physicsEngine->Update(p_deltaTime))
 				currentScene->FixedUpdate(p_deltaTime);
+
+			// The rest of the frame sees the interpolated bodies between their last two steps
+			m_context.physicsEngine->Interpolate();
 		}
 
 		{
@@ -115,7 +132,7 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 
 		{
 			ZoneScopedN("Audio Update");
-			m_context.audioEngine->Update();
+			m_context.audioEngine->Update(m_context.clock.GetDeltaTimeUnscaled());
 		}
 
 		if (drawable)
@@ -160,4 +177,9 @@ void OvGame::Core::Game::PostUpdate()
 	m_context.inputManager->ClearEvents();
 	m_context.driver->OnFrameCompleted();
 	m_context.driver->OnFramePresented();
+}
+
+bool OvGame::Core::Game::HasStartSceneLoaded() const
+{
+	return m_startSceneLoaded;
 }

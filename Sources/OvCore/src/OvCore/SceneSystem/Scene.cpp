@@ -30,19 +30,16 @@ OvCore::SceneSystem::Scene::Scene(
 	const std::filesystem::path& p_engineAssetsPath
 ) :
 	m_projectAssetsPath(p_projectAssetsPath),
-	m_engineAssetsPath(p_engineAssetsPath)
+	m_engineAssetsPath(p_engineAssetsPath),
+	m_navigation(std::make_unique<Navigation::NavMesh>())
 {
 
 }
 
 OvCore::SceneSystem::Scene::~Scene()
 {
-	std::for_each(m_actors.begin(), m_actors.end(), [](OvCore::ECS::Actor* element)
-	{ 
-		delete element;
-	});
+	DestroyAllActors();
 
-	m_actors.clear();
 	m_actorsByGUID.clear();
 	m_shadowedActorsByGUID.clear();
 }
@@ -137,9 +134,14 @@ bool OvCore::SceneSystem::Scene::IsPlaying() const
 	return m_isPlaying;
 }
 
+OvTools::Eventing::Event<float> OvCore::SceneSystem::Scene::UpdateEvent;
+OvTools::Eventing::Event<float> OvCore::SceneSystem::Scene::LateUpdateEvent;
+
 void OvCore::SceneSystem::Scene::Update(float p_deltaTime)
 {
 	ZoneScoped;
+	UpdateEvent.Invoke(p_deltaTime);
+
 	auto actors = m_actors;
 	std::for_each(actors.begin(), actors.end(), std::bind(std::mem_fn(&ECS::Actor::OnUpdate), std::placeholders::_1, p_deltaTime));
 }
@@ -154,10 +156,91 @@ void OvCore::SceneSystem::Scene::FixedUpdate(float p_deltaTime)
 void OvCore::SceneSystem::Scene::LateUpdate(float p_deltaTime)
 {
 	ZoneScoped;
+	UpdateAnimators(p_deltaTime);
+
 	auto actors = m_actors;
 	std::for_each(actors.begin(), actors.end(), std::bind(std::mem_fn(&ECS::Actor::OnLateUpdate), std::placeholders::_1, p_deltaTime));
 
+	LateUpdateEvent.Invoke(p_deltaTime);
+
+	UpdateAnimationConstraints(p_deltaTime);
+	UpdateSkinnedMeshes();
 	UpdateBoneAttachments();
+	UpdateParticleSystems(p_deltaTime);
+}
+
+void OvCore::SceneSystem::Scene::UpdateAnimators(float p_deltaTime)
+{
+	ZoneScoped;
+
+	// Moving a graph on adds or removes no component: the list can be walked as it is
+	for (auto animator : m_fastAccessComponents.animators)
+	{
+		if (animator->owner.IsActive())
+		{
+			animator->Apply(*this, p_deltaTime);
+		}
+	}
+}
+
+void OvCore::SceneSystem::Scene::UpdateAnimationConstraints(float p_deltaTime)
+{
+	ZoneScoped;
+
+	if (m_fastAccessComponents.lookAts.empty() && m_fastAccessComponents.springBones.empty())
+	{
+		return;
+	}
+
+	// Each frame starts again from the pose the clips and the scripts left
+	for (auto skinnedMeshRenderer : m_fastAccessComponents.skinnedMeshRenderers)
+	{
+		skinnedMeshRenderer->ClearConstraintRotations();
+	}
+
+	for (auto lookAt : m_fastAccessComponents.lookAts)
+	{
+		if (lookAt->owner.IsActive())
+		{
+			lookAt->Apply(*this, p_deltaTime);
+		}
+	}
+
+	for (auto springBones : m_fastAccessComponents.springBones)
+	{
+		if (springBones->owner.IsActive())
+		{
+			springBones->Apply(*this, p_deltaTime);
+		}
+	}
+}
+
+void OvCore::SceneSystem::Scene::UpdateSkinnedMeshes()
+{
+	ZoneScoped;
+
+	// Working a pose out adds or removes no component: the list can be walked as it is
+	for (auto skinnedMeshRenderer : m_fastAccessComponents.skinnedMeshRenderers)
+	{
+		if (skinnedMeshRenderer->owner.IsActive())
+		{
+			skinnedMeshRenderer->UpdatePose();
+		}
+	}
+}
+
+void OvCore::SceneSystem::Scene::UpdateParticleSystems(float p_deltaTime)
+{
+	ZoneScoped;
+
+	// Simulating adds or removes no component: the list can be walked as it is
+	for (auto particleSystem : m_fastAccessComponents.particleSystems)
+	{
+		if (particleSystem->owner.IsActive())
+		{
+			particleSystem->Simulate(p_deltaTime);
+		}
+	}
 }
 
 void OvCore::SceneSystem::Scene::UpdateBoneAttachments()
@@ -395,6 +478,25 @@ void OvCore::SceneSystem::Scene::CollectGarbages()
 	}), m_actors.end());
 }
 
+void OvCore::SceneSystem::Scene::DestroyAllActors()
+{
+	// By index: a callback may create actors, which are prepared and deleted too
+	for (size_t index = 0; index < m_actors.size(); ++index)
+	{
+		m_actors[index]->PrepareForDeletion();
+	}
+
+	while (!m_actors.empty())
+	{
+		ECS::Actor* actor = m_actors.back();
+		m_actors.pop_back();
+
+		const uint64_t guid = actor->GetGUID();
+		delete actor;
+		UnindexActorGUID(actor, guid);
+	}
+}
+
 OvCore::ECS::Actor* OvCore::SceneSystem::Scene::FindActorByName(const std::string& p_name) const
 {
 	auto result = std::find_if(m_actors.begin(), m_actors.end(), [p_name](OvCore::ECS::Actor* element)
@@ -533,6 +635,27 @@ void OvCore::SceneSystem::Scene::OnComponentAdded(ECS::Components::AComponent& p
 
 	if (auto result = dynamic_cast<ECS::Components::CBoneAttachment*>(&p_compononent))
 		m_fastAccessComponents.boneAttachments.push_back(result);
+
+	if (auto result = dynamic_cast<ECS::Components::CParticleSystem*>(&p_compononent))
+		m_fastAccessComponents.particleSystems.push_back(result);
+
+	if (auto result = dynamic_cast<ECS::Components::CTerrain*>(&p_compononent))
+		m_fastAccessComponents.terrains.push_back(result);
+
+	if (auto result = dynamic_cast<ECS::Components::CVegetation*>(&p_compononent))
+		m_fastAccessComponents.vegetations.push_back(result);
+
+	if (auto result = dynamic_cast<ECS::Components::CSkinnedMeshRenderer*>(&p_compononent))
+		m_fastAccessComponents.skinnedMeshRenderers.push_back(result);
+
+	if (auto result = dynamic_cast<ECS::Components::CAnimator*>(&p_compononent))
+		m_fastAccessComponents.animators.push_back(result);
+
+	if (auto result = dynamic_cast<ECS::Components::CLookAt*>(&p_compononent))
+		m_fastAccessComponents.lookAts.push_back(result);
+
+	if (auto result = dynamic_cast<ECS::Components::CSpringBones*>(&p_compononent))
+		m_fastAccessComponents.springBones.push_back(result);
 }
 
 void OvCore::SceneSystem::Scene::OnComponentRemoved(ECS::Components::AComponent& p_compononent)
@@ -554,6 +677,36 @@ void OvCore::SceneSystem::Scene::OnComponentRemoved(ECS::Components::AComponent&
 
 	if (auto result = dynamic_cast<ECS::Components::CBoneAttachment*>(&p_compononent))
 		m_fastAccessComponents.boneAttachments.erase(std::remove(m_fastAccessComponents.boneAttachments.begin(), m_fastAccessComponents.boneAttachments.end(), result), m_fastAccessComponents.boneAttachments.end());
+
+	if (auto result = dynamic_cast<ECS::Components::CParticleSystem*>(&p_compononent))
+		m_fastAccessComponents.particleSystems.erase(std::remove(m_fastAccessComponents.particleSystems.begin(), m_fastAccessComponents.particleSystems.end(), result), m_fastAccessComponents.particleSystems.end());
+
+	if (auto result = dynamic_cast<ECS::Components::CTerrain*>(&p_compononent))
+		m_fastAccessComponents.terrains.erase(std::remove(m_fastAccessComponents.terrains.begin(), m_fastAccessComponents.terrains.end(), result), m_fastAccessComponents.terrains.end());
+
+	if (auto result = dynamic_cast<ECS::Components::CVegetation*>(&p_compononent))
+		m_fastAccessComponents.vegetations.erase(std::remove(m_fastAccessComponents.vegetations.begin(), m_fastAccessComponents.vegetations.end(), result), m_fastAccessComponents.vegetations.end());
+
+	if (auto result = dynamic_cast<ECS::Components::CSkinnedMeshRenderer*>(&p_compononent))
+		m_fastAccessComponents.skinnedMeshRenderers.erase(std::remove(m_fastAccessComponents.skinnedMeshRenderers.begin(), m_fastAccessComponents.skinnedMeshRenderers.end(), result), m_fastAccessComponents.skinnedMeshRenderers.end());
+
+	if (auto result = dynamic_cast<ECS::Components::CAnimator*>(&p_compononent))
+	{
+		// The actor and its other components are still there: the renderer gets its own layers back
+		result->ReleaseRenderer();
+		m_fastAccessComponents.animators.erase(std::remove(m_fastAccessComponents.animators.begin(), m_fastAccessComponents.animators.end(), result), m_fastAccessComponents.animators.end());
+	}
+
+	if (auto result = dynamic_cast<ECS::Components::CLookAt*>(&p_compononent))
+		m_fastAccessComponents.lookAts.erase(std::remove(m_fastAccessComponents.lookAts.begin(), m_fastAccessComponents.lookAts.end(), result), m_fastAccessComponents.lookAts.end());
+
+	if (auto result = dynamic_cast<ECS::Components::CSpringBones*>(&p_compononent))
+		m_fastAccessComponents.springBones.erase(std::remove(m_fastAccessComponents.springBones.begin(), m_fastAccessComponents.springBones.end(), result), m_fastAccessComponents.springBones.end());
+}
+
+OvCore::Navigation::NavMesh& OvCore::SceneSystem::Scene::GetNavigation()
+{
+	return *m_navigation;
 }
 
 std::vector<OvCore::ECS::Actor*>& OvCore::SceneSystem::Scene::GetActors()
