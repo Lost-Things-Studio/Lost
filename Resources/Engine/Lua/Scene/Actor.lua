@@ -174,6 +174,10 @@ function Actor:GetParticleSystem() end
 ---@return Terrain|nil
 function Actor:GetTerrain() end
 
+--- Returns the Vegetation attached to this actor (If any)
+---@return Vegetation|nil
+function Actor:GetVegetation() end
+
 --- Returns the Animator attached to this actor (If any)
 ---@return Animator|nil
 function Actor:GetAnimator() end
@@ -322,6 +326,10 @@ function Actor:AddParticleSystem() end
 ---@return Terrain
 function Actor:AddTerrain() end
 
+--- Adds a Vegetation component to the actor and returns it. It covers the actor's PhysicalHeightField with models
+---@return Vegetation
+function Actor:AddVegetation() end
+
 --- Adds an Animator component to the actor and returns it
 ---@return Animator
 function Actor:AddAnimator() end
@@ -404,6 +412,9 @@ function Actor:RemoveParticleSystem() end
 
 --- Removes the Terrain component from the actor
 function Actor:RemoveTerrain() end
+
+--- Removes the Vegetation component from the actor
+function Actor:RemoveVegetation() end
 
 --- Removes the Animator component from the actor
 function Actor:RemoveAnimator() end
