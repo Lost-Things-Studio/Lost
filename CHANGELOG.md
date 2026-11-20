@@ -60,6 +60,10 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Reflection probes**: `ReflectionProbe:SetBrightness` and `GetBrightness`, how bright what a probe captured is for
   the objects it lights.
 - **Profiling**: a Tracy zone per Behaviour callback, named `script:function`.
+- **More Behaviour property types**: vectors (`Vector2`, `Vector3`, `Vector4` defaults), colours (`Color(r, g, b, a)`,
+  a `Vector4` to the script), enumerations (`Enum({ ... }, default)`, the chosen string) and lists
+  (`List("number" | "string" | "bool", { ... })`, a plain table), each with its inspector widget and its type in
+  prefab and scene files.
 
 ### Changed
 
@@ -74,6 +78,8 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Game input in the editor**: the game reads keys, clicks, scroll and the mouse lock only while the Game View has
   the focus; F5 starts and stops play, and Escape belongs to the game.
 - **A minimized window** keeps the game running; only drawing stops.
+- **Unreadable properties are reported**: a property written in a file with an unknown type (`type="boolean"`) is
+  logged as an error, and one whose type the script no longer declares as a warning. Both were ignored silently.
 
 ### Removed
 
