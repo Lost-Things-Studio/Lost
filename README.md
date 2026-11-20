@@ -10,13 +10,22 @@ because more than one kind of game needs them.
 
 ## Features
 
-- Lua scripting, sandboxed, with a documented API
-- Editor with prefabs, a material editor and a profiler
-- Physically-based rendering, shadows, post-processing and custom shaders
-- Rigid body physics, ragdolls, height fields and mesh colliders (Jolt Physics)
-- Skeletal animation with layers and masks
-- Spatial audio (SoLoud)
-- Sandboxed file storage and JSON for save files
+- Lua scripting, sandboxed, with a documented and versioned API, `require`, and a standard library: classes, signals,
+  timers, tweens, pools, state machines and save files
+- An editor with prefabs, a material editor and a profiler
+- Physically-based rendering, shadows, post-processing, custom shaders on a public shader API, and levels of detail
+- Rigid body physics on Jolt Physics: collision layers, queries, a character controller, ragdolls, height fields and
+  mesh colliders
+- Navigation meshes and path finding
+- Skeletal animation: layers and masks, retargeting, a state graph, look-at and spring bones
+- GPU particles
+- Terrains drawn in chunks with levels of detail, and instanced vegetation
+- A UI library: text in every script a font has, text input, clipping, and lit text in the world
+- Input actions that players can rebind, and gamepads
+- Spatial audio with buses and one-shot sounds
+- Localization tables
+- Sandboxed file storage, JSON and versioned save files
+- A command line to run a game headless, for tests and benchmarks
 - Windows and Linux
 
 ## Building
@@ -82,6 +91,30 @@ The engine is split into libraries and two applications:
 One branch and one pull request per change, against `main`. A change should be generic (it would serve a game of
 another genre as well), configurable rather than hard-coded, documented in `Docs/` and the changelog, and keep existing
 projects working. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## Dependencies
+
+Lost builds its dependencies from source, in `Dependencies/`, each with its licence:
+
+| Library | Used for | Licence |
+| --- | --- | --- |
+| [Assimp](https://github.com/assimp/assimp) | Importing models | BSD 3-Clause |
+| BareGL | The OpenGL layer of the renderer | MIT |
+| [Dear ImGui](https://github.com/ocornut/imgui) | The editor's interface | MIT |
+| [doctest](https://github.com/doctest/doctest) | The engine's tests | MIT |
+| [FreeType](https://freetype.org) | Fonts | FreeType License |
+| [GLFW](https://www.glfw.org) | Windows, inputs and gamepads | zlib |
+| [Jolt Physics](https://github.com/jrouwe/JoltPhysics) | Physics | MIT |
+| [Lua](https://www.lua.org) | Scripting | MIT |
+| [Premake](https://github.com/premake/premake-core) | Generating the projects | BSD 3-Clause |
+| [Recast & Detour](https://github.com/recastnavigation/recastnavigation) | Navigation meshes and paths | zlib |
+| [sol2](https://github.com/ThePhD/sol2) | The Lua bindings | MIT |
+| [SoLoud](https://github.com/jarikomppa/soloud) | Audio | zlib |
+| [stb_image](https://github.com/nothings/stb) | Decoding images | Public domain or MIT |
+| [TinyXML-2](https://github.com/leethomason/tinyxml2) | Scene, prefab and material files | zlib |
+| [Tracy](https://github.com/wolfpld/tracy) | The profiler | BSD 3-Clause |
+
+Where Lost changes a dependency's code, a `Lost:` comment marks the change.
 
 ## License
 
