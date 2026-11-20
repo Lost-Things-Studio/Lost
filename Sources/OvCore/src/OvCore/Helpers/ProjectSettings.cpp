@@ -125,7 +125,13 @@ namespace
 
 	void ReadLayerNames(const std::string& p_value, PhysicsSettings& p_settings)
 	{
-		const auto names = Split(p_value, ',');
+		auto names = Split(p_value, ',');
+
+		// A trailing comma names no layer
+		while (!names.empty() && Trim(names.back()).empty())
+		{
+			names.pop_back();
+		}
 
 		if (names.size() > PhysicsSettings::kLayerCount)
 		{
