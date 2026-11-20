@@ -82,6 +82,9 @@ Lost's first version: Overload 1.9 and the changes below.
 ### Fixed
 
 - **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
+- **Culling of mirrored models**: a model with a negative scale is culled where it is drawn. Its bounding sphere goes
+  through the world matrix, where the decomposed scale and rotation lost the mirror's sign, and its radius follows
+  the largest scale (a scale of -2 on X counted as 0 before).
 - **Callbacks when a scene goes**: on a scene change, on quitting and when play stops in the editor, every actor
   receives `OnDisable` and `OnDestroy` while its scene is still the current one, then the actors are deleted. Before,
   the scene was already gone during these callbacks, and any actor handle used there raised
