@@ -88,6 +88,9 @@ Lost's first version: Overload 1.9 and the changes below.
 ### Fixed
 
 - **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
+- **`ReflectionProbe:RequestCapture()` without its argument**: the argument `forceImmediate` is optional, as its
+  definition and the C++ say. The binding required it, so a call without it raised an error in a Debug build and read
+  an undefined value in a Release build.
 - **World space UI behind the scene**: a world space canvas is depth-tested against the scene, as
   `Libraries/UI/Docs/WorldSpace.md` says, so a wall in front of it hides it. The depth test it asked for was lost
   when its drawables were prepared for the UI pass, and it was drawn over everything.
