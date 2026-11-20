@@ -38,8 +38,8 @@ triangles instead of thousands.
 
 ## Culling
 
-- Frustum culling ignores the sign of the scale: a mirrored model (negative X scale) is culled with its bounding sphere
-  on the wrong side. Give it custom bounds (`frustum_behaviour` 3) centred on its pivot.
+- Frustum culling places a model's bounding sphere through its world matrix, so a mirrored model (a negative scale on
+  any axis) is culled where it is drawn. The sphere's radius grows with the largest scale.
 - A renderer whose vertices are moved far by its shader also needs custom bounds that hold them all. A particle system
   keeps its own (see [Particles](Particles.md)).
 
@@ -78,6 +78,11 @@ Particle systems, drawn by the GPU in one draw each, have a page of their own: [
 
 The shader API, its version, the public includes, `Standard`'s extension points, the fog's material option and the
 rules of a custom shader are in [Shaders](Shaders.md).
+
+- A directional light renders its shadow map only when the light or something drawn into it changes
+  (`ShadowMapUpdateMode.ON_CHANGE`, the default). It sees a change through the resource managers: a caster whose
+  texture or mesh is rewritten in place (a render target, a mesh rebuilt by a script) asks for a new map with
+  `RequestShadowMapUpdate()`, or its light renders one every frame (`ShadowMapUpdateMode.REALTIME`).
 
 ## Models built from Lua
 

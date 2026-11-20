@@ -13,6 +13,7 @@ end
 local version = readVersion()
 
 -- The version of Overload the engine is based on
+-- The version of Overload that Lost is based on: update it with each sync from Overload
 local overloadVersion = "1.9"
 
 workspace "Overload"

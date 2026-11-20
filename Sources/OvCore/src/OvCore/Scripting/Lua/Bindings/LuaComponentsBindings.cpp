@@ -1270,7 +1270,8 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetBrightness", &CReflectionProbe::SetBrightness,
 		"GetBrightness", &CReflectionProbe::GetBrightness,
 		"IsBoxProjectionEnabled", &CReflectionProbe::IsBoxProjectionEnabled,
-		"RequestCapture", &CReflectionProbe::RequestCapture,
+		// The argument is optional in Lua as in C++: sol gives no default to a bound member function
+		"RequestCapture", [](CReflectionProbe& p_probe, sol::optional<bool> p_forceImmediate) { p_probe.RequestCapture(p_forceImmediate.value_or(false)); },
 		"GetCubemap", &CReflectionProbe::GetCubemap
 	);
 

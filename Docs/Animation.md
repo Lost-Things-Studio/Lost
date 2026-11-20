@@ -9,6 +9,9 @@
 - A mesh hung on a bone without skin weights (a helmet, a hood) follows that bone: the importer binds it to its nearest
   bone ancestor. Under an animated node that is not a bone, it only follows that ancestor.
 - A `BoneAttachment` makes an actor ride a bone, placed by the engine after every script.
+- `SetTarget(actor)` makes it ride a bone of another actor than its nearest parent with a skinned mesh; the target is
+  saved with the scene and the prefab. Attachments are placed parents first: one that rides an actor placed by another
+  attachment, without being its child, may trail it by a frame.
 
 ## Layers
 
