@@ -22,6 +22,7 @@
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
+#include <OvCore/ECS/Components/CCharacterController.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
@@ -112,6 +113,7 @@ namespace
 		CreateComponentInfo<CPhysicalSphere>("Physical Sphere"),
 		CreateComponentInfo<CPhysicalCapsule>("Physical Capsule"),
 		CreateComponentInfo<CPhysicalHeightField>("Physical Height Field"),
+		CreateComponentInfo<CCharacterController>("Character Controller"),
 		CreateComponentInfo<CPhysicalMesh>("Physical Mesh"),
 		CreateComponentInfo<CPointLight>("Point Light"),
 		CreateComponentInfo<CDirectionalLight>("Directional Light"),

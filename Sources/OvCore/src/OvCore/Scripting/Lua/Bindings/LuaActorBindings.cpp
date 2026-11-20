@@ -20,6 +20,7 @@
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
+#include <OvCore/ECS/Components/CCharacterController.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
@@ -142,6 +143,7 @@ void BindLuaActor(sol::state& p_luaState)
 		"GetPhysicalSphere", [](ActorRef& r) { return r.Resolve().GetComponent<CPhysicalSphere>(); },
 		"GetPhysicalCapsule", [](ActorRef& r) { return r.Resolve().GetComponent<CPhysicalCapsule>(); },
 		"GetPhysicalHeightField", [](ActorRef& r) { return r.Resolve().GetComponent<CPhysicalHeightField>(); },
+		"GetCharacterController", [](ActorRef& r) { return r.Resolve().GetComponent<CCharacterController>(); },
 		"GetPhysicalMesh", [](ActorRef& r) { return r.Resolve().GetComponent<CPhysicalMesh>(); },
 		"GetCamera", [](ActorRef& r) { return r.Resolve().GetComponent<CCamera>(); },
 		"GetLight", [](ActorRef& r) { return r.Resolve().GetComponent<CLight>(); },
@@ -206,6 +208,7 @@ void BindLuaActor(sol::state& p_luaState)
 		"AddPhysicalSphere", [](ActorRef& r) -> CPhysicalSphere& { return r.Resolve().AddComponent<CPhysicalSphere>(); },
 		"AddPhysicalCapsule", [](ActorRef& r) -> CPhysicalCapsule& { return r.Resolve().AddComponent<CPhysicalCapsule>(); },
 		"AddPhysicalHeightField", [](ActorRef& r) -> CPhysicalHeightField& { return r.Resolve().AddComponent<CPhysicalHeightField>(); },
+		"AddCharacterController", [](ActorRef& r) -> CCharacterController& { return r.Resolve().AddComponent<CCharacterController>(); },
 		"AddPhysicalMesh", [](ActorRef& r) -> CPhysicalMesh& { return r.Resolve().AddComponent<CPhysicalMesh>(); },
 		"AddCamera", [](ActorRef& r) -> CCamera& { return r.Resolve().AddComponent<CCamera>(); },
 		"AddPointLight", [](ActorRef& r) -> CPointLight& { return r.Resolve().AddComponent<CPointLight>(); },
@@ -233,6 +236,7 @@ void BindLuaActor(sol::state& p_luaState)
 		"RemovePhysicalSphere", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPhysicalSphere>(); },
 		"RemovePhysicalCapsule", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPhysicalCapsule>(); },
 		"RemovePhysicalHeightField", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPhysicalHeightField>(); },
+		"RemoveCharacterController", [](ActorRef& r) { return r.Resolve().RemoveComponent<CCharacterController>(); },
 		"RemovePhysicalMesh", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPhysicalMesh>(); },
 		"RemoveCamera", [](ActorRef& r) { return r.Resolve().RemoveComponent<CCamera>(); },
 		"RemovePointLight", [](ActorRef& r) { return r.Resolve().RemoveComponent<CPointLight>(); },

@@ -98,6 +98,10 @@ function Actor:GetPhysicalCapsule() end
 ---@return PhysicalHeightField|nil
 function Actor:GetPhysicalHeightField() end
 
+--- Returns the CharacterController attached to this actor (If any)
+---@return CharacterController|nil
+function Actor:GetCharacterController() end
+
 --- Returns the PhysicalMesh attached to this actor (If any)
 ---@return PhysicalMesh|nil
 function Actor:GetPhysicalMesh() end
@@ -229,6 +233,10 @@ function Actor:AddPhysicalCapsule() end
 ---@return PhysicalHeightField
 function Actor:AddPhysicalHeightField() end
 
+--- Adds a CharacterController component to the actor and returns it
+---@return CharacterController
+function Actor:AddCharacterController() end
+
 --- Adds a PhysicalMesh component to the actor and returns it
 ---@return PhysicalMesh
 function Actor:AddPhysicalMesh() end
@@ -319,6 +327,8 @@ function Actor:RemovePhysicalSphere() end
 function Actor:RemovePhysicalCapsule() end
 --- Removes the PhysicalHeightField component from the actor
 function Actor:RemovePhysicalHeightField() end
+--- Removes the CharacterController component from the actor
+function Actor:RemoveCharacterController() end
 
 --- Removes the PhysicalMesh component from the actor
 function Actor:RemovePhysicalMesh() end
