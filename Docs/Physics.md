@@ -21,6 +21,25 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
   counter-clockwise winding faces: a ray or a body coming from behind passes through. Build it once; changing its
   triangles rebuilds the whole shape.
 
+## Collision layers
+
+- Every physical object is on one of 16 collision layers, 0 to 15: `SetCollisionLayer(layer)` and
+  `GetCollisionLayer()`, `collision_layer` in a file (0 when absent), a list in the inspector. Out of range, a layer is
+  clamped.
+- By default every layer collides with every other. The project names the layers and says which pairs go through each
+  other (see [Projects](Projects.md)):
+
+  ```ini
+  physics_layer_names=Default,Player,Enemy,Projectile,Debris
+  physics_ignored_layer_pairs=Player:Projectile, Debris:Debris, Debris:Player
+  ```
+
+  A pair names its layers by name or by index. An entry that cannot be read is logged and skipped.
+- From Lua: `Physics.GetLayerIndex(name)` (`nil` when no layer has that name), `Physics.GetLayerName(layer)`,
+  `Physics.DoLayersCollide(a, b)` and `Physics.SetLayersCollide(a, b, collide)`, which applies from the next physics
+  step. Stopping play in the editor puts back the project's settings.
+- `Physics.Raycast` sees every layer. A trigger only reports the objects of the layers it collides with.
+
 ## Triggers and contacts
 
 - A trigger has no collision response. A collider can be switched to a trigger and back at run time
@@ -47,7 +66,10 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
 
 - `SkinnedMeshRenderer:StartRagdoll(parts, velocity)` hands the skeleton over to capsules joined by swing-twist
   constraints, from its current pose; `StopRagdoll`, `IsRagdoll`, `AddRagdollImpulse`.
-- A ragdoll's bodies have a layer of their own: they fall on static and kinematic bodies and on each other, go through
-  dynamic bodies, raise no collision event, and raycasts never return them.
+- A ragdoll's bodies are on the project's `physics_ragdoll_layer`, 15 (`Ragdoll`) by default, and collide as that
+  layer does. They raise no collision event, and raycasts never return them.
+- With `physics_ragdoll_ignores_dynamic_bodies=true`, they also go through every dynamic body, so that a falling body
+  never pushes nor trips a living one; they still fall on static and kinematic bodies and on each other. The option is
+  off by default.
 - While a ragdoll drives a skeleton, the animation does not; the bones it does not move keep their pose relative to
   their parent.

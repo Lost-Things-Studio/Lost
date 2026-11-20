@@ -59,6 +59,10 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Reflection probes**: `ReflectionProbe:SetBrightness` and `GetBrightness`, how bright what a probe captured is for
   the objects it lights.
 - **Profiling**: a Tracy zone per Behaviour callback, named `script:function`.
+- **Collision layers**: 16 layers, one per physical object (`SetCollisionLayer`, `GetCollisionLayer`,
+  `collision_layer` in a file, a list in the inspector). The project names them (`physics_layer_names`) and lists the
+  pairs that go through each other (`physics_ignored_layer_pairs`); Lua reads and changes them at run time
+  (`Physics.GetLayerIndex`, `GetLayerName`, `DoLayersCollide`, `SetLayersCollide`). See [Docs/Physics.md](Docs/Physics.md).
 
 ### Changed
 
@@ -73,6 +77,9 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Game input in the editor**: the game reads keys, clicks, scroll and the mouse lock only while the Game View has
   the focus; F5 starts and stops play, and Escape belongs to the game.
 - **A minimized window** keeps the game running; only drawing stops.
+- **Ragdolls collide by their layer**: their bodies are on `physics_ragdoll_layer` (15 by default). Going through
+  dynamic bodies is now the project option `physics_ragdoll_ignores_dynamic_bodies`, off by default. A project that
+  relied on it sets it to `true`.
 
 ### Removed
 
