@@ -330,8 +330,10 @@ OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Panels::SceneVie
 
 	auto& actorPickingFeature = m_renderer->GetPass<OvEditor::Rendering::PickingRenderPass>("Picking");
 
-	// Asynchronous: the result comes from a previous frame, so reading it never stalls on the GPU
-	return actorPickingFeature.GetPickingResult(scene);
+	// Asynchronous: the result comes from a previous frame, so reading it never stalls on the GPU, except on a click,
+	// which waits for the last frame drawn so as not to pick what the mouse was over a few frames earlier
+	const bool clicked = EDITOR_CONTEXT(inputManager)->IsMouseButtonPressed(OvWindowing::Inputs::EMouseButton::MOUSE_BUTTON_LEFT);
+	return actorPickingFeature.GetPickingResult(scene, clicked);
 }
 
 void OvEditor::Panels::SceneView::OnSceneDropped(const std::string& p_path)

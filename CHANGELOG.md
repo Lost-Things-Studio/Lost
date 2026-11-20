@@ -2,8 +2,9 @@
 
 What Lost changes from [Overload](https://github.com/Overload-Technologies/Overload), version by version, newest
 first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
-[Semantic Versioning](https://semver.org/): a script, a shader or a project made for one version keeps working with any
-later version of the same major version.
+[Semantic Versioning](https://semver.org/): from 1.0, a script, a shader or a project made for one version keeps
+working with any later version of the same major version. Before 1.0, a minor version may break that; its section says
+how under "Changed" and "Removed".
 
 ## [Unreleased]
 
@@ -84,3 +85,9 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Culling of mirrored models**: a model with a negative scale is culled where it is drawn. Its bounding sphere goes
   through the world matrix, where the decomposed scale and rotation lost the mirror's sign, and its radius follows
   the largest scale (a scale of -2 on X counted as 0 before).
+- **Callbacks when a scene goes**: on a scene change, on quitting and when play stops in the editor, every actor
+  receives `OnDisable` and `OnDestroy` while its scene is still the current one, then the actors are deleted. Before,
+  the scene was already gone during these callbacks, and any actor handle used there raised
+  `ActorRef: no active scene`.
+- **Actor references inside a prefab survive instantiation**: an actor property that names another actor of the same
+  prefab now names that actor's instance. Before, every instance got new GUIDs and such a property came out `nil`.

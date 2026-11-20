@@ -15,23 +15,26 @@ done
 
 # Build Debug
 "$SCRIPT_DIR/Build.sh" debug -skip-project-generation
-if [ $? -ne 0 ]; then
+status=$?
+if [ $status -ne 0 ]; then
     echo "Debug build failed. Exiting."
-    exit $?
+    exit $status
 fi
 
 # Build Release
 "$SCRIPT_DIR/Build.sh" release -skip-project-generation
-if [ $? -ne 0 ]; then
+status=$?
+if [ $status -ne 0 ]; then
     echo "Release build failed. Exiting."
-    exit $?
+    exit $status
 fi
 
 # Build Publish
 "$SCRIPT_DIR/Build.sh" publish -skip-project-generation
-if [ $? -ne 0 ]; then
+status=$?
+if [ $status -ne 0 ]; then
     echo "Publish build failed. Exiting."
-    exit $?
+    exit $status
 fi
 
 # Read version from VERSION.txt
@@ -41,9 +44,9 @@ PLATFORM="linux_x64"
 # Navigate to the build folder
 pushd "$SCRIPT_DIR/../../Build/" > /dev/null
 
-# Delete any existing folder with the release name
-if [ -d "Lost-$VERSION-$PLATFORM" ]; then
-    rm -rf "Lost-$VERSION-$PLATFORM"
+# Delete any folder left by an earlier run, so that it doesn't end up in the archive
+if [ -d "../Releases/Lost-$VERSION-$PLATFORM" ]; then
+    rm -rf "../Releases/Lost-$VERSION-$PLATFORM"
 fi
 
 # Create Releases folder if it doesn't exist

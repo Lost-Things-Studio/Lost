@@ -176,9 +176,20 @@ void OvEditor::Rendering::PickingRenderPass::ResetPickingResult()
 }
 
 OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Rendering::PickingRenderPass::GetPickingResult(
-	const OvCore::SceneSystem::Scene& p_scene
+	const OvCore::SceneSystem::Scene& p_scene,
+	bool p_waitForNewest
 )
 {
+	if (p_waitForNewest)
+	{
+		auto& newest = m_readbacks[(m_nextReadback + kReadbackCount - 1) % kReadbackCount];
+
+		if (newest.pending)
+		{
+			newest.fence.Wait();
+		}
+	}
+
 	// Consume the most recent readback the GPU is done with (from newest to oldest), without waiting.
 	// Older readbacks are discarded.
 	for (uint32_t i = 1; i <= kReadbackCount; ++i)
