@@ -335,12 +335,23 @@ void OvPhysics::Entities::PhysicalObject::SetLayer(uint16_t p_layer)
 	if (m_body)
 	{
 		m_bodyInterface->SetObjectLayer(m_body->GetID(), m_layer);
+
+		// A sleeping body would keep resting on what it now goes through
+		WakeUp();
 	}
 }
 
 uint16_t OvPhysics::Entities::PhysicalObject::GetLayer() const
 {
 	return m_layer;
+}
+
+void OvPhysics::Entities::PhysicalObject::WakeUp()
+{
+	if (m_body && !m_body->IsStatic() && m_bodyInterface->IsAdded(m_body->GetID()))
+	{
+		m_bodyInterface->ActivateBody(m_body->GetID());
+	}
 }
 
 void OvPhysics::Entities::PhysicalObject::SetEnabled(bool p_enabled)

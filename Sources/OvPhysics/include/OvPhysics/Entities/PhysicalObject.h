@@ -235,6 +235,11 @@ namespace OvPhysics::Entities
 		uint16_t GetLayer() const;
 
 		/**
+		* Wakes the body up if it sleeps, so that it sees a change of what it collides with
+		*/
+		void WakeUp();
+
+		/**
 		* Defines if the physical object should be enabled or not
 		* @param p_enabled
 		*/

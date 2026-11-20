@@ -662,6 +662,11 @@ void OvPhysics::Core::PhysicsEngine::SetLayersCollide(uint16_t p_layer1, uint16_
 		return;
 	}
 
+	if (m_objectLayerPairFilter->ShouldCollide(p_layer1, p_layer2) == p_collide)
+	{
+		return;
+	}
+
 	if (p_collide)
 	{
 		m_objectLayerPairFilter->EnableCollision(p_layer1, p_layer2);
@@ -669,6 +674,15 @@ void OvPhysics::Core::PhysicsEngine::SetLayersCollide(uint16_t p_layer1, uint16_
 	else
 	{
 		m_objectLayerPairFilter->DisableCollision(p_layer1, p_layer2);
+	}
+
+	// The bodies resting on one another would sleep on through the change
+	for (Entities::PhysicalObject& physicalObject : m_physicalObjects)
+	{
+		if (const uint16_t layer = physicalObject.GetLayer(); layer == p_layer1 || layer == p_layer2)
+		{
+			physicalObject.WakeUp();
+		}
 	}
 }
 

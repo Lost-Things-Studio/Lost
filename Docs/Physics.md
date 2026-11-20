@@ -42,7 +42,7 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
   A pair names its layers by name or by index. An entry that cannot be read is logged and skipped.
 - From Lua: `Physics.GetLayerIndex(name)` (`nil` when no layer has that name), `Physics.GetLayerName(layer)`,
   `Physics.DoLayersCollide(a, b)` and `Physics.SetLayersCollide(a, b, collide)`, which applies from the next physics
-  step. Stopping play in the editor puts back the project's settings.
+  step and wakes the bodies of both layers. Stopping play in the editor puts back the project's settings.
 - `Physics.Raycast` sees every layer. A trigger only reports the objects of the layers it collides with.
 - Heights given by `SetHeights` and a mesh collider's triangles come from scripts and are not saved with the scene or
   the prefab: the script that sets them sets them again when the scene loads.
