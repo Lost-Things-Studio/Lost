@@ -93,7 +93,8 @@ namespace
 		}
 		else
 		{
-			sol::load_result loaded = p_luaState.load_file(p_scriptName);
+			// Text only, as for shared scripts: a precompiled chunk could corrupt the Lua state
+			sol::load_result loaded = p_luaState.load_file(p_scriptName, sol::load_mode::text);
 
 			if (!loaded.valid())
 			{

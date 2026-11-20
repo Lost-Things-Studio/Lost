@@ -4,9 +4,11 @@
 * @licence: MIT
 */
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <Jolt/Jolt.h>
 
@@ -21,6 +23,36 @@ namespace
 	constexpr uint32_t kBlockSize = 2;
 	constexpr float kMaximumHeightError = 0.005f;
 	constexpr float kDefaultFriction = 0.8f;
+
+	/**
+	* The bits a sample needs for kMaximumHeightError. Jolt works it out block by block and reads past the heights
+	* when their count is not a multiple of the block size (129 samples, say), so it is given a copy padded with the
+	* last row and column, which changes no block's range of heights
+	*/
+	uint32_t BitsPerSampleFor(const std::vector<float>& p_heights, uint32_t p_sampleCount, const JPH::HeightFieldShapeSettings& p_settings)
+	{
+		if (p_sampleCount % kBlockSize == 0)
+		{
+			return p_settings.CalculateBitsPerSampleForError(kMaximumHeightError);
+		}
+
+		const uint32_t paddedCount = (p_sampleCount / kBlockSize + 1) * kBlockSize;
+		std::vector<float> padded(static_cast<size_t>(paddedCount) * paddedCount);
+
+		for (uint32_t y = 0; y < paddedCount; ++y)
+		{
+			for (uint32_t x = 0; x < paddedCount; ++x)
+			{
+				const uint32_t sourceX = std::min(x, p_sampleCount - 1);
+				const uint32_t sourceY = std::min(y, p_sampleCount - 1);
+				padded[static_cast<size_t>(y) * paddedCount + x] = p_heights[static_cast<size_t>(sourceY) * p_sampleCount + sourceX];
+			}
+		}
+
+		JPH::HeightFieldShapeSettings paddedSettings(padded.data(), p_settings.mOffset, p_settings.mScale, paddedCount);
+		paddedSettings.mBlockSize = p_settings.mBlockSize;
+		return paddedSettings.CalculateBitsPerSampleForError(kMaximumHeightError);
+	}
 }
 
 /**
@@ -116,7 +148,7 @@ JPH::Shape* OvPhysics::Entities::PhysicalHeightField::CreateShape(const OvMaths:
 	);
 
 	settings.mBlockSize = kBlockSize;
-	settings.mBitsPerSample = settings.CalculateBitsPerSampleForError(kMaximumHeightError);
+	settings.mBitsPerSample = BitsPerSampleFor(m_heights, m_sampleCount, settings);
 
 	const JPH::ShapeSettings::ShapeResult result = settings.Create();
 
