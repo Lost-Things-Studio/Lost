@@ -11,6 +11,7 @@
 #include <format>
 #include <limits>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 #include <tinyxml2.h>
@@ -359,9 +360,17 @@ void OvCore::ECS::Components::Behaviour::OnDeserialize(tinyxml2::XMLDocument & p
 
 			if (typeStr == "actor" && std::holds_alternative<ActorRef>(val))
 			{
+				// A text that is no GUID references no actor; blanks around one are allowed
 				uint64_t guid = 0;
 				if (const char* text = elem->GetText())
-					std::from_chars(text, text + std::strlen(text), guid);
+				{
+					std::string_view value{ text };
+					const size_t first = value.find_first_not_of(" \t\r\n");
+					value = first == std::string_view::npos ? std::string_view{} : value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
+
+					if (std::from_chars(value.data(), value.data() + value.size(), guid).ec != std::errc{})
+						guid = 0;
+				}
 				return ActorRef{ guid };
 			}
 

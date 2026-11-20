@@ -327,7 +327,10 @@ Lost's first version: Overload 1.9 and the changes below.
   the scene was already gone during these callbacks, and any actor handle used there raised
   `ActorRef: no active scene`.
 - **Actor references inside a prefab survive instantiation**: an actor property that names another actor of the same
-  prefab now names that actor's instance. Before, every instance got new GUIDs and such a property came out `nil`.
+  prefab now names that actor's instance, after Revert to Prefab in the editor too. Before, every instance got new GUIDs
+  and such a property came out `nil`.
+- **An actor property's GUID may have blanks around it**: a scene or a prefab edited by hand reads it. A text that is
+  no GUID references no actor.
 - **The editor completes a project file instead of resetting it**: a project file lacking a setting gets that setting's
   default and keeps all its other values. Before, one missing key reset every setting (`start_scene` emptied,
   `executable_name` back to `Game`, which also moved the save folder).
