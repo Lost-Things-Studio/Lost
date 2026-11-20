@@ -238,6 +238,10 @@ Lost's first version: Overload 1.9 and the changes below.
   `GetRevision`), `Text:SetTextKey` and `GetTextKey` (`text_key` in a file, "Text Key" in the inspector), and
   `DLabel:SetTextKey` in the UI library; in C++, `OvCore::Localization`. The Lua API is now 1.21. See
   [Docs/Localization.md](Docs/Localization.md).
+- **Sounds without an audio device**: on a machine without one, the sounds play on SoLoud's null driver, mixed and
+  discarded, so that they play, end and loop as with a device; `OvGame --audio null` does the same on a machine that
+  has one. In Lua, the `Audio` table (`GetDriver`, `GetVoiceCount`); in C++, `AudioEngine(EDriver)`, and `Mix` for a
+  test to hear what is played. FLAC files are sounds. The Lua API is now 1.22. See [Docs/Audio.md](Docs/Audio.md).
 
 ### Changed
 
@@ -255,8 +259,6 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Ragdolls collide by their layer**: their bodies are on `physics_ragdoll_layer` (15 by default). Going through
   dynamic bodies is now the project option `physics_ragdoll_ignores_dynamic_bodies`, off by default. A project that
   relied on it sets it to `true`.
-- **No audio device is a warning**: the audio engine logs a warning, no longer an error, when it cannot open a
-  device. The game runs on without sound, as before.
 - **Text texture coordinates are in atlas pixels**: a custom text shader divides them by
   `textureSize(u_FontAtlas, 0)`, as `Text.ovfx` does, so that a growing atlas moves no glyph.
 - **The UI controller updates itself**: a `controller:Update(deltaTime)` from a Behaviour now changes nothing after
@@ -267,6 +269,10 @@ Lost's first version: Overload 1.9 and the changes below.
   when a script reads a bone or after the scripts, before bone attachments are placed. Calls keep their order: a bone
   written after a setting stays written. A bone write fell from about 2.6 µs to 0.5 µs, a weight from about 17 µs (a
   whole pose each time) to a mark.
+- **No audio device is a warning, and the sounds still play**: the audio engine logs a warning, no longer an error,
+  when it cannot open a device, then plays the sounds on the null driver. Before, it played none, each logging a
+  warning.
+- **Up to 64 sounds are heard at once**, the loudest, instead of 16.
 
 ### Removed
 
@@ -292,3 +298,15 @@ Lost's first version: Overload 1.9 and the changes below.
 - **`Component` methods on lights and bodies**: `GetOwner()` and the other `Component` methods answer on a
   `PointLight`, a `SpotLight`, a `DirectionalLight`, the ambient lights, a `PhysicalBox`, a `PhysicalSphere` and a
   `PhysicalCapsule`. Their usertypes named only their direct base, so these methods were `nil` on them.
+- **Sounds in the world are heard on their side**: the listener heard behind its actor, so a sound on the left of a
+  camera's picture was heard on the right. It now hears along its actor's forward, with its up, and from the start: a
+  sound played before the first update no longer begins on the other side.
+- **Sounds in the world faded twice over**: SoLoud applied a source's attenuation to its channels and again to its
+  volume, so that a sound twice as far as its attenuation threshold was a quarter as loud instead of half, and one four
+  times as far a sixteenth instead of a quarter. It is applied once (one line of `Dependencies/soloud`, marked).
+- **Resuming leaves paused what the game paused**: after the editor's pause, resuming a game played again every paused
+  source, those the game had paused included. A game stopped while paused left the audio suspended for the next one.
+- **A sound file that cannot be read gives no sound**: `Resources.GetSound` returns `nil`, as its definition said, with
+  a warning naming the file. Before, it gave a sound that played nothing.
+- **A sound made spatial or flat while it plays** plays on from where it was. Before, the change waited for the next
+  `Play`.
