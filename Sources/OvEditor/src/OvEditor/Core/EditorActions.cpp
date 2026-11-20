@@ -1336,6 +1336,9 @@ bool OvEditor::Core::EditorActions::RevertActorToPrefab(OvCore::ECS::Actor& p_ac
 		const uint64_t targetGUID = targetActor->GetGUID();
 		templateActorGuidToInstanceGuidMap[prefabNodeGUID] = targetGUID;
 
+		// The template is an instance: its references between the prefab's actors name its own actors
+		templateActorGuidToInstanceGuidMap[templateActor->GetGUID()] = targetGUID;
+
 		if (const auto it = serializedGuidsByPrefabNodeGUID.find(prefabNodeGUID); it != serializedGuidsByPrefabNodeGUID.end())
 		{
 			templateActorGuidToInstanceGuidMap[it->second] = targetGUID;
