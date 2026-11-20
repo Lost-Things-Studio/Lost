@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <unordered_map>
 
 namespace OvTools::Filesystem
@@ -101,6 +102,11 @@ namespace OvTools::Filesystem
 		* @param p_key
 		*/
 		bool IsKeyExisting(const std::string& p_key) const;
+
+		/**
+		* Return the keys of the file, in no particular order
+		*/
+		std::vector<std::string> GetKeys() const;
 
 	private:
 		void RegisterPair(const std::string& p_key, const std::string& p_value);

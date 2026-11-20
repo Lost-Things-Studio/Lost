@@ -268,8 +268,20 @@ OvEditor::Core::Context::~Context()
 
 void OvEditor::Core::Context::ResetProjectSettings()
 {
+	// The settings the editor manages go back to their defaults; the file's other keys (the project's collision
+	// layers, say) are the project's own and stay
+	const OvTools::Filesystem::IniFile previous = projectSettings;
+
 	projectSettings.RemoveAll();
 	CompleteProjectSettings();
+
+	for (const auto& key : previous.GetKeys())
+	{
+		if (!projectSettings.IsKeyExisting(key))
+		{
+			projectSettings.Add<std::string>(key, previous.Get<std::string>(key));
+		}
+	}
 }
 
 bool OvEditor::Core::Context::CompleteProjectSettings()

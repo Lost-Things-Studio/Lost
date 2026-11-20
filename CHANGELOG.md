@@ -333,7 +333,8 @@ Lost's first version: Overload 1.9 and the changes below.
   no GUID references no actor.
 - **The editor completes a project file instead of resetting it**: a project file lacking a setting gets that setting's
   default and keeps all its other values. Before, one missing key reset every setting (`start_scene` emptied,
-  `executable_name` back to `Game`, which also moved the save folder).
+  `executable_name` back to `Game`, which also moved the save folder). The Reset button of Project Settings sets the
+  editor's settings back to their defaults and keeps the file's other keys.
 - **The save folder's entry limit counts new folders**: a write that makes folders on the way to its file counts them
   against `storage_max_entries`. Before, it counted the file only, so the folder could hold up to three entries too
   many.
