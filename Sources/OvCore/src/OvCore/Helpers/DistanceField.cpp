@@ -11,6 +11,7 @@
 #include <utility>
 
 #include <OvCore/Helpers/DistanceField.h>
+#include <OvDebug/Logger.h>
 
 using OvMaths::FVector3;
 
@@ -27,6 +28,10 @@ namespace
 
 	// How deep under a box's floor the solid stays, whatever empty space comes near
 	constexpr float kKeptUnder = 3.0f;
+
+	// The most grid cells a primitive may cover (about 800 m in each direction): past it, or with a bound that is
+	// not a number, building the grid would hang the engine
+	constexpr double kMaxPrimitiveCells = 1024.0 * 1024.0;
 
 	uint32_t Hash(int32_t p_x, int32_t p_y, int32_t p_z, uint32_t p_seed)
 	{
@@ -180,7 +185,8 @@ void OvCore::Helpers::DistanceField::AddBox(const FVector3& p_min, const FVector
 	Primitive primitive{ Primitive::EKind::BOX, Min(p_min, p_max), Max(p_min, p_max) };
 	primitive.r0 = p_rise;
 	primitive.axis = p_axis == 2 ? 2 : 0;
-	primitive.boundsMin = primitive.a + FVector3{ 0.0f, std::min(p_rise, 0.0f), 0.0f };
+	// The solid kept under a box's floor counts as the box's, so the cells under it list the box
+	primitive.boundsMin = primitive.a + FVector3{ 0.0f, std::min(p_rise, 0.0f) - kKeptUnder, 0.0f };
 	primitive.boundsMax = primitive.b + FVector3{ 0.0f, std::max(p_rise, 0.0f), 0.0f };
 
 	AddPrimitive(primitive);
@@ -216,6 +222,20 @@ void OvCore::Helpers::DistanceField::AddLight(const FVector3& p_position, float 
 
 void OvCore::Helpers::DistanceField::AddPrimitive(Primitive p_primitive)
 {
+	const FVector3& low = p_primitive.boundsMin;
+	const FVector3& high = p_primitive.boundsMax;
+	const bool finite =
+		std::isfinite(low.x) && std::isfinite(low.y) && std::isfinite(low.z) &&
+		std::isfinite(high.x) && std::isfinite(high.y) && std::isfinite(high.z);
+
+	const auto span = [](float p_low, float p_high) { return std::floor(p_high / kGridCell) - std::floor(p_low / kGridCell) + 1.0; };
+
+	if (!finite || span(low.x, high.x) * span(low.y, high.y) * span(low.z, high.z) > kMaxPrimitiveCells)
+	{
+		OVLOG_WARNING("DistanceField: a shape that is not finite or too large is left out");
+		return;
+	}
+
 	m_primitives.push_back(p_primitive);
 	m_gridDirty = true;
 }
