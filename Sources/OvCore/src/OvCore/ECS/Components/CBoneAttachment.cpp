@@ -4,6 +4,12 @@
 * @licence: MIT
 */
 
+#include <charconv>
+#include <cstring>
+#include <string>
+
+#include <tinyxml2.h>
+
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CBoneAttachment.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
@@ -143,6 +149,15 @@ void OvCore::ECS::Components::CBoneAttachment::OnSerialize(tinyxml2::XMLDocument
 	OvCore::Helpers::Serializer::SerializeVec3(p_doc, p_node, "offset_position", m_offsetPosition);
 	OvCore::Helpers::Serializer::SerializeQuat(p_doc, p_node, "offset_rotation", m_offsetRotation);
 	OvCore::Helpers::Serializer::SerializeVec3(p_doc, p_node, "offset_scale", m_offsetScale);
+
+	// The actor set by SetTarget, saved as an actor reference so that an instance of a prefab points at its own
+	if (m_targetGUID != 0)
+	{
+		tinyxml2::XMLElement* target = p_doc.NewElement("target");
+		target->SetAttribute("type", "actor");
+		target->SetText(std::to_string(m_targetGUID).c_str());
+		p_node->InsertEndChild(target);
+	}
 }
 
 void OvCore::ECS::Components::CBoneAttachment::OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
@@ -151,6 +166,19 @@ void OvCore::ECS::Components::CBoneAttachment::OnDeserialize(tinyxml2::XMLDocume
 	OvCore::Helpers::Serializer::DeserializeVec3(p_doc, p_node, "offset_position", m_offsetPosition);
 	OvCore::Helpers::Serializer::DeserializeQuat(p_doc, p_node, "offset_rotation", m_offsetRotation);
 	OvCore::Helpers::Serializer::DeserializeVec3(p_doc, p_node, "offset_scale", m_offsetScale);
+
+	m_targetGUID = 0;
+	if (const tinyxml2::XMLElement* target = p_node->FirstChildElement("target"))
+	{
+		if (const char* text = target->GetText())
+		{
+			uint64_t guid = 0;
+			if (std::from_chars(text, text + std::strlen(text), guid).ec == std::errc{})
+			{
+				m_targetGUID = guid;
+			}
+		}
+	}
 }
 
 void OvCore::ECS::Components::CBoneAttachment::OnInspector(OvUI::Internal::WidgetContainer& p_root)
