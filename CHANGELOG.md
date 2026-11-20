@@ -2,8 +2,9 @@
 
 What Lost changes from [Overload](https://github.com/Overload-Technologies/Overload), version by version, newest
 first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
-[Semantic Versioning](https://semver.org/): a script, a shader or a project made for one version keeps working with any
-later version of the same major version.
+[Semantic Versioning](https://semver.org/): from 1.0, a script, a shader or a project made for one version keeps
+working with any later version of the same major version. Before 1.0, a minor version may break that; its section says
+how under "Changed" and "Removed".
 
 ## [Unreleased]
 
