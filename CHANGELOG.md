@@ -78,6 +78,10 @@ Lost's first version: Overload 1.9 and the changes below.
 - **`OvGame` command line**: `--project` runs a project from its folder, with `--engine`, `--scene`, `--frames`,
   `--screenshot` (a PNG of the last frame), `--hidden-window` and `--fail-on-error`; the exit code tells how the run
   went. Without options, a built game runs as before. See [Docs/CommandLine.md](Docs/CommandLine.md).
+- **Engine tests**: `OvTests`, a doctest program built with the engine, tests the command line, the PNG writer, the save
+  storage, the Lua `Json` and `Storage` bindings, the project settings, physics layers and queries, and scenes; the
+  in-game checks of `Tests/GameChecks` run the engine through `OvGame` (destroyed actors, prefab references, Lua
+  queries, project settings). The CI runs both, the in-game checks on Linux. See [Docs/Testing.md](Docs/Testing.md).
 
 ### Changed
 
@@ -110,3 +114,9 @@ Lost's first version: Overload 1.9 and the changes below.
 - **The editor completes a project file instead of resetting it**: a project file lacking a setting gets that setting's
   default and keeps all its other values. Before, one missing key reset every setting (`start_scene` emptied,
   `executable_name` back to `Game`, which also moved the save folder).
+- **The save folder's entry limit counts new folders**: a write that makes folders on the way to its file counts them
+  against `storage_max_entries`. Before, it counted the file only, so the folder could hold up to three entries too
+  many.
+- **A destroyed physics engine stops listening for new bodies**: a body made after an engine was destroyed reached it
+  in freed memory. The game and the editor keep one engine, so only a program that makes several, such as the tests,
+  could meet it.

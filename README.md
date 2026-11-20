@@ -41,6 +41,11 @@ make config=release_x64 -j$(nproc)
 
 The editor needs `zenity` on Linux.
 
+### Tests
+
+The build also makes `OvTests`, the engine's tests, and `Tests/run_game_checks.sh` runs the in-game checks with a built
+`OvGame`. The CI runs both; see [`Docs/Testing.md`](Docs/Testing.md).
+
 ## Versions
 
 `VERSION.txt` holds Lost's own version, following semantic versioning, and scripts can read it with
@@ -70,6 +75,7 @@ The engine is split into libraries and two applications:
 - `OvCore`: scenes, components, scripting and resources
 - `OvGame`: the data-driven executable that runs a game
 - `OvEditor`: the editor
+- `OvTests`: the engine's tests
 
 ## Contributing
 
