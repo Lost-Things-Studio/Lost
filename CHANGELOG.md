@@ -88,6 +88,9 @@ Lost's first version: Overload 1.9 and the changes below.
 ### Fixed
 
 - **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
+- **World space UI behind the scene**: a world space canvas is depth-tested against the scene, as
+  `Libraries/UI/Docs/WorldSpace.md` says, so a wall in front of it hides it. The depth test it asked for was lost
+  when its drawables were prepared for the UI pass, and it was drawn over everything.
 - **Culling of mirrored models**: a model with a negative scale is culled where it is drawn. Its bounding sphere goes
   through the world matrix, where the decomposed scale and rotation lost the mirror's sign, and its radius follows
   the largest scale (a scale of -2 on X counted as 0 before).
