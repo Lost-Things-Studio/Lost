@@ -89,6 +89,30 @@ TEST_SUITE("OvGame command line")
 		CHECK(LaunchOptions::Parse({ "--project", (folder.GetPath() / "Missing").string() }).error.find("no file or folder") != std::string::npos);
 	}
 
+	TEST_CASE("a project file's extension is read whatever its case")
+	{
+		OvTests::TempFolder folder;
+		const auto file = folder.WriteFile("Upper/Game.OVPROJECT", "");
+
+		const auto byFile = LaunchOptions::Parse({ "--project", file.string() });
+		REQUIRE(byFile.options);
+		CHECK(std::filesystem::equivalent(*byFile.options->projectFile, file));
+
+		const auto byFolder = LaunchOptions::Parse({ "--project", (folder.GetPath() / "Upper").string() });
+		REQUIRE(byFolder.options);
+		CHECK(std::filesystem::equivalent(*byFolder.options->projectFile, file));
+	}
+
+	TEST_CASE("an argument that is no option is left aside")
+	{
+		// A file dropped on the game, or what a launcher adds, must not keep the game from starting
+		const auto result = LaunchOptions::Parse({ "C:/Saves/slot1.sav", "--frames", "5", "-launcher" });
+		REQUIRE(result.options);
+		CHECK(result.options->frames == 5u);
+		CHECK(result.ignored == std::vector<std::string>{ "C:/Saves/slot1.sav", "-launcher" });
+		CHECK(result.error.empty());
+	}
+
 	TEST_CASE("bad options are refused with a message")
 	{
 		const auto check = [](const std::vector<std::string>& p_arguments, std::string_view p_expected)
@@ -100,7 +124,7 @@ TEST_SUITE("OvGame command line")
 		};
 
 		check({ "--bogus" }, "unknown option --bogus");
-		check({ "game.ovproject" }, "unknown option");
+		check({ "save.dat", "--bogus" }, "unknown option --bogus");
 		check({ "--frames" }, "needs a value");
 		check({ "--frames", "--hidden-window" }, "needs a value");
 		check({ "--frames", "0" }, "above 0");
