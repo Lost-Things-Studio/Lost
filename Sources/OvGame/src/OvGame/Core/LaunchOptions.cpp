@@ -5,12 +5,23 @@
 */
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 
 #include <OvGame/Core/LaunchOptions.h>
 
 namespace
 {
+	/**
+	* Whether a path names a project file, whatever the case of its extension (Windows names ignore it)
+	*/
+	bool IsProjectFile(const std::filesystem::path& p_path)
+	{
+		std::string extension = p_path.extension().string();
+		std::transform(extension.begin(), extension.end(), extension.begin(), [](char p_character) { return static_cast<char>(std::tolower(static_cast<unsigned char>(p_character))); });
+		return extension == ".ovproject";
+	}
+
 	/**
 	* The project file a --project argument names: the file itself, or the one .ovproject of a folder
 	*/
@@ -20,7 +31,7 @@ namespace
 
 		if (std::filesystem::is_regular_file(p_path, error))
 		{
-			if (p_path.extension() == ".ovproject")
+			if (IsProjectFile(p_path))
 				return p_path;
 
 			p_error = "--project: " + p_path.string() + " is not a .ovproject file";
@@ -34,10 +45,17 @@ namespace
 		}
 
 		std::vector<std::filesystem::path> found;
-		for (const auto& entry : std::filesystem::directory_iterator(p_path, error))
+		for (std::filesystem::directory_iterator entry(p_path, error), end; !error && entry != end; entry.increment(error))
 		{
-			if (entry.is_regular_file() && entry.path().extension() == ".ovproject")
-				found.push_back(entry.path());
+			std::error_code entryError;
+			if (entry->is_regular_file(entryError) && IsProjectFile(entry->path()))
+				found.push_back(entry->path());
+		}
+
+		if (error)
+		{
+			p_error = "--project: " + p_path.string() + " cannot be read (" + error.message() + ")";
+			return std::nullopt;
 		}
 
 		if (found.size() != 1)
@@ -143,10 +161,14 @@ OvGame::Core::LaunchOptions::ParseResult OvGame::Core::LaunchOptions::Parse(cons
 				options.screenshot = std::filesystem::absolute(*value);
 			}
 		}
-		else
+		else if (argument.starts_with("--"))
 		{
 			result.error = "unknown option " + argument + " (--help lists them)";
 			return result;
+		}
+		else
+		{
+			result.ignored.push_back(argument);
 		}
 	}
 
@@ -165,13 +187,14 @@ std::string OvGame::Core::LaunchOptions::GetUsage()
 	return
 		"Usage: OvGame [options]\n"
 		"Without options, runs the built game: its project in Data/User, the engine in Data/Engine.\n"
+		"An argument that does not start with -- is left aside.\n"
 		"  --project <folder or file>  run this project (a .ovproject file, or the folder holding it), its assets in\n"
 		"                              the Assets folder next to it\n"
-		"  --engine <folder>           the engine's resources (an Overload checkout's Resources/Engine)\n"
+		"  --engine <folder>           the engine's resources (a Lost checkout's Resources/Engine)\n"
 		"  --scene <path>              start on this scene, relative to the project's assets\n"
 		"  --frames <n>                quit after n frames\n"
 		"  --screenshot <file.png>     write the last frame to a PNG image (with --frames)\n"
-		"  --hidden-window             do not show the window\n"
+		"  --hidden-window             do not show the window (never full screen)\n"
 		"  --audio <null|auto>         null: mix the sounds and discard them, even with an audio device; auto (the\n"
 		"                              default): the system's device, else the null driver\n"
 		"  --fail-on-error             end with exit code 2 if an error was logged\n"
