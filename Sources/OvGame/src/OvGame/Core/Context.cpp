@@ -38,14 +38,14 @@ std::array<int, 4> CalculateOptimalWindowSizeAndPosition(
 
 	if (finalResolution != p_resolution)
 	{
-		OVLOG_WARNING("The target resolution didn't fit in the work area. It has been reduced to " + std::to_string(p_resolution[0]) + "x" + std::to_string(p_resolution[1]));
+		OVLOG_WARNING("The target resolution didn't fit in the work area. It has been reduced to " + std::to_string(finalResolution[0]) + "x" + std::to_string(finalResolution[1]));
 	}
 
-	return { 
-		workAreaX + workAreaWidth / 2 - p_resolution[0] / 2,
-		workAreaY + workAreaHeight / 2 - p_resolution[1] / 2,
-		p_resolution[0],
-		p_resolution[1]
+	return {
+		workAreaX + workAreaWidth / 2 - finalResolution[0] / 2,
+		workAreaY + workAreaHeight / 2 - finalResolution[1] / 2,
+		finalResolution[0],
+		finalResolution[1]
 	};
 }
 

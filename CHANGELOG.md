@@ -313,6 +313,8 @@ Lost's first version: Overload 1.9 and the changes below.
 ### Fixed
 
 - **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
+- **A game window larger than the screen is reduced**: halved until it fits the work area, as the warning says.
+  Before, the warning gave the project's size and the window kept it.
 - **`ReflectionProbe:RequestCapture()` without its argument**: the argument `forceImmediate` is optional, as its
   definition and the C++ say. The binding required it, so a call without it raised an error in a Debug build and read
   an undefined value in a Release build.
