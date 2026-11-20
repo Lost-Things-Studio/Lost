@@ -82,3 +82,5 @@ Lost's first version: Overload 1.9 and the changes below.
 ### Fixed
 
 - **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
+- **Actor references inside a prefab survive instantiation**: an actor property that names another actor of the same
+  prefab now names that actor's instance. Before, every instance got new GUIDs and such a property came out `nil`.
