@@ -124,7 +124,15 @@ namespace
 
 		if (nextIt == p_keys.begin())
 		{
-			return nextIt->value;
+			if (!p_looping || p_keys.size() < 2)
+			{
+				return nextIt->value;
+			}
+
+			// Before the first key of a loop, the clip is still on its way from the last key, a loop earlier
+			auto prev = p_keys.back();
+			prev.time -= p_duration;
+			return interpolate(prev, p_keys.front(), p_keys.front().time - prev.time);
 		}
 
 		const auto& prev = *std::prev(nextIt);
@@ -1291,6 +1299,18 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnDeserialize(tinyxml2::XMLD
 			m_layers.emplace_back();
 		}
 	}
+	else if (p_node->FirstChildElement("animation") || p_node->FirstChildElement("playing"))
+	{
+		// A file saved before the layers keeps its one animation at the root: it becomes the base layer
+		m_layers.clear();
+		auto& layer = m_layers.emplace_back();
+		OvCore::Helpers::Serializer::DeserializeModel(p_doc, p_node, "animation_source", layer.animationSourceModel);
+		OvCore::Helpers::Serializer::DeserializeString(p_doc, p_node, "animation", layer.deserializedAnimationName);
+		OvCore::Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "playing", layer.playing);
+		OvCore::Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "looping", layer.looping);
+		OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "playback_speed", layer.speed);
+		OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "time_ticks", layer.timeTicks);
+	}
 
 	SetMeshBoundsScale(m_meshBoundsScale);
 	m_poseEvaluationRate = std::max(0.0f, m_poseEvaluationRate);
@@ -1573,15 +1593,18 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::SyncWithModel()
 	}
 
 	m_model = model;
-	RebuildRuntimeData();
+	RebuildRuntimeData(true);
 }
 
-void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildRuntimeData()
+void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildRuntimeData(bool p_modelChanged)
 {
-	// A ragdoll is made of the previous model's nodes
-	m_ragdoll.reset();
-	m_ragdollPartByNode.clear();
-	m_ragdollPartScales.clear();
+	// A ragdoll is made of the model's nodes: it ends with the model, not when a layer or its clips change
+	if (p_modelChanged)
+	{
+		m_ragdoll.reset();
+		m_ragdollPartByNode.clear();
+		m_ragdollPartScales.clear();
+	}
 
 	m_localPose.clear();
 	m_globalPose.clear();

@@ -137,6 +137,11 @@ namespace
 		}
 
 		const size_t vertexCount = positionCount / 3;
+		if (vertexCount == 0 && indexCount > 0)
+		{
+			return { false, std::string("the indices name vertices, but no positions are given") };
+		}
+
 		std::vector<uint32_t> indices(indexCount);
 
 		for (size_t index = 0; index < indexCount; ++index)
