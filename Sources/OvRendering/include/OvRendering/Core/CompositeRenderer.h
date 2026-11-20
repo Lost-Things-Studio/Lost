@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <typeindex>
+#include <vector>
 
 #include <OvRendering/Core/ABaseRenderer.h>
 #include <OvRendering/Core/ARenderPass.h>
@@ -16,6 +17,8 @@
 #include <OvRendering/Features/ARenderFeature.h>
 #include <OvRendering/Types/RenderFeatureType.h>
 #include <OvRendering/Types/RenderPassType.h>
+
+#include <OvTools/Eventing/Event.h>
 
 namespace OvRendering::Core
 {
@@ -109,6 +112,9 @@ namespace OvRendering::Core
 
 	private:
 		OvTools::Utils::OptRef<Core::ARenderPass> m_currentPass;
+
+		// Features enabled for the current pass, resolved once per pass instead of once per draw call
+		std::vector<Features::ARenderFeature*> m_currentPassFeatures;
 	};
 }
 

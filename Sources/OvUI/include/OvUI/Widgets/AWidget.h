@@ -86,10 +86,11 @@ namespace OvUI::Widgets
 		bool enabled = true;
 		bool disabled = false;
 		bool lineBreak = true;
+		bool fullWidth = false; // ask column-based containers to draw this widget across all of their columns
 		bool neverDisabled = false; // provide a way to bypass the "readonly" setting used by a WidgetContainer
 
 	protected:
-		Internal::WidgetContainer* m_parent;
+		Internal::WidgetContainer* m_parent = nullptr;
 		std::string m_widgetID = "?";
 		bool m_autoExecutePlugins = true;
 		bool m_skipDisableOverrideLogic = false;

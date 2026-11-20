@@ -14,11 +14,18 @@
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
+#include <OvCore/ECS/Components/CPhysicalHeightField.h>
+#include <OvCore/ECS/Components/CPhysicalMesh.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
 #include <OvCore/ECS/Components/CSpotLight.h>
+#include <OvCore/ECS/Components/UI/CCanvas.h>
+#include <OvCore/ECS/Components/UI/CHorizontalLayout.h>
+#include <OvCore/ECS/Components/UI/CImage.h>
+#include <OvCore/ECS/Components/UI/CText.h>
+#include <OvCore/ECS/Components/UI/CVerticalLayout.h>
 #include <OvCore/Helpers/GUIHelpers.h>
 
 #include <OvEditor/Core/EditorActions.h>
@@ -247,6 +254,7 @@ void OvEditor::Utils::ActorCreationMenu::GenerateActorCreationMenu(OvUI::Widgets
 	auto& physicals = p_menuList.CreateWidget<MenuList>("Physicals");
 	auto& lights = p_menuList.CreateWidget<MenuList>("Lights");
 	auto& audio = p_menuList.CreateWidget<MenuList>("Audio");
+	auto& ui = p_menuList.CreateWidget<MenuList>("UI");
 	auto& others = p_menuList.CreateWidget<MenuList>("Others");
 
 	primitives.CreateWidget<MenuItem>("Cube").ClickedEvent += ActorWithModelComponentCreationHandler(p_parent, "Cube", p_onItemClicked);
@@ -262,6 +270,8 @@ void OvEditor::Utils::ActorCreationMenu::GenerateActorCreationMenu(OvUI::Widgets
 	physicals.CreateWidget<MenuItem>("Physical Box").ClickedEvent += ActorWithComponentCreationHandler<CPhysicalBox>(p_parent, p_onItemClicked);
 	physicals.CreateWidget<MenuItem>("Physical Sphere").ClickedEvent += ActorWithComponentCreationHandler<CPhysicalSphere>(p_parent, p_onItemClicked);
 	physicals.CreateWidget<MenuItem>("Physical Capsule").ClickedEvent += ActorWithComponentCreationHandler<CPhysicalCapsule>(p_parent, p_onItemClicked);
+	physicals.CreateWidget<MenuItem>("Physical Height Field").ClickedEvent += ActorWithComponentCreationHandler<CPhysicalHeightField>(p_parent, p_onItemClicked);
+	physicals.CreateWidget<MenuItem>("Physical Mesh").ClickedEvent += ActorWithComponentCreationHandler<CPhysicalMesh>(p_parent, p_onItemClicked);
 	lights.CreateWidget<MenuItem>("Point").ClickedEvent += ActorWithComponentCreationHandler<CPointLight>(p_parent, p_onItemClicked);
 	lights.CreateWidget<MenuItem>("Directional").ClickedEvent += ActorWithComponentCreationHandler<CDirectionalLight>(p_parent, p_onItemClicked);
 	lights.CreateWidget<MenuItem>("Spot").ClickedEvent += ActorWithComponentCreationHandler<CSpotLight>(p_parent, p_onItemClicked);
@@ -269,6 +279,11 @@ void OvEditor::Utils::ActorCreationMenu::GenerateActorCreationMenu(OvUI::Widgets
 	lights.CreateWidget<MenuItem>("Ambient Sphere").ClickedEvent += ActorWithComponentCreationHandler<CAmbientSphereLight>(p_parent, p_onItemClicked);
 	audio.CreateWidget<MenuItem>("Audio Source").ClickedEvent += ActorWithComponentCreationHandler<CAudioSource>(p_parent, p_onItemClicked);
 	audio.CreateWidget<MenuItem>("Audio Listener").ClickedEvent += ActorWithComponentCreationHandler<CAudioListener>(p_parent, p_onItemClicked);
+	ui.CreateWidget<MenuItem>("Canvas").ClickedEvent += ActorWithComponentCreationHandler<UI::CCanvas>(p_parent, p_onItemClicked);
+	ui.CreateWidget<MenuItem>("Image").ClickedEvent += ActorWithComponentCreationHandler<UI::CImage>(p_parent, p_onItemClicked);
+	ui.CreateWidget<MenuItem>("Text").ClickedEvent += ActorWithComponentCreationHandler<UI::CText>(p_parent, p_onItemClicked);
+	ui.CreateWidget<MenuItem>("Horizontal Layout").ClickedEvent += ActorWithComponentCreationHandler<UI::CHorizontalLayout>(p_parent, p_onItemClicked);
+	ui.CreateWidget<MenuItem>("Vertical Layout").ClickedEvent += ActorWithComponentCreationHandler<UI::CVerticalLayout>(p_parent, p_onItemClicked);
 	others.CreateWidget<MenuItem>("Camera").ClickedEvent += ActorWithComponentCreationHandler<CCamera>(p_parent, p_onItemClicked);
 	others.CreateWidget<MenuItem>("Post Process Stack").ClickedEvent += ActorWithComponentCreationHandler<CPostProcessStack>(p_parent, p_onItemClicked);
 	others.CreateWidget<MenuItem>("Reflection Probe").ClickedEvent += ActorWithComponentCreationHandler<CReflectionProbe>(p_parent, p_onItemClicked);

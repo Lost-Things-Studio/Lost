@@ -6,7 +6,9 @@
 
 #pragma once
 
-#include <unordered_map>
+#include <optional>
+#include <string>
+#include <unordered_set>
 
 #include <OvWindowing/Inputs/EMouseButton.h>
 #include <OvWindowing/Inputs/EMouseButtonState.h>
@@ -70,7 +72,15 @@ namespace OvWindowing::Inputs
 		bool IsMouseButtonReleased(EMouseButton p_button) const;
 
 		/**
-		* Return the current mouse position relative to the window
+		* Return the name of a printable key in the keyboard's current layout (the "z" of a French keyboard where the
+		* key is EKey::KEY_W), or an empty string for a key that prints nothing
+		* @param p_key
+		*/
+		std::string GetKeyName(EKey p_key) const;
+
+		/**
+		* Return the mouse position relative to the window, read once per frame (until ClearEvents) and again when the
+		* cursor mode changes
 		*/
 		std::pair<double, double> GetMousePosition() const;
 
@@ -101,8 +111,15 @@ namespace OvWindowing::Inputs
 		OvTools::Eventing::ListenerID m_mouseButtonReleasedListener;
 		OvTools::Eventing::ListenerID m_mouseScrollListener;
 
-		std::unordered_map<EKey, EKeyState> m_keyEvents;
-		std::unordered_map<EMouseButton, EMouseButtonState> m_mouseButtonEvents;
+		std::unordered_set<EKey> m_keyPressed;
+		std::unordered_set<EKey> m_keyReleased;
+
+		std::unordered_set<EMouseButton> m_mouseButtonPressed;
+		std::unordered_set<EMouseButton> m_mouseButtonReleased;
+
 		std::pair<double, double> m_scrollData;
+
+		mutable std::optional<std::pair<double, double>> m_mousePosition;
+		mutable Cursor::ECursorMode m_mousePositionMode = Cursor::ECursorMode::NORMAL;
 	};
 }

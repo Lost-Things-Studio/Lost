@@ -17,7 +17,7 @@ OvRendering::Features::LightingRenderFeature::LightingRenderFeature(
 	ARenderFeature(p_renderer, p_executionPolicy),
 	m_bufferBindingPoint(p_bufferBindingPoint)
 {
-	m_lightBuffer = std::make_unique<HAL::ShaderStorageBuffer>();
+	m_lightBuffer = std::make_unique<baregl::Buffer>();
 }
 
 bool IsLightInFrustum(const OvRendering::Entities::Light& p_light, const OvRendering::Data::Frustum& p_frustum)
@@ -35,7 +35,7 @@ bool IsLightInFrustum(const OvRendering::Entities::Light& p_light, const OvRende
 
 void OvRendering::Features::LightingRenderFeature::Bind() const
 {
-	m_lightBuffer->Bind(m_bufferBindingPoint);
+	m_lightBuffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, m_bufferBindingPoint);
 }
 
 uint32_t OvRendering::Features::LightingRenderFeature::GetBufferBindingPoint() const
@@ -67,7 +67,14 @@ void OvRendering::Features::LightingRenderFeature::OnBeginFrame(const Data::Fram
 
 	const auto lightMatricesView = std::span{ lightMatrices };
 
-	if (m_lightBuffer->Allocate(lightMatricesView.size_bytes(), Settings::EAccessSpecifier::STREAM_DRAW))
+	// Only reallocate the buffer when the number of lights changes. The buffer size must match the light
+	// count exactly, as shaders iterate over the whole buffer (ssbo_Lights.length()).
+	if (m_lightBuffer->GetSize() != lightMatricesView.size_bytes())
+	{
+		m_lightBuffer->Allocate(lightMatricesView.size_bytes(), baregl::types::EAccessSpecifier::STREAM_DRAW);
+	}
+
+	if (!lightMatricesView.empty())
 	{
 		m_lightBuffer->Upload(lightMatricesView.data());
 	}

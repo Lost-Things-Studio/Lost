@@ -1,6 +1,6 @@
 ---@meta
 
---- Some global inputs functions
+--- Some global inputs functions. In the editor, the game only gets input while the Game View has the focus
 ---@class Inputs
 Inputs = {}
 
@@ -19,6 +19,12 @@ function Inputs.GetKeyUp(key) end
 ---@return boolean
 function Inputs.GetKey(key) end
 
+--- Returns the name of a printable key in the keyboard's current layout, as it prints it (the "z" of a French
+--- keyboard where the key is Key.W), or an empty string for a key that prints nothing
+---@param key Key
+---@return string
+function Inputs.GetKeyName(key) end
+
 --- Returns true if the mouse button has been pressed during the current frame
 ---@param button MouseButton
 ---@return boolean
@@ -34,9 +40,15 @@ function Inputs.GetMouseButtonUp(button) end
 ---@return boolean
 function Inputs.GetMouseButton(button) end
 
---- Returns the current position of the mouse cursor
+--- Returns the current position of the mouse cursor, relative to the top-left corner of the Game View in the editor, or of the window in a built game
+--- The position isn't clamped, so it can be outside of the rendered area
 ---@return Vector2
 function Inputs.GetMousePos() end
+
+--- Returns the size of the area where the game is rendered, which is the Game View in the editor, or the window in a built game
+--- The size can be 0 when this area is minimized or too small
+---@return Vector2
+function Inputs.GetViewportSize() end
 
 --- Returns the current scroll value
 ---@return Vector2
@@ -47,3 +59,7 @@ function Inputs.LockMouse() end
 
 --- Unlocks and shows the mouse cursor
 function Inputs.UnlockMouse() end
+
+--- Sets the shape of the mouse cursor
+---@param shape CursorShape
+function Inputs.SetCursorShape(shape) end

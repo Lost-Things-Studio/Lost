@@ -118,6 +118,10 @@ bool OvUI::Panels::PanelWindow::IsScrolledToTop() const
 
 void OvUI::Panels::PanelWindow::_Draw_Impl()
 {
+	// Only a panel drawn this frame can have the focus or the mouse: not one closed, collapsed or a hidden tab
+	m_hovered = false;
+	m_focused = false;
+
 	if (m_opened)
 	{
 		int windowFlags = ImGuiWindowFlags_None;

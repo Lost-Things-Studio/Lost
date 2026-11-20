@@ -10,7 +10,7 @@
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Panels/AView.h>
 #include <OvEditor/Settings/EditorSettings.h>
-#include <OvRendering/HAL/Profiling.h>
+#include <OvRendering/Utils/Profiling.h>
 
 OvEditor::Panels::AView::AView
 (
@@ -27,8 +27,8 @@ OvEditor::Panels::AView::AView
 		true, true, false
 	);
 
-	const auto tex = m_framebuffer.GetAttachment<OvRendering::HAL::Texture>(OvRendering::Settings::EFramebufferAttachment::COLOR);
-	m_image = &CreateWidget<OvUI::Widgets::Visual::Image>(tex->GetID(), OvMaths::FVector2{0.f, 0.f});
+	const auto tex = m_framebuffer.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
+	m_image = &CreateWidget<OvUI::Widgets::Visual::Image>(tex.value().get().GetID(), OvMaths::FVector2{0.f, 0.f});
 	scrollable = false;
 }
 
@@ -93,6 +93,15 @@ std::pair<uint16_t, uint16_t> OvEditor::Panels::AView::GetSafeSize() const
 		static_cast<uint16_t>(size.x),
 		static_cast<uint16_t>(std::max(0.0f, size.y - kTitleBarHeight))
 	}; 
+}
+
+OvMaths::FVector2 OvEditor::Panels::AView::GetMousePosition() const
+{
+	const auto [mouseX, mouseY] = EDITOR_CONTEXT(inputManager)->GetMousePosition();
+	return {
+		static_cast<float>(mouseX) - m_position.x,
+		static_cast<float>(mouseY) - m_position.y - ImGui::GetFrameHeight() // accounts for the imgui window title bar
+	};
 }
 
 const OvCore::Rendering::SceneRenderer& OvEditor::Panels::AView::GetRenderer() const

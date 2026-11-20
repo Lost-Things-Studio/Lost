@@ -13,7 +13,7 @@
 #include <OvEditor/Rendering/GridRenderPass.h>
 
 #include <OvRendering/Features/DebugShapeRenderFeature.h>
-#include <OvRendering/HAL/Profiling.h>
+#include <OvRendering/Utils/Profiling.h>
 
 OvEditor::Rendering::GridRenderPass::GridRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) :
 	OvRendering::Core::ARenderPass(p_renderer)
@@ -37,6 +37,11 @@ void OvEditor::Rendering::GridRenderPass::Draw(OvRendering::Data::PipelineState 
 
 	auto& gridDescriptor = m_renderer.GetDescriptor<GridDescriptor>();
 	auto& debugShapeRenderer = m_renderer.GetFeature<OvRendering::Features::DebugShapeRenderFeature>();
+
+	if (!gridDescriptor.visible)
+	{
+		return;
+	}
 
 	auto pso = m_renderer.CreatePipelineState();
 

@@ -53,6 +53,10 @@ function Actor:DetachFromParent() end
 --- Removes the actor from the scene
 function Actor:Destroy() end
 
+--- Returns false once the actor is destroyed or its scene unloaded. Calling any other method on such an actor, except GetGUID, raises an error.
+---@return boolean
+function Actor:IsAlive() end
+
 --- Returns true if the actor is active, ignoring his parent (if any) active state
 ---@return boolean
 function Actor:IsSelfActive() end
@@ -89,6 +93,14 @@ function Actor:GetPhysicalSphere() end
 --- Returns the PhysicalCapsule attached to this actor (If any)
 ---@return PhysicalCapsule|nil
 function Actor:GetPhysicalCapsule() end
+
+--- Returns the PhysicalHeightField attached to this actor (If any)
+---@return PhysicalHeightField|nil
+function Actor:GetPhysicalHeightField() end
+
+--- Returns the PhysicalMesh attached to this actor (If any)
+---@return PhysicalMesh|nil
+function Actor:GetPhysicalMesh() end
 
 --- Returns the Camera attached to this actor (If any)
 ---@return Camera|nil
@@ -130,6 +142,10 @@ function Actor:GetMaterialRenderer() end
 ---@return SkinnedMeshRenderer|nil
 function Actor:GetSkinnedMeshRenderer() end
 
+--- Returns the BoneAttachment attached to this actor (If any)
+---@return BoneAttachment|nil
+function Actor:GetBoneAttachment() end
+
 --- Returns the AudioSource attached to this actor (If any)
 ---@return AudioSource|nil
 function Actor:GetAudioSource() end
@@ -146,10 +162,48 @@ function Actor:GetPostProcessStack() end
 ---@return ReflectionProbe|nil
 function Actor:GetReflectionProbe() end
 
+--- Returns the Canvas attached to this actor (If any)
+---@return Canvas|nil
+function Actor:GetCanvas() end
+
+--- Returns the Image attached to this actor (If any)
+---@return Image|nil
+function Actor:GetImage() end
+
+--- Returns the LayoutGroup attached to this actor (If any)
+---@return LayoutGroup|nil
+function Actor:GetLayoutGroup() end
+
+--- Returns the HorizontalLayout attached to this actor (If any)
+---@return HorizontalLayout|nil
+function Actor:GetHorizontalLayout() end
+
+--- Returns the VerticalLayout attached to this actor (If any)
+---@return VerticalLayout|nil
+function Actor:GetVerticalLayout() end
+
+--- Returns the Text attached to this actor (If any)
+---@return Text|nil
+function Actor:GetText() end
+
 --- Returns the Behaviour of the given type attached to this actor (If any)
 ---@param name string
 ---@return table|nil
 function Actor:GetBehaviour(name) end
+
+--- Stops or resumes the per frame callbacks (OnUpdate, OnFixedUpdate, OnLateUpdate) of one of its Behaviours, given
+--- by its table (self) or by its name as GetBehaviour takes it. A Behaviour with nothing to do every frame stops them
+--- and costs nothing until it resumes them; its other callbacks and the events it listens to still reach it. Returns
+--- false when the actor has no such Behaviour.
+---@param behaviour table|string
+---@param updating boolean
+---@return boolean
+function Actor:SetBehaviourUpdating(behaviour, updating) end
+
+--- Returns true while that Behaviour's per frame callbacks are called (false when the actor has no such Behaviour)
+---@param behaviour table|string
+---@return boolean
+function Actor:IsBehaviourUpdating(behaviour) end
 
 --- Adds a Transform component to the actor and returns it
 ---@return Transform
@@ -170,6 +224,14 @@ function Actor:AddPhysicalSphere() end
 --- Adds a PhysicalCapsule component to the actor and returns it
 ---@return PhysicalCapsule
 function Actor:AddPhysicalCapsule() end
+
+--- Adds a PhysicalHeightField component to the actor and returns it
+---@return PhysicalHeightField
+function Actor:AddPhysicalHeightField() end
+
+--- Adds a PhysicalMesh component to the actor and returns it
+---@return PhysicalMesh
+function Actor:AddPhysicalMesh() end
 
 --- Adds a Camera component to the actor and returns it
 ---@return Camera
@@ -203,6 +265,10 @@ function Actor:AddMaterialRenderer() end
 ---@return SkinnedMeshRenderer
 function Actor:AddSkinnedMeshRenderer() end
 
+--- Adds a BoneAttachment component to the actor and returns it
+---@return BoneAttachment
+function Actor:AddBoneAttachment() end
+
 --- Adds an AudioSource component to the actor and returns it
 ---@return AudioSource
 function Actor:AddAudioSource() end
@@ -219,6 +285,30 @@ function Actor:AddPostProcessStack() end
 ---@return ReflectionProbe
 function Actor:AddReflectionProbe() end
 
+--- Adds a Canvas component to the actor and returns it
+---@return Canvas
+function Actor:AddCanvas() end
+
+--- Adds an Image component to the actor and returns it
+---@return Image
+function Actor:AddImage() end
+
+--- Adds a LayoutGroup component to the actor and returns it
+---@return LayoutGroup
+function Actor:AddLayoutGroup() end
+
+--- Adds a HorizontalLayout component to the actor and returns it
+---@return HorizontalLayout
+function Actor:AddHorizontalLayout() end
+
+--- Adds a VerticalLayout component to the actor and returns it
+---@return VerticalLayout
+function Actor:AddVerticalLayout() end
+
+--- Adds a Text component to the actor and returns it
+---@return Text
+function Actor:AddText() end
+
 --- Removes the ModelRenderer component from the actor
 function Actor:RemoveModelRenderer() end
 --- Removes the PhysicalBox component from the actor
@@ -227,6 +317,11 @@ function Actor:RemovePhysicalBox() end
 function Actor:RemovePhysicalSphere() end
 --- Removes the PhysicalCapsule component from the actor
 function Actor:RemovePhysicalCapsule() end
+--- Removes the PhysicalHeightField component from the actor
+function Actor:RemovePhysicalHeightField() end
+
+--- Removes the PhysicalMesh component from the actor
+function Actor:RemovePhysicalMesh() end
 --- Removes the Camera component from the actor
 function Actor:RemoveCamera() end
 --- Removes the PointLight component from the actor
@@ -243,6 +338,8 @@ function Actor:RemoveAmbientSphereLight() end
 function Actor:RemoveMaterialRenderer() end
 --- Removes the SkinnedMeshRenderer component from the actor
 function Actor:RemoveSkinnedMeshRenderer() end
+--- Removes the BoneAttachment component from the actor
+function Actor:RemoveBoneAttachment() end
 --- Removes the AudioSource component from the actor
 function Actor:RemoveAudioSource() end
 --- Removes the AudioListener component from the actor
@@ -251,7 +348,18 @@ function Actor:RemoveAudioListener() end
 function Actor:RemovePostProcessStack() end
 --- Removes the ReflectionProbe component from the actor
 function Actor:RemoveReflectionProbe() end
-
+--- Removes the Canvas component from the actor
+function Actor:RemoveCanvas() end
+--- Removes the Image component from the actor
+function Actor:RemoveImage() end
+--- Removes the LayoutGroup component from the actor
+function Actor:RemoveLayoutGroup() end
+--- Removes the HorizontalLayout component from the actor
+function Actor:RemoveHorizontalLayout() end
+--- Removes the VerticalLayout component from the actor
+function Actor:RemoveVerticalLayout() end
+--- Removes the Text component from the actor
+function Actor:RemoveText() end
 --- Adds a behaviour of given type to the actor and returns it
 ---@param name string
 ---@param scriptPath string

@@ -9,7 +9,7 @@
 #include <OvCore/Rendering/PostProcess/AutoExposureEffect.h>
 #include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvCore/ResourceManagement/ShaderManager.h>
-#include <OvRendering/HAL/Profiling.h>
+#include <OvRendering/Utils/Profiling.h>
 
 constexpr uint32_t kLuminanceBufferResolution = 1024;
 constexpr uint32_t kExposureBufferResolution = 1;
@@ -22,11 +22,13 @@ OvCore::Rendering::PostProcess::AutoExposureEffect::AutoExposureEffect(
 {
 	for (auto& buffer : m_exposurePingPongBuffer.GetFramebuffers())
 	{
+		// Full precision is required: progressive adaptation accumulates very small steps.
 		FramebufferUtil::SetupFramebuffer(
 			buffer,
 			kExposureBufferResolution,
 			kExposureBufferResolution,
-			false, false, false
+			false, false, false,
+			baregl::types::EInternalFormat::RGBA32F
 		);
 	}
 
@@ -35,7 +37,8 @@ OvCore::Rendering::PostProcess::AutoExposureEffect::AutoExposureEffect(
 		kLuminanceBufferResolution,
 		kLuminanceBufferResolution,
 		false, false,
-		true // <-- use mipmaps
+		true, // <-- use mipmaps
+		baregl::types::EInternalFormat::RGBA32F
 	);
 
 	m_luminanceMaterial.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\Luminance.ovfx"]);
@@ -45,8 +48,8 @@ OvCore::Rendering::PostProcess::AutoExposureEffect::AutoExposureEffect(
 
 void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 	OvRendering::Data::PipelineState p_pso,
-	OvRendering::HAL::Framebuffer& p_src,
-	OvRendering::HAL::Framebuffer& p_dst,
+	baregl::Framebuffer& p_src,
+	baregl::Framebuffer& p_dst,
 	const EffectSettings& p_settings
 )
 {
@@ -60,8 +63,8 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 	m_luminanceMaterial.SetProperty("_CenterWeightBias", autoExposureSettings.centerWeightBias, true);
 	m_renderer.Blit(p_pso, p_src, m_luminanceBuffer, m_luminanceMaterial,
 		OvRendering::Settings::EBlitFlags::DEFAULT & ~OvRendering::Settings::EBlitFlags::RESIZE_DST_TO_MATCH_SRC);
-	const auto luminanceTex = m_luminanceBuffer.GetAttachment<OvRendering::HAL::Texture>(OvRendering::Settings::EFramebufferAttachment::COLOR);
-	luminanceTex->GenerateMipmaps();
+	const auto luminanceTex = m_luminanceBuffer.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
+	luminanceTex.value().get().GenerateMipmaps();
 
 	float elapsedTime = 1.0f;
 	auto currentTime = std::chrono::high_resolution_clock::now();
@@ -78,7 +81,7 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 	++m_exposurePingPongBuffer;
 
 	// Exposure adaptation
-	m_exposureMaterial.SetProperty("_LuminanceTexture", &luminanceTex.value(), true);
+	m_exposureMaterial.SetProperty("_LuminanceTexture", &luminanceTex.value().get(), true);
 	m_exposureMaterial.SetProperty("_MinLuminanceEV", autoExposureSettings.minLuminanceEV, true);
 	m_exposureMaterial.SetProperty("_MaxLuminanceEV", autoExposureSettings.maxLuminanceEV, true);
 	m_exposureMaterial.SetProperty("_ExposureCompensationEV", autoExposureSettings.exposureCompensationEV, true);
@@ -88,9 +91,11 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 	m_exposureMaterial.SetProperty("_SpeedDown", autoExposureSettings.speedDown, true);
 	m_renderer.Blit(p_pso, previousExposure, currentExposure, m_exposureMaterial);
 
+	// [PERF-P9] Dedicated full-screen pass for exposure. Folding it into tonemapping would save a pass, but would also
+	// change the input of the bloom (which runs between auto exposure and tonemapping).
 	// Apply the exposure to the final image
-	const auto exposureTex = currentExposure.GetAttachment<OvRendering::HAL::Texture>(OvRendering::Settings::EFramebufferAttachment::COLOR);
-	m_compensationMaterial.SetProperty("_ExposureTexture", &exposureTex.value(), true);
+	const auto exposureTex = currentExposure.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
+	m_compensationMaterial.SetProperty("_ExposureTexture", &exposureTex.value().get(), true);
 	m_renderer.Blit(p_pso, p_src, p_dst, m_compensationMaterial);
 
 	m_firstFrame = false;

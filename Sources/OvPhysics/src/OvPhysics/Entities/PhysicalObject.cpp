@@ -4,11 +4,16 @@
 * @licence: MIT
 */
 
-#include <cstdint>
+#include <algorithm>
+#include <cmath>
 
-#include <bullet/btBulletCollisionCommon.h>
-#include <bullet/btBulletDynamicsCommon.h>
+#include <Jolt/Jolt.h>
 
+#include <Jolt/Physics/Body/Body.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyInterface.h>
+
+#include <OvDebug/Assertion.h>
 #include <OvDebug/Logger.h>
 #include <OvPhysics/Entities/PhysicalObject.h>
 #include <OvPhysics/Tools/Conversion.h>
@@ -18,19 +23,64 @@ using namespace OvPhysics::Settings;
 
 OvTools::Eventing::Event<OvPhysics::Entities::PhysicalObject&>	OvPhysics::Entities::PhysicalObject::CreatedEvent;
 OvTools::Eventing::Event<OvPhysics::Entities::PhysicalObject&>	OvPhysics::Entities::PhysicalObject::DestroyedEvent;
-OvTools::Eventing::Event<btRigidBody&>							OvPhysics::Entities::PhysicalObject::ConsiderEvent;
-OvTools::Eventing::Event<btRigidBody&>							OvPhysics::Entities::PhysicalObject::UnconsiderEvent;
 
 namespace
 {
-	void AddFlag(btCollisionObject& p_object, btCollisionObject::CollisionFlags p_flag)
+	constexpr float kMinimumMass = 0.0000001f;
+
+	JPH::EMotionQuality ToMotionQuality(OvPhysics::Entities::PhysicalObject::ECollisionDetectionMode p_mode)
 	{
-		p_object.setCollisionFlags(p_object.getCollisionFlags() | p_flag);
+		switch (p_mode)
+		{
+		case OvPhysics::Entities::PhysicalObject::ECollisionDetectionMode::CONTINUOUS:
+			return JPH::EMotionQuality::LinearCast;
+		default:
+			return JPH::EMotionQuality::Discrete;
+		}
 	}
 
-	void RemoveFlag(btCollisionObject& p_object, btCollisionObject::CollisionFlags p_flag)
+	JPH::EAllowedDOFs ToAllowedDOFs(const OvMaths::FVector3& p_linearFactor, const OvMaths::FVector3& p_angularFactor)
 	{
-		p_object.setCollisionFlags(p_object.getCollisionFlags() & ~p_flag);
+		JPH::EAllowedDOFs result = JPH::EAllowedDOFs::None;
+
+		if (p_linearFactor.x != 0.0f)
+		{
+			result |= JPH::EAllowedDOFs::TranslationX;
+		}
+
+		if (p_linearFactor.y != 0.0f)
+		{
+			result |= JPH::EAllowedDOFs::TranslationY;
+		}
+
+		if (p_linearFactor.z != 0.0f)
+		{
+			result |= JPH::EAllowedDOFs::TranslationZ;
+		}
+
+		if (p_angularFactor.x != 0.0f)
+		{
+			result |= JPH::EAllowedDOFs::RotationX;
+		}
+
+		if (p_angularFactor.y != 0.0f)
+		{
+			result |= JPH::EAllowedDOFs::RotationY;
+		}
+
+		if (p_angularFactor.z != 0.0f)
+		{
+			result |= JPH::EAllowedDOFs::RotationZ;
+		}
+
+		return result;
+	}
+
+	bool IsSamePose(const OvMaths::FVector3& p_position, const OvMaths::FQuaternion& p_rotation, const OvMaths::FVector3& p_otherPosition, const OvMaths::FQuaternion& p_otherRotation)
+	{
+		return
+			p_position.x == p_otherPosition.x && p_position.y == p_otherPosition.y && p_position.z == p_otherPosition.z &&
+			p_rotation.x == p_otherRotation.x && p_rotation.y == p_otherRotation.y && p_rotation.z == p_otherRotation.z && p_rotation.w == p_otherRotation.w;
 	}
 }
 
@@ -40,7 +90,7 @@ OvPhysics::Entities::PhysicalObject::PhysicalObject() :
 {
 	CollisionStartEvent += [this](OvPhysics::Entities::PhysicalObject& otherPhysicalObject)
 	{
-		UpdateBtTransform();
+		UpdateBodyTransform();
 	};
 }
 
@@ -68,17 +118,27 @@ void OvPhysics::Entities::PhysicalObject::Init()
 
 void OvPhysics::Entities::PhysicalObject::AddForce(const OvMaths::FVector3& p_force)
 {
-	m_body->applyCentralForce(Conversion::ToBtVector3(p_force));
+	if (m_body->IsDynamic())
+	{
+		m_body->AddForce(Conversion::ToJoltVector3(p_force));
+	}
 }
 
 void OvPhysics::Entities::PhysicalObject::AddImpulse(const OvMaths::FVector3& p_impulse)
 {
-	m_body->applyCentralImpulse(Conversion::ToBtVector3(p_impulse));
+	if (m_body->IsDynamic())
+	{
+		m_body->AddImpulse(Conversion::ToJoltVector3(p_impulse));
+	}
 }
 
 void OvPhysics::Entities::PhysicalObject::ClearForces()
 {
-	m_body->clearForces();
+	if (m_body->IsDynamic())
+	{
+		m_body->ResetForce();
+		m_body->ResetTorque();
+	}
 }
 
 float OvPhysics::Entities::PhysicalObject::GetMass() const
@@ -93,32 +153,32 @@ const OvPhysics::Entities::PhysicalObject::ECollisionDetectionMode& OvPhysics::E
 
 float OvPhysics::Entities::PhysicalObject::GetBounciness() const
 {
-	return m_body->getRestitution();
+	return m_body->GetRestitution();
 }
 
 float OvPhysics::Entities::PhysicalObject::GetFriction() const
 {
-	return m_body->getFriction();
+	return m_body->GetFriction();
 }
 
 OvMaths::FVector3 OvPhysics::Entities::PhysicalObject::GetLinearVelocity() const
 {
-	return Conversion::ToOvVector3(m_body->getLinearVelocity());
+	return Conversion::ToOvVector3(m_body->GetLinearVelocity());
 }
 
 OvMaths::FVector3 OvPhysics::Entities::PhysicalObject::GetAngularVelocity() const
 {
-	return Conversion::ToOvVector3(m_body->getAngularVelocity());
+	return Conversion::ToOvVector3(m_body->GetAngularVelocity());
 }
 
 OvMaths::FVector3 OvPhysics::Entities::PhysicalObject::GetLinearFactor() const
 {
-	return Conversion::ToOvVector3(m_body->getLinearFactor());
+	return m_linearFactor;
 }
 
 OvMaths::FVector3 OvPhysics::Entities::PhysicalObject::GetAngularFactor() const
 {
-	return Conversion::ToOvVector3(m_body->getAngularFactor());
+	return m_angularFactor;
 }
 
 bool OvPhysics::Entities::PhysicalObject::IsTrigger() const
@@ -131,9 +191,14 @@ bool OvPhysics::Entities::PhysicalObject::IsKinematic() const
 	return m_kinematic;
 }
 
-OvPhysics::Entities::PhysicalObject::EActivationState OvPhysics::Entities::PhysicalObject::GetActivationState() const
+bool OvPhysics::Entities::PhysicalObject::IsStatic() const
 {
-	return static_cast<EActivationState>(m_body->getActivationState());
+	return m_static || MustBeStatic();
+}
+
+bool OvPhysics::Entities::PhysicalObject::MustBeStatic() const
+{
+	return false;
 }
 
 OvMaths::FTransform& OvPhysics::Entities::PhysicalObject::GetTransform()
@@ -144,63 +209,56 @@ OvMaths::FTransform& OvPhysics::Entities::PhysicalObject::GetTransform()
 void OvPhysics::Entities::PhysicalObject::SetMass(float p_mass)
 {
 	m_mass = p_mass;
-	ApplyInertia();
+	RecreateBody();
 }
 
 void OvPhysics::Entities::PhysicalObject::SetCollisionDetectionMode(ECollisionDetectionMode p_mode)
 {
 	m_collisionMode = p_mode;
-
-	switch (m_collisionMode)
-	{
-	case ECollisionDetectionMode::DISCRETE:
-		m_body->setCcdMotionThreshold(std::numeric_limits<float>::max());
-		m_body->setCcdSweptSphereRadius(0.0f);
-		break;
-	case ECollisionDetectionMode::CONTINUOUS:
-		m_body->setCcdMotionThreshold(static_cast<btScalar>(1e-7));
-		m_body->setCcdSweptSphereRadius(0.5f);
-		break;
-	}
+	m_bodyInterface->SetMotionQuality(m_body->GetID(), ToMotionQuality(m_collisionMode));
 }
 
 void OvPhysics::Entities::PhysicalObject::SetBounciness(float p_bounciness)
 {
-	m_body->setRestitution(p_bounciness);
+	m_body->SetRestitution(p_bounciness);
 }
 
 void OvPhysics::Entities::PhysicalObject::SetFriction(float p_friction)
 {
-	m_body->setFriction(p_friction);
+	m_body->SetFriction(p_friction);
 }
 
 void OvPhysics::Entities::PhysicalObject::SetLinearVelocity(const OvMaths::FVector3 & p_linearVelocity)
 {
-	m_body->setLinearVelocity(Conversion::ToBtVector3(p_linearVelocity));
+	if (m_body->IsDynamic())
+	{
+		m_body->SetLinearVelocityClamped(Conversion::ToJoltVector3(p_linearVelocity));
+	}
 }
 
 void OvPhysics::Entities::PhysicalObject::SetAngularVelocity(const OvMaths::FVector3 & p_angularVelocity)
 {
-	m_body->setAngularVelocity(Conversion::ToBtVector3(p_angularVelocity));
+	if (m_body->IsDynamic())
+	{
+		m_body->SetAngularVelocityClamped(Conversion::ToJoltVector3(p_angularVelocity));
+	}
 }
 
 void OvPhysics::Entities::PhysicalObject::SetLinearFactor(const OvMaths::FVector3 & p_linearFactor)
 {
-	m_body->setLinearFactor(Conversion::ToBtVector3(p_linearFactor));
+	m_linearFactor = p_linearFactor;
+	RecreateBody();
 }
 
 void OvPhysics::Entities::PhysicalObject::SetAngularFactor(const OvMaths::FVector3 & p_angularFactor)
 {
-	m_body->setAngularFactor(Conversion::ToBtVector3(p_angularFactor));
+	m_angularFactor = p_angularFactor;
+	RecreateBody();
 }
 
 void OvPhysics::Entities::PhysicalObject::SetTrigger(bool p_trigger)
 {
-	if (p_trigger)
-		AddFlag(*m_body, btCollisionObject::CF_NO_CONTACT_RESPONSE);
-	else
-		RemoveFlag(*m_body, btCollisionObject::CF_NO_CONTACT_RESPONSE);
-
+	m_body->SetIsSensor(p_trigger);
 	m_trigger = p_trigger;
 }
 
@@ -218,9 +276,13 @@ void OvPhysics::Entities::PhysicalObject::SetKinematic(bool p_kinematic)
 	RecreateBody();
 }
 
-void OvPhysics::Entities::PhysicalObject::SetActivationState(EActivationState p_activationState)
+void OvPhysics::Entities::PhysicalObject::SetStatic(bool p_static)
 {
-	m_body->setActivationState(static_cast<int>(p_activationState));
+	if (m_static != p_static)
+	{
+		m_static = p_static;
+		RecreateBody();
+	}
 }
 
 void OvPhysics::Entities::PhysicalObject::SetEnabled(bool p_enabled)
@@ -238,26 +300,55 @@ bool OvPhysics::Entities::PhysicalObject::IsEnabled() const
 	return m_enabled;
 }
 
-void OvPhysics::Entities::PhysicalObject::UpdateBtTransform()
+void OvPhysics::Entities::PhysicalObject::UpdateBodyTransform()
 {
-	m_body->setWorldTransform(Conversion::ToBtTransform(*m_transform));
+	const OvMaths::FVector3& position = m_transform->GetWorldPosition();
+	const OvMaths::FQuaternion& rotation = m_transform->GetWorldRotation();
+
+	// The body is only moved when its transform was, which most static bodies never are
+	if (!IsSamePose(position, rotation, m_bodyPosition, m_bodyRotation))
+	{
+		m_bodyPosition = position;
+		m_bodyRotation = rotation;
+
+		m_bodyInterface->SetPositionAndRotation(
+			m_body->GetID(),
+			Conversion::ToJoltVector3(position),
+			Conversion::ToJoltQuaternion(rotation),
+			JPH::EActivation::DontActivate
+		);
+	}
 
 	if (OvMaths::FVector3::Distance(m_transform->GetWorldScale(), m_previousScale) >= 0.01f)
 	{
-		m_previousScale = m_transform->GetWorldScale();
-		SetLocalScaling({ abs(m_previousScale.x), abs(m_previousScale.y), abs(m_previousScale.z) });
 		RecreateBody();
 	}
 }
 
 void OvPhysics::Entities::PhysicalObject::UpdateFTransform()
 {
-	if (!m_kinematic)
+	if (!m_body->IsDynamic())
 	{
-		const btTransform& result = m_body->getWorldTransform();
-		m_transform->SetLocalPosition(Conversion::ToOvVector3(result.getOrigin()));
-		m_transform->SetLocalRotation(Conversion::ToOvQuaternion(result.getRotation()));
+		return;
 	}
+
+	const OvMaths::FVector3 position = Conversion::ToOvVector3(m_body->GetPosition());
+	const OvMaths::FQuaternion rotation = Conversion::ToOvQuaternion(m_body->GetRotation());
+
+	// World setters recompute the local transform (and its scale) from the matrices, so they are only used when required
+	if (m_transform->HasParent())
+	{
+		m_transform->SetWorldPosition(position);
+		m_transform->SetWorldRotation(rotation);
+	}
+	else
+	{
+		m_transform->SetLocalPosition(position);
+		m_transform->SetLocalRotation(rotation);
+	}
+
+	m_bodyPosition = m_transform->GetWorldPosition();
+	m_bodyRotation = m_transform->GetWorldRotation();
 }
 
 void OvPhysics::Entities::PhysicalObject::RecreateBody()
@@ -265,19 +356,12 @@ void OvPhysics::Entities::PhysicalObject::RecreateBody()
 	CreateBody(DestroyBody());
 }
 
-void OvPhysics::Entities::PhysicalObject::ApplyInertia()
-{
-	m_body->setMassProps(
-		m_kinematic ? 0.0f : std::max(0.0000001f, m_mass),
-		m_kinematic ? btVector3(0.0f, 0.0f, 0.0f) : Tools::Conversion::ToBtVector3(CalculateInertia()));
-}
-
 void OvPhysics::Entities::PhysicalObject::Consider()
 {
 	if (!m_considered)
 	{
 		m_considered = true;
-		ConsiderEvent.Invoke(*m_body);
+		m_bodyInterface->AddBody(m_body->GetID(), m_body->IsStatic() ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
 	}
 }
 
@@ -286,32 +370,60 @@ void OvPhysics::Entities::PhysicalObject::Unconsider()
 	if (m_considered)
 	{
 		m_considered = false;
-		UnconsiderEvent.Invoke(*m_body);
+		m_bodyInterface->RemoveBody(m_body->GetID());
 	}
 }
 
 void OvPhysics::Entities::PhysicalObject::CreateBody(const Settings::BodySettings & p_bodySettings)
 {
-	m_motion = std::make_unique<btDefaultMotionState>(Conversion::ToBtTransform(*m_transform));
+	OVASSERT(m_bodyInterface != nullptr, "A PhysicsEngine must exist before creating a PhysicalObject");
 
-	m_body = std::make_unique<btRigidBody>(btRigidBody::btRigidBodyConstructionInfo{ 0.0f, m_motion.get(), m_shape.get(), btVector3(0.0f, 0.0f, 0.0f) });
+	m_previousScale = m_transform->GetWorldScale();
+	m_bodyPosition = m_transform->GetWorldPosition();
+	m_bodyRotation = m_transform->GetWorldRotation();
+	m_linearFactor = p_bodySettings.linearFactor;
+	m_angularFactor = p_bodySettings.angularFactor;
 
-	ApplyInertia();
+	// Jolt cannot simulate a dynamic body without any degree of freedom, such a body is simulated as kinematic
+	const JPH::EAllowedDOFs allowedDOFs = ToAllowedDOFs(m_linearFactor, m_angularFactor);
+	const bool isStatic = IsStatic();
+	const bool isDynamic = !isStatic && !m_kinematic && allowedDOFs != JPH::EAllowedDOFs::None;
 
-	m_body->setRestitution(p_bodySettings.restitution);
-	m_body->setFriction(p_bodySettings.friction);
-	m_body->setLinearVelocity(Conversion::ToBtVector3(p_bodySettings.linearVelocity));
-	m_body->setAngularVelocity(Conversion::ToBtVector3(p_bodySettings.angularVelocity));
-	m_body->setLinearFactor(Conversion::ToBtVector3(p_bodySettings.linearFactor));
-	m_body->setAngularFactor(Conversion::ToBtVector3(p_bodySettings.angularFactor));
-	m_body->setUserPointer(this);
+	JPH::BodyCreationSettings bodyCreationSettings(
+		CreateShape({ std::abs(m_previousScale.x), std::abs(m_previousScale.y), std::abs(m_previousScale.z) }),
+		Conversion::ToJoltVector3(m_bodyPosition),
+		Conversion::ToJoltQuaternion(m_bodyRotation),
+		isStatic ? JPH::EMotionType::Static : isDynamic ? JPH::EMotionType::Dynamic : JPH::EMotionType::Kinematic,
+		kObjectLayer
+	);
 
-	AddFlag(*m_body, btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
+	bodyCreationSettings.mAllowedDOFs = isDynamic ? allowedDOFs : JPH::EAllowedDOFs::All;
 
-	if (p_bodySettings.isTrigger)
-		AddFlag(*m_body, btCollisionObject::CF_NO_CONTACT_RESPONSE);
+	// A static body has no mass
+	if (!isStatic)
+	{
+		bodyCreationSettings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+		bodyCreationSettings.mMassPropertiesOverride.mMass = std::max(kMinimumMass, m_mass);
+	}
 
-	SetActivationState(EActivationState::ALWAYS_ACTIVE); // TODO: Avoid using always active
+	bodyCreationSettings.mIsSensor = p_bodySettings.isTrigger;
+	bodyCreationSettings.mMotionQuality = ToMotionQuality(m_collisionMode);
+	bodyCreationSettings.mAllowSleeping = false; // TODO: Avoid using always active
+	bodyCreationSettings.mFriction = p_bodySettings.friction;
+	bodyCreationSettings.mRestitution = p_bodySettings.restitution;
+	bodyCreationSettings.mLinearDamping = 0.0f;
+	bodyCreationSettings.mAngularDamping = 0.0f;
+	bodyCreationSettings.mUserData = reinterpret_cast<JPH::uint64>(this);
+
+	if (isDynamic)
+	{
+		bodyCreationSettings.mLinearVelocity = Conversion::ToJoltVector3(p_bodySettings.linearVelocity);
+		bodyCreationSettings.mAngularVelocity = Conversion::ToJoltVector3(p_bodySettings.angularVelocity);
+	}
+
+	m_body = m_bodyInterface->CreateBody(bodyCreationSettings);
+
+	OVASSERT(m_body != nullptr, "Unable to create a physical body, the maximum number of bodies has been reached");
 
 	if (m_enabled)
 		Consider();
@@ -321,10 +433,10 @@ OvPhysics::Settings::BodySettings OvPhysics::Entities::PhysicalObject::DestroyBo
 {
 	BodySettings result
 	{
-		Conversion::ToOvVector3(m_body->getLinearVelocity()),
-		Conversion::ToOvVector3(m_body->getAngularVelocity()),
-		Conversion::ToOvVector3(m_body->getLinearFactor()),
-		Conversion::ToOvVector3(m_body->getAngularFactor()),
+		Conversion::ToOvVector3(m_body->GetLinearVelocity()),
+		Conversion::ToOvVector3(m_body->GetAngularVelocity()),
+		m_linearFactor,
+		m_angularFactor,
 		GetBounciness(),
 		GetFriction(),
 		IsTrigger(),
@@ -333,23 +445,8 @@ OvPhysics::Settings::BodySettings OvPhysics::Entities::PhysicalObject::DestroyBo
 
 	Unconsider();
 
-	m_body.reset();
-	m_motion.reset();
+	m_bodyInterface->DestroyBody(m_body->GetID());
+	m_body = nullptr;
 
 	return result;
-}
-
-OvMaths::FVector3 OvPhysics::Entities::PhysicalObject::CalculateInertia() const
-{
-	btVector3 result = { 0.f, 0.f, 0.f };
-
-	if (m_mass != 0.0f)
-		m_shape->calculateLocalInertia(m_mass, result);
-
-	return Conversion::ToOvVector3(result);
-}
-
-btRigidBody& OvPhysics::Entities::PhysicalObject::GetBody()
-{
-	return *m_body;
 }

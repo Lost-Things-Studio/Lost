@@ -8,23 +8,27 @@
 
 #include <string>
 #include <array>
+#include <deque>
 #include <memory>
-
-#include "OvRendering/Settings/DriverSettings.h"
-#include "OvRendering/Settings/ERenderingCapability.h"
-#include "OvRendering/Settings/EPrimitiveMode.h"
-#include "OvRendering/Settings/ERasterizationMode.h"
-#include "OvRendering/Settings/EComparaisonAlgorithm.h"
-#include "OvRendering/Settings/EOperation.h"
-#include "OvRendering/Settings/ECullFace.h"
-#include "OvRendering/Settings/ECullingOptions.h"
-#include "OvRendering/Settings/EPixelDataFormat.h"
-#include "OvRendering/Settings/EPixelDataType.h"
-#include "OvRendering/Data/PipelineState.h"
-#include "OvRendering/Resources/IMesh.h"
 
 #include <OvMaths/FVector4.h>
 #include <OvTools/Utils/OptRef.h>
+
+#include <OvRendering/Data/PipelineState.h>
+#include <OvRendering/Resources/IMesh.h>
+#include <OvRendering/Settings/DriverSettings.h>
+#include <OvRendering/Settings/ECullingOptions.h>
+
+#include <baregl/Context.h>
+#include <baregl/Fence.h>
+#include <baregl/types/ERenderingCapability.h>
+#include <baregl/types/EPrimitiveMode.h>
+#include <baregl/types/ERasterizationMode.h>
+#include <baregl/types/EComparaisonAlgorithm.h>
+#include <baregl/types/EOperation.h>
+#include <baregl/types/ECullFace.h>
+#include <baregl/types/EPixelDataFormat.h>
+#include <baregl/types/EPixelDataType.h>
 
 namespace OvRendering::Context
 {
@@ -47,8 +51,15 @@ namespace OvRendering::Context
 
 		/**
 		* Notifies the driver that the frame is finished
+		* @note Can be called several times per presented frame (e.g. once per editor view)
 		*/
 		void OnFrameCompleted();
+
+		/**
+		* Notifies the driver that the frame has been presented (must be called once per presented frame, after swapping buffers).
+		* Limits the number of frames queued ahead of the GPU (see DriverSettings::maxQueuedFrames).
+		*/
+		void OnFramePresented();
 
 		/**
 		* Set the viewport
@@ -63,6 +74,15 @@ namespace OvRendering::Context
 			uint32_t p_width,
 			uint32_t p_height
 		);
+
+		/**
+		* Set the scissor rectangle (only used when the pipeline state enables the scissor test)
+		* @param p_x
+		* @param p_y
+		* @param p_width
+		* @param p_height
+		*/
+		void SetScissor(uint32_t p_x, uint32_t p_y, uint32_t p_width, uint32_t p_height);
 
 		/**
 		* Clear the screen using the previously defined clear color (With Renderer::SetClearColor()) or by
@@ -89,7 +109,7 @@ namespace OvRendering::Context
 		void Draw(
 			OvRendering::Data::PipelineState p_pso,
 			const Resources::IMesh& p_mesh,
-			Settings::EPrimitiveMode p_primitiveMode = Settings::EPrimitiveMode::TRIANGLES,
+			baregl::types::EPrimitiveMode p_primitiveMode = baregl::types::EPrimitiveMode::TRIANGLES,
 			uint32_t p_instances = 1
 		);
 
@@ -123,11 +143,14 @@ namespace OvRendering::Context
 		void ResetPipelineState();
 
 	private:
+		std::unique_ptr<baregl::Context> m_gfxContext;
 		std::string m_vendor;
 		std::string m_hardware;
 		std::string m_version;
 		std::string m_shadingLanguageVersion;
 		Data::PipelineState m_defaultPipelineState;
 		Data::PipelineState m_pipelineState;
+		uint32_t m_maxQueuedFrames;
+		std::deque<std::unique_ptr<baregl::Fence>> m_frameFences;
 	};
 }

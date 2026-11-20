@@ -7,16 +7,22 @@
 #pragma once
 
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <variant>
+#include <vector>
+
+#include <baregl/Texture.h>
 
 #include <OvMaths/FMatrix3.h>
+#include <OvMaths/FMatrix4.h>
+#include <OvMaths/FVector4.h>
 
 #include <OvRendering/Data/StateMask.h>
-#include <OvRendering/HAL/TextureHandle.h>
 #include <OvRendering/Resources/Shader.h>
 #include <OvRendering/Resources/Texture.h>
 #include <OvRendering/Settings/EProjectionMode.h>
+#include <OvTools/Utils/OptRef.h>
 
 namespace OvRendering::Data
 {
@@ -30,7 +36,7 @@ namespace OvRendering::Data
 		OvMaths::FVector4,
 		OvMaths::FMatrix3,
 		OvMaths::FMatrix4,
-		OvRendering::HAL::TextureHandle*,	// Texture handle
+		baregl::Texture*,	// Texture graphics object
 		OvRendering::Resources::Texture*	// Texture asset (serializable)
 	>;
 
@@ -79,7 +85,7 @@ namespace OvRendering::Data
 		* @param p_pass
 		* @param p_override
 		*/
-		OvTools::Utils::OptRef<OvRendering::HAL::ShaderProgram> GetVariant(
+		OvTools::Utils::OptRef<baregl::ShaderProgram> GetVariant(
 			std::optional<const std::string_view> p_pass = std::nullopt,
 			OvTools::Utils::OptRef<const Data::FeatureSet> p_override = std::nullopt
 		) const;
@@ -101,8 +107,8 @@ namespace OvRendering::Data
 		MaterialSignatureSet Bind(
 			std::optional<const std::string_view> p_pass = std::nullopt,
 			OvTools::Utils::OptRef<const Data::FeatureSet> p_featureSetOverride = std::nullopt,
-			HAL::Texture* p_emptyTexture2D = nullptr,
-			HAL::Texture* p_emptyTextureCube = nullptr,
+			baregl::Texture* p_emptyTexture2D = nullptr,
+			baregl::Texture* p_emptyTextureCube = nullptr,
 			std::optional<MaterialSignatureSet> p_previousMaterialSignature = std::nullopt
 		);
 
@@ -116,8 +122,8 @@ namespace OvRendering::Data
 		void UploadProperties(
 			bool uploadStableProperties,
 			bool uploadSingleUseProperties,
-			HAL::Texture* p_emptyTexture2D = nullptr,
-			HAL::Texture* p_emptyTextureCube = nullptr
+			baregl::Texture* p_emptyTexture2D = nullptr,
+			baregl::Texture* p_emptyTextureCube = nullptr
 		);
 
 		/**
@@ -139,7 +145,7 @@ namespace OvRendering::Data
 		* @param p_value
 		* @param p_singleUse (automatically consume the value after the first use)
 		*/
-		void SetProperty(const std::string p_name, const MaterialPropertyType& p_value, bool p_singleUse = false);
+		void SetProperty(const std::string& p_name, const MaterialPropertyType& p_value, bool p_singleUse = false);
 
 		/**
 		* Sets a material property value if the property exists
@@ -337,8 +343,9 @@ namespace OvRendering::Data
 
 		/**
 		* Returns the feature set of this material
+		* @note Use SetFeatures, AddFeature or RemoveFeature to modify it
 		*/
-		Data::FeatureSet& GetFeatures();
+		const Data::FeatureSet& GetFeatures() const;
 
 		/**
 		* Defines the feature set this material should use
@@ -359,6 +366,11 @@ namespace OvRendering::Data
 		void RemoveFeature(const std::string& p_feature);
 
 		/**
+		* Returns a version number incremented every time the feature set changes
+		*/
+		uint64_t GetFeaturesVersion() const;
+
+		/**
 		* Returns true if the material has a feature
 		* @param p_feature
 		*/
@@ -369,6 +381,12 @@ namespace OvRendering::Data
 		* @param p_feature
 		*/
 		bool SupportsFeature(const std::string& p_feature) const;
+
+		/**
+		* Returns true if the material's shader declares an engine capability (#engine_capability)
+		* @param p_capability
+		*/
+		bool HasEngineCapability(const std::string& p_capability) const;
 
 		/**
 		* Returns true if the material has a pass
@@ -395,10 +413,17 @@ namespace OvRendering::Data
 	protected:
 		void InvalidatePropertySignature();
 
+		void AssignProperty(MaterialProperty& p_property, const MaterialPropertyType& p_value, bool p_singleUse);
+
+		baregl::ShaderProgram& FindVariant(
+			std::optional<const std::string_view> p_pass,
+			OvTools::Utils::OptRef<const Data::FeatureSet> p_featureSetOverride
+		);
+
 		MaterialSignatureSet CalculateSignature(
-			OvRendering::HAL::ShaderProgram& p_selectedProgram,
-			HAL::Texture* p_emptyTexture2D = nullptr,
-			HAL::Texture* p_emptyTextureCube = nullptr
+			baregl::ShaderProgram& p_selectedProgram,
+			baregl::Texture* p_emptyTexture2D = nullptr,
+			baregl::Texture* p_emptyTextureCube = nullptr
 		);
 
 	protected:
@@ -407,7 +432,21 @@ namespace OvRendering::Data
 		Data::FeatureSet m_features;
 		size_t m_stablePropertySignatureVersion = 0ULL;
 		size_t m_singleUsePropertySignatureVersion = 0ULL;
-		OvTools::Utils::OptRef<OvRendering::HAL::ShaderProgram> m_programInUse = std::nullopt;
+		OvTools::Utils::OptRef<baregl::ShaderProgram> m_programInUse = std::nullopt;
+
+		// Programs resolved for each pass (without feature set override), to avoid hashing the
+		// feature set on every draw. Invalidated when the shader, its variants or the features change.
+		struct VariantCacheEntry
+		{
+			std::string pass;
+			baregl::ShaderProgram* program;
+		};
+
+		std::vector<VariantCacheEntry> m_variantCache;
+		const OvRendering::Resources::Shader* m_variantCacheShader = nullptr;
+		uint64_t m_variantCacheShaderVersion = 0;
+		uint64_t m_variantCacheFeaturesVersion = 0;
+		uint64_t m_featuresVersion = 0;
 
 		bool m_supportOrthographic = true;
 		bool m_supportPerspective = true;

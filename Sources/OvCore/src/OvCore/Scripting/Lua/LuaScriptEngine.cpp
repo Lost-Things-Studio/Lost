@@ -17,6 +17,7 @@
 #include <OvCore/Scripting/ScriptEngine.h>
 #include <OvCore/ECS/Components/Behaviour.h>
 #include <OvCore/ECS/Actor.h>
+#include <OvTools/Utils/PathParser.h>
 #include <OvTools/Utils/String.h>
 
 void BindLuaActor(sol::state& p_state);
@@ -24,9 +25,18 @@ void BindLuaComponents(sol::state& p_state);
 void BindLuaGlobal(sol::state& p_state);
 void BindLuaMath(sol::state& p_state);
 void BindLuaProfiler(sol::state& p_state);
+void BindLuaStorage(sol::state& p_state);
+void BindLuaJson(sol::state& p_state);
+void BindLuaGeometry(sol::state& p_state);
 
 namespace
 {
+	// Registry keys for the shared scripts. Living in the registry keeps them out of _G,
+	// and they die with the lua state, so Reload() invalidates them for free.
+	constexpr auto kLoadedScriptsKey = "__OverloadLoadedScripts";
+	constexpr auto kLoadingScriptsKey = "__OverloadLoadingScripts";
+	constexpr auto kCompiledBehavioursKey = "__OverloadCompiledBehaviours";
+
 	template<typename... Args>
 	void ExecuteLuaFunction(OvCore::ECS::Components::Behaviour& p_behaviour, const std::string& p_functionName, Args&& ...p_args)
 	{
@@ -39,9 +49,20 @@ namespace
 
 		try
 		{
-			if (table[p_functionName].valid())
+			// Single lookup (it is done for every behaviour, for every callback, every frame)
+			const sol::object function = table[p_functionName];
+
+			if (function.valid())
 			{
-				sol::protected_function pfr = table[p_functionName];
+				// One zone per callback, named after its script and function, so the profiler tells which script costs what
+				ZoneScopedN("Lua Callback");
+				if (TracyIsConnected)
+				{
+					const auto zoneName = p_behaviour.name + ":" + p_functionName;
+					ZoneName(zoneName.c_str(), zoneName.size());
+				}
+
+				sol::protected_function pfr = function;
 				auto pfrResult = pfr.call(table, std::forward<Args>(p_args)...);
 				if (!pfrResult.valid())
 				{
@@ -60,7 +81,33 @@ namespace
 	{
 		using namespace OvCore::Scripting;
 
-		const auto result = p_luaState.safe_script_file(p_scriptName, &sol::script_pass_on_error);
+		// A behaviour script is read and compiled once per Lua state, but run for each behaviour, which so gets a table
+		// and functions of its own
+		sol::table compiledBehaviours = p_luaState.registry()[kCompiledBehavioursKey];
+		const sol::object compiled = compiledBehaviours[p_scriptName];
+		sol::protected_function chunk;
+
+		if (compiled.get_type() == sol::type::function)
+		{
+			chunk = compiled.as<sol::protected_function>();
+		}
+		else
+		{
+			// Text only, as for shared scripts: a precompiled chunk could corrupt the Lua state
+			sol::load_result loaded = p_luaState.load_file(p_scriptName, sol::load_mode::text);
+
+			if (!loaded.valid())
+			{
+				sol::error err = loaded;
+				OVLOG_ERROR(err.what());
+				return {};
+			}
+
+			chunk = loaded.get<sol::protected_function>();
+			compiledBehaviours[p_scriptName] = chunk;
+		}
+
+		const sol::protected_function_result result = chunk();
 
 		if (!result.valid())
 		{
@@ -80,6 +127,12 @@ namespace
 				return {};
 			}
 		}
+	}
+
+	bool IsWithinRoot(const std::filesystem::path& p_path, const std::filesystem::path& p_root)
+	{
+		const auto relativePath = p_path.lexically_relative(p_root);
+		return !relativePath.empty() && relativePath.begin()->string() != "..";
 	}
 
 	bool RegisterBehaviour(sol::state& p_luaState, OvCore::ECS::Components::Behaviour& p_behaviour, const std::string& p_scriptName)
@@ -112,12 +165,14 @@ namespace
 			"  \"runtime.builtin\": {{\n"
 			"    \"basic\": \"enable\",\n"
 			"    \"math\": \"enable\",\n"
-			"    \"string\": \"disable\",\n"
-			"    \"table\": \"disable\",\n"
+			"    \"string\": \"enable\",\n"
+			"    \"table\": \"enable\",\n"
+			"    \"coroutine\": \"enable\",\n"
+			"    \"utf8\": \"enable\",\n"
 			"    \"io\": \"disable\",\n"
 			"    \"os\": \"disable\",\n"
 			"    \"package\": \"disable\",\n"
-			"    \"coroutine\": \"disable\"\n"
+			"    \"debug\": \"disable\"\n"
 			"  }}\n"
 			"}}\n",
 			absolutePath.string(),
@@ -229,9 +284,9 @@ void OvCore::Scripting::LuaScriptEngineBase::RemoveBehaviour(OvCore::ECS::Compon
 		)
 	);
 
-	// Unconsidering a script is impossible with Lua, we have to reparse every behaviours
-	// @note this might be costly, we should look into it more seriously.
-	Reload(); 
+	// Every behaviour holds a table of its own, released by RemoveScript, so there is nothing left to reparse.
+	// Rebuilding the state here would reset the other behaviours and the shared scripts, and a scene change,
+	// which removes every behaviour of the old scene, would lose what the game keeps for the whole session.
 }
 
 template<>
@@ -345,13 +400,30 @@ void OvCore::Scripting::LuaScriptEngine::CreateContext()
 	OVASSERT(m_context.luaState == nullptr, "A Lua context already exists!");
 
 	m_context.luaState = std::make_unique<sol::state>();
-	m_context.luaState->open_libraries(sol::lib::base, sol::lib::math);
+	// The pure libraries only: nothing reaching the files, the system or the interpreter's internals. A coroutine runs
+	// within one callback: it cannot be suspended across a call back into the engine.
+	m_context.luaState->open_libraries(sol::lib::base, sol::lib::math, sol::lib::string, sol::lib::table, sol::lib::coroutine, sol::lib::utf8);
+
+	// Scripts allocate mostly short-lived values every frame (vectors, temporary tables): the
+	// generational collector reclaims them for less than the incremental one
+	lua_gc(m_context.luaState->lua_state(), LUA_GCGEN, 0, 0);
+
+	(*m_context.luaState)["dofile"] = sol::nil;
+	(*m_context.luaState)["loadfile"] = sol::nil;
+	(*m_context.luaState)["load"] = sol::nil;
+
+	m_context.luaState->registry()[kLoadedScriptsKey] = m_context.luaState->create_table();
+	m_context.luaState->registry()[kLoadingScriptsKey] = m_context.luaState->create_table();
+	m_context.luaState->registry()[kCompiledBehavioursKey] = m_context.luaState->create_table();
 
 	BindLuaActor(*m_context.luaState);
 	BindLuaComponents(*m_context.luaState);
 	BindLuaGlobal(*m_context.luaState);
 	BindLuaMath(*m_context.luaState);
 	BindLuaProfiler(*m_context.luaState);
+	BindLuaStorage(*m_context.luaState);
+	BindLuaJson(*m_context.luaState);
+	BindLuaGeometry(*m_context.luaState);
 
 	m_context.errorCount = 0;
 
@@ -384,4 +456,67 @@ void OvCore::Scripting::LuaScriptEngine::DestroyContext()
 	);
 
 	m_context.luaState.reset();
+}
+
+sol::object OvCore::Scripting::LuaScriptEngine::GetScript(const std::string& p_path)
+{
+	OVASSERT(m_context.luaState != nullptr, "No valid Lua context");
+
+	auto& luaState = *m_context.luaState;
+
+	const auto realPath = OvTools::Utils::PathParser::GetRealPath(
+		p_path,
+		m_context.engineAssetsPath,
+		m_context.projectAssetsPath
+	);
+
+	if (!IsWithinRoot(realPath, m_context.engineAssetsPath) && !IsWithinRoot(realPath, m_context.projectAssetsPath))
+	{
+		OVLOG_ERROR("'" + p_path + "' is outside of the assets folders");
+		return sol::make_object(luaState, sol::lua_nil);
+	}
+
+	if (!GetValidExtensions().contains(realPath.extension().string()))
+	{
+		OVLOG_ERROR("'" + p_path + "' isn't a script");
+		return sol::make_object(luaState, sol::lua_nil);
+	}
+
+	const auto key = realPath.generic_string();
+	sol::table loadedScripts = luaState.registry()[kLoadedScriptsKey];
+
+	if (const sol::object loaded = loadedScripts[key]; loaded.valid())
+	{
+		return loaded;
+	}
+
+	sol::table loadingScripts = luaState.registry()[kLoadingScriptsKey];
+
+	if (loadingScripts[key].valid())
+	{
+		OVLOG_ERROR("'" + p_path + "' is part of a circular script dependency");
+		return sol::make_object(luaState, sol::lua_nil);
+	}
+
+	loadingScripts[key] = true;
+	const auto result = luaState.safe_script_file(key, &sol::script_pass_on_error, sol::load_mode::text);
+	loadingScripts[key] = sol::lua_nil;
+
+	if (!result.valid())
+	{
+		sol::error err = result;
+		OVLOG_ERROR(err.what());
+		return sol::make_object(luaState, sol::lua_nil);
+	}
+
+	if (result.return_count() == 0)
+	{
+		OVLOG_ERROR("'" + p_path + "' missing return expression");
+		return sol::make_object(luaState, sol::lua_nil);
+	}
+
+	const sol::object script = result[0];
+	loadedScripts[key] = script;
+
+	return script;
 }

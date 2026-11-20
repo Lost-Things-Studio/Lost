@@ -12,7 +12,7 @@
 #include <unordered_map>
 
 #include <OvRendering/Data/FeatureSet.h>
-#include <OvRendering/HAL/ShaderProgram.h>
+#include <baregl/ShaderProgram.h>
 
 namespace OvRendering::Resources
 {
@@ -30,7 +30,7 @@ namespace OvRendering::Resources
 		// Shader programs for each feature combination
 		using FeatureVariants = std::unordered_map<
 			Data::FeatureSet,
-			std::unique_ptr<HAL::ShaderProgram>,
+			std::unique_ptr<baregl::ShaderProgram>,
 			Data::FeatureSetHash,
 			Data::FeatureSetEqual
 		>;
@@ -46,7 +46,7 @@ namespace OvRendering::Resources
 		* @param p_pass (optional) The pass to use. If not provided, the default pass will be selected.
 		* @param p_featureSet (optional) The feature set to use. If not provided, the default program will be used.
 		*/
-		HAL::ShaderProgram& GetVariant(
+		baregl::ShaderProgram& GetVariant(
 			std::optional<const std::string_view> p_pass = std::nullopt,
 			const Data::FeatureSet& p_featureSet = {}
 		);
@@ -63,6 +63,12 @@ namespace OvRendering::Resources
 		const Data::FeatureSet& GetEngineFeatures() const;
 
 		/**
+		* Returns engine capabilities (declared with #engine_capability): what the shader can be used for by the engine,
+		* in every variant (unlike features, a capability compiles no variant of its own)
+		*/
+		const Data::FeatureSet& GetEngineCapabilities() const;
+
+		/**
 		* Returns supported passes
 		*/
 		const std::unordered_set<std::string>& GetPasses() const;
@@ -72,15 +78,22 @@ namespace OvRendering::Resources
 		*/
 		const Variants& GetVariants() const;
 
+		/**
+		* Returns a counter incremented every time the variants are replaced (e.g. shader recompilation).
+		* Programs previously returned by GetVariant() must not be used after it changed.
+		*/
+		uint64_t GetVariantsVersion() const;
+
 	private:
 		Shader(
 			const std::string p_path,
 			Variants&& p_variants,
-			Data::FeatureSet p_engineFeatures = {}
+			Data::FeatureSet p_engineFeatures = {},
+			Data::FeatureSet p_engineCapabilities = {}
 		);
 
 		~Shader() = default;
-		void SetVariants(Variants&& p_variants, Data::FeatureSet p_engineFeatures = {});
+		void SetVariants(Variants&& p_variants, Data::FeatureSet p_engineFeatures = {}, Data::FeatureSet p_engineCapabilities = {});
 
 	public:
 		const std::string path;
@@ -89,6 +102,8 @@ namespace OvRendering::Resources
 		std::unordered_set<std::string> m_passes;
 		Data::FeatureSet m_features;
 		Data::FeatureSet m_engineFeatures;
+		Data::FeatureSet m_engineCapabilities;
 		Variants m_variants;
+		uint64_t m_variantsVersion = 0;
 	};
 }

@@ -6,7 +6,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <any>
+#include <cstdint>
 #include <filesystem>
 #include <unordered_map>
 
@@ -49,6 +51,17 @@ namespace OvCore::ResourceManagement
 		* @param p_path
 		*/
 		bool IsResourceRegistered(const std::filesystem::path& p_path);
+
+		/**
+		* Returns true if the provided instance is currently owned by this manager
+		* @param p_resource
+		*/
+		bool ContainsResource(const T* p_resource) const;
+
+		/**
+		* Returns a monotonic revision changed whenever the resource registry is modified
+		*/
+		uint64_t GetResourcesRevision() const;
 
 		/**
 		* Destroy and unregister every resources
@@ -108,11 +121,17 @@ namespace OvCore::ResourceManagement
 		virtual void ReloadResource(T* p_resource, const std::filesystem::path& p_path) = 0;
 		std::filesystem::path GetRealPath(const std::filesystem::path& p_path) const;
 
+		/**
+		* Changes the revision, for a resource whose content changed in place
+		*/
+		void MarkResourcesChanged();
+
 	private:
 		inline static std::filesystem::path __PROJECT_ASSETS_PATH;
 		inline static std::filesystem::path __ENGINE_ASSETS_PATH;
 
 		std::unordered_map<std::filesystem::path, T*> m_resources;
+		uint64_t m_resourcesRevision = 0;
 	};
 }
 

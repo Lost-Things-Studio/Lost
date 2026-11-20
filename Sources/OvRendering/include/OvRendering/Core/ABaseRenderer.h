@@ -8,13 +8,13 @@
 
 #include <atomic>
 
-#include "OvRendering/Core/IRenderer.h"
-#include "OvRendering/Data/FrameInfo.h"
-#include "OvRendering/Resources/IMesh.h"
-#include "OvRendering/Resources/Texture.h"
-#include "OvRendering/Entities/Drawable.h"
-#include "OvRendering/Settings/EBlitFlags.h"
-#include "OvRendering/Context/Driver.h"
+#include <OvRendering/Core/IRenderer.h>
+#include <OvRendering/Data/FrameInfo.h>
+#include <OvRendering/Resources/IMesh.h>
+#include <OvRendering/Resources/Texture.h>
+#include <OvRendering/Entities/Drawable.h>
+#include <OvRendering/Settings/EBlitFlags.h>
+#include <OvRendering/Context/Driver.h>
 
 namespace OvRendering::Core
 {
@@ -74,6 +74,15 @@ namespace OvRendering::Core
 		void SetViewport(uint32_t p_x, uint32_t p_y, uint32_t p_width, uint32_t p_height);
 
 		/**
+		* Set the scissor rectangle (only used when the pipeline state enables the scissor test)
+		* @param p_x
+		* @param p_y
+		* @param p_width
+		* @param p_height
+		*/
+		void SetScissor(uint32_t p_x, uint32_t p_y, uint32_t p_width, uint32_t p_height);
+
+		/**
 		* Clear the screen
 		* @param p_colorBuffer
 		* @param p_depthBuffer
@@ -97,8 +106,8 @@ namespace OvRendering::Core
 		*/
 		virtual void Blit(
 			OvRendering::Data::PipelineState p_pso,
-			OvRendering::HAL::Framebuffer& p_src,
-			OvRendering::HAL::Framebuffer& p_dst,
+			baregl::Framebuffer& p_src,
+			baregl::Framebuffer& p_dst,
 			OvRendering::Data::Material& p_material,
 			OvRendering::Settings::EBlitFlags p_flags = OvRendering::Settings::EBlitFlags::DEFAULT
 		);
@@ -123,8 +132,8 @@ namespace OvRendering::Core
 	protected:
 		Data::FrameDescriptor m_frameDescriptor;
 		Context::Driver& m_driver;
-		OvRendering::HAL::Texture m_emptyTexture2D;
-		OvRendering::HAL::Texture m_emptyTextureCube;
+		baregl::Texture m_emptyTexture2D;
+		baregl::Texture m_emptyTextureCube;
 		OvRendering::Resources::Mesh m_unitQuad;
 		OvRendering::Data::PipelineState m_basePipelineState;
 		bool m_isDrawing;

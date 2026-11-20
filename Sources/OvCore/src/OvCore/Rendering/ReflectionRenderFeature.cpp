@@ -4,6 +4,8 @@
 * @licence: MIT
 */
 
+#include <string>
+
 #include <tracy/Tracy.hpp>
 
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
@@ -14,6 +16,9 @@
 
 namespace
 {
+	// Looked up for every draw call: keep it as a string to avoid constructing one each time
+	const std::string kEnvironmentMapPropertyName = "_EnvironmentMap";
+
 	bool IsAffectedByReflectionProbe(
 		const OvMaths::FMatrix4& p_modelMatrix,
 		const OvRendering::Geometry::BoundingSphere& p_bounds,
@@ -158,15 +163,40 @@ void OvCore::Rendering::ReflectionRenderFeature::SendProbeData(
 )
 {
 	p_material.SetProperty(
-		"_EnvironmentMap",
-		p_reflectionProbe.has_value() ? p_reflectionProbe->GetCubemap().get() : static_cast<OvRendering::HAL::TextureHandle*>(nullptr),
+		kEnvironmentMapPropertyName,
+		p_reflectionProbe.has_value() ? p_reflectionProbe->GetCubemap().get() : static_cast<baregl::Texture*>(nullptr),
 		true
 	);
 }
 
 void OvCore::Rendering::ReflectionRenderFeature::BindProbe(const OvCore::ECS::Components::CReflectionProbe& p_reflectionProbe)
 {
-	p_reflectionProbe._GetUniformBuffer().Bind(1);
+	p_reflectionProbe._GetUniformBuffer().Bind(baregl::types::EBufferType::UNIFORM, 1);
+}
+
+OvTools::Utils::OptRef<const OvCore::ECS::Components::CReflectionProbe> OvCore::Rendering::ReflectionRenderFeature::FindProbe(
+	const OvRendering::Entities::Drawable& p_drawable,
+	const OvRendering::Data::Material& p_material
+) const
+{
+	// Skip materials that aren't properly set to receive reflections.
+	if (!p_material.IsReflectionReceiver() || !p_material.HasProperty(kEnvironmentMapPropertyName))
+	{
+		return std::nullopt;
+	}
+
+	OVASSERT(m_renderer.HasDescriptor<ReflectionRenderFeature::ReflectionDescriptor>(), "Cannot find ReflectionDescriptor attached to this renderer");
+	OVASSERT(p_drawable.HasDescriptor<OvCore::Rendering::EngineDrawableDescriptor>(), "Cannot find EngineDrawableDescriptor attached to this drawable");
+
+	const auto& reflectionDescriptor = m_renderer.GetDescriptor<ReflectionRenderFeature::ReflectionDescriptor>();
+	const auto& engineDrawableDesc = p_drawable.GetDescriptor<OvCore::Rendering::EngineDrawableDescriptor>();
+
+	// Find the probe that is best suited for this drawable.
+	return FindBestReflectionProbe(
+		p_drawable,
+		engineDrawableDesc,
+		reflectionDescriptor.reflectionProbes
+	);
 }
 
 void OvCore::Rendering::ReflectionRenderFeature::OnBeginFrame(const OvRendering::Data::FrameDescriptor& p_frameDescriptor)
@@ -191,23 +221,12 @@ void OvCore::Rendering::ReflectionRenderFeature::OnBeforeDraw(OvRendering::Data:
 	auto& material = p_drawable.material.value();
 
 	// Skip materials that aren't properly set to receive reflections.
-	if (!material.IsReflectionReceiver() || !material.HasProperty("_EnvironmentMap"))
+	if (!material.IsReflectionReceiver() || !material.HasProperty(kEnvironmentMapPropertyName))
 	{
 		return;
 	}
 
-	OVASSERT(m_renderer.HasDescriptor<ReflectionRenderFeature::ReflectionDescriptor>(), "Cannot find ReflectionDescriptor attached to this renderer");
-	OVASSERT(p_drawable.HasDescriptor<OvCore::Rendering::EngineDrawableDescriptor>(), "Cannot find EngineDrawableDescriptor attached to this drawable");
-
-	const auto& reflectionDescriptor = m_renderer.GetDescriptor<ReflectionRenderFeature::ReflectionDescriptor>();
-	const auto& engineDrawableDesc = p_drawable.GetDescriptor<OvCore::Rendering::EngineDrawableDescriptor>();
-
-	// Find the probe that is best suited for this drawable.
-	auto targetProbe = FindBestReflectionProbe(
-		p_drawable,
-		engineDrawableDesc,
-		reflectionDescriptor.reflectionProbes
-	);
+	auto targetProbe = FindProbe(p_drawable, material);
 
 	SendProbeData(material, targetProbe);
 

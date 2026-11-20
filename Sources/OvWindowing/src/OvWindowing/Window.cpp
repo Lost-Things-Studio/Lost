@@ -209,7 +209,7 @@ bool OvWindowing::Window::IsMaximized() const
 
 bool OvWindowing::Window::IsMinimized() const
 {
-	return glfwGetWindowAttrib(m_glfwWindow, GLFW_MAXIMIZED) == GLFW_FALSE;
+	return glfwGetWindowAttrib(m_glfwWindow, GLFW_ICONIFIED) == GLFW_TRUE;
 }
 
 bool OvWindowing::Window::IsFocused() const
@@ -259,6 +259,17 @@ void OvWindowing::Window::SetCursorMode(Cursor::ECursorMode p_cursorMode)
 #endif
 
 	glfwSetInputMode(m_glfwWindow, GLFW_CURSOR, static_cast<int>(p_cursorMode));
+
+	// When the cursor is disabled (camera/FPS controls), use raw mouse motion if available.
+	// Raw motion bypasses the OS pointer acceleration and smoothing, giving more direct mouse input.
+	if (glfwRawMouseMotionSupported())
+	{
+		glfwSetInputMode(
+			m_glfwWindow,
+			GLFW_RAW_MOUSE_MOTION,
+			p_cursorMode == Cursor::ECursorMode::DISABLED ? GLFW_TRUE : GLFW_FALSE
+		);
+	}
 }
 
 void OvWindowing::Window::SetCursorShape(Cursor::ECursorShape p_cursorShape)
@@ -289,9 +300,7 @@ std::string OvWindowing::Window::GetTitle() const
 
 std::pair<uint16_t, uint16_t> OvWindowing::Window::GetSize() const
 {
-	int width, height;
-	glfwGetWindowSize(m_glfwWindow, &width, &height);
-	return std::make_pair(static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+	return m_size;
 }
 
 std::pair<int16_t, int16_t> OvWindowing::Window::GetMinimumSize() const
@@ -368,6 +377,12 @@ void OvWindowing::Window::CreateGlfwWindow(const Settings::WindowSettings& p_win
 		UpdateSizeLimit();
 		SetPosition(m_position.first, m_position.second);
 		__WINDOWS_MAP[m_glfwWindow] = this;
+
+		// Kept up to date by the resize callback from then on: querying it is a round trip to the
+		// window system on some platforms (X11)
+		int width, height;
+		glfwGetWindowSize(m_glfwWindow, &width, &height);
+		m_size = { static_cast<uint16_t>(width), static_cast<uint16_t>(height) };
 	}
 }
 

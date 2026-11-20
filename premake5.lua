@@ -18,7 +18,6 @@ workspace "Overload"
 	startproject "OvEditor"
 	defines {
 		"LUA_SCRIPTING",
-		"GRAPHICS_API_OPENGL",
 		"OVERLOAD_VERSION=\"" .. version .. "\"",
 		"SOL_NO_LUA_HPP"
 	}
@@ -27,6 +26,12 @@ workspace "Overload"
 		defines {
 			"TRACY_ENABLE",
 			"TRACY_ON_DEMAND",
+		}
+
+	-- Memory profiling overrides the global new/delete operators, which adds overhead to every allocation.
+	-- Keep it for Debug builds only, so Release builds stay representative of the shipped performance.
+	filter {"configurations:Debug"}
+		defines {
 			"TRACY_MEMORY_ENABLE",
 		}
 	filter{}
@@ -54,11 +59,11 @@ group "Dependencies"
 	include "Dependencies/tracy"
 	include "Dependencies/lua"
 	include "Dependencies/freetype"
-	include "Dependencies/glad"
 	include "Dependencies/soloud"
 	include "Dependencies/assimp"
 	include "Dependencies/glfw"
-	include "Dependencies/bullet3"
+	include "Dependencies/jolt"
+	include "Dependencies/baregl"
 group ""
 
 group "Dependencies/Prebuilt"

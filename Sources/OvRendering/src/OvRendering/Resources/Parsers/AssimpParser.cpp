@@ -11,6 +11,9 @@
 #include <cstring>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -26,6 +29,7 @@
 #include <assimp/scene.h>
 
 #include <OvDebug/Logger.h>
+#include <OvRendering/Data/Image.h>
 #include <OvRendering/Resources/Parsers/AssimpParser.h>
 #include <OvTools/Utils/PathParser.h>
 
@@ -65,6 +69,10 @@ namespace
 		aiTextureType_HEIGHT
 	};
 
+    const std::array<aiTextureType, 1> kMetallicRoughnessTextureTypes = {
+        aiTextureType_GLTF_METALLIC_ROUGHNESS
+    };
+
 	constexpr std::array kOpacityTextureTypes{
 		aiTextureType_OPACITY
 	};
@@ -95,6 +103,18 @@ namespace
 			p_matrix.b1, p_matrix.b2, p_matrix.b3, p_matrix.b4,
 			p_matrix.c1, p_matrix.c2, p_matrix.c3, p_matrix.c4,
 			p_matrix.d1, p_matrix.d2, p_matrix.d3, p_matrix.d4
+		};
+	}
+
+	aiMatrix4x4 ToAiMatrix4x4(const OvMaths::FMatrix4& p_matrix)
+	{
+		const float* d = p_matrix.data;
+
+		return {
+			d[0], d[1], d[2], d[3],
+			d[4], d[5], d[6], d[7],
+			d[8], d[9], d[10], d[11],
+			d[12], d[13], d[14], d[15]
 		};
 	}
 
@@ -236,12 +256,55 @@ namespace
 		return resolvedPath.string();
 	}
 
+	/**
+	* Copy one channel of RGBA8 texels (1 red, 2 green, 3 blue, 4 alpha) into all four
+	*/
+	void KeepChannel(std::vector<uint8_t>& p_rgba, uint32_t p_channel)
+	{
+		const size_t offset = static_cast<size_t>(p_channel) - 1;
+
+		for (size_t i = 0; i + 3 < p_rgba.size(); i += 4)
+		{
+			const uint8_t value = p_rgba[i + offset];
+			p_rgba[i + 0] = value;
+			p_rgba[i + 1] = value;
+			p_rgba[i + 2] = value;
+			p_rgba[i + 3] = value;
+		}
+	}
+
+	/**
+	* Decode an encoded image to RGBA8 texels, as the texture loader decodes one (same orientation), so that one of
+	* its channels can be kept
+	*/
+	bool DecodeToRawRGBA8(const uint8_t* p_data, size_t p_size, OvRendering::Resources::EmbeddedTextureData& p_texture)
+	{
+		const OvRendering::Data::Image image{ p_data, p_size };
+
+		if (!image || image.isHDR || image.width <= 0 || image.height <= 0)
+		{
+			return false;
+		}
+
+		const auto* texels = static_cast<const uint8_t*>(image.data);
+		const size_t byteCount = static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4;
+
+		p_texture.sourceType = OvRendering::Resources::EmbeddedTextureData::ESourceType::EMBEDDED_RAW_RGBA8;
+		p_texture.extension = "tga";
+		p_texture.width = static_cast<uint32_t>(image.width);
+		p_texture.height = static_cast<uint32_t>(image.height);
+		p_texture.rawRGBAData.assign(texels, texels + byteCount);
+		p_texture.compressedData.clear();
+		return true;
+	}
+
 	std::optional<uint32_t> RegisterEmbeddedTexture(
 		const aiScene& p_scene,
 		const std::string& p_texturePath,
 		const std::filesystem::path& p_modelDirectory,
 		std::unordered_map<std::string, uint32_t>& p_textureIndexByKey,
-		std::vector<OvRendering::Resources::EmbeddedTextureData>& p_embeddedTextures
+		std::vector<OvRendering::Resources::EmbeddedTextureData>& p_embeddedTextures,
+        uint32_t p_singleChannelChannelId = 0
 	)
 	{
 		const std::string normalizedTexturePath = OvTools::Utils::PathParser::MakeNonWindowsStyle(p_texturePath);
@@ -255,6 +318,14 @@ namespace
 		else
 		{
 			cacheKey = ResolveExternalTexturePath(normalizedTexturePath, p_modelDirectory);
+		}
+
+		// The metallic and the roughness of a glTF material share a texture, each in its own channel: each gets an
+		// entry of its own
+		const std::string sourceKey = cacheKey;
+		if (p_singleChannelChannelId != 0)
+		{
+			cacheKey += ":channel" + std::to_string(p_singleChannelChannelId);
 		}
 
 		if (const auto found = p_textureIndexByKey.find(cacheKey); found != p_textureIndexByKey.end())
@@ -274,6 +345,12 @@ namespace
 				const auto byteCount = static_cast<size_t>(embeddedTexture->mWidth);
 				textureData.compressedData.resize(byteCount);
 				std::memcpy(textureData.compressedData.data(), embeddedTexture->pcData, byteCount);
+
+				if (p_singleChannelChannelId != 0 &&
+					DecodeToRawRGBA8(textureData.compressedData.data(), textureData.compressedData.size(), textureData))
+				{
+					KeepChannel(textureData.rawRGBAData, p_singleChannelChannelId);
+				}
 			}
 			else
 			{
@@ -288,10 +365,33 @@ namespace
 				for (size_t i = 0; i < texelCount; ++i)
 				{
 					const aiTexel texel = embeddedTexture->pcData[i];
-					textureData.rawRGBAData[i * 4 + 0] = texel.r;
-					textureData.rawRGBAData[i * 4 + 1] = texel.g;
-					textureData.rawRGBAData[i * 4 + 2] = texel.b;
-					textureData.rawRGBAData[i * 4 + 3] = texel.a;
+
+                    if (p_singleChannelChannelId == 0) {
+                        textureData.rawRGBAData[i * 4 + 0] = texel.r;
+                        textureData.rawRGBAData[i * 4 + 1] = texel.g;
+                        textureData.rawRGBAData[i * 4 + 2] = texel.b;
+                        textureData.rawRGBAData[i * 4 + 3] = texel.a;
+                    } else if (p_singleChannelChannelId == 1) {
+                        textureData.rawRGBAData[i * 4 + 0] = texel.r;
+                        textureData.rawRGBAData[i * 4 + 1] = texel.r;
+                        textureData.rawRGBAData[i * 4 + 2] = texel.r;
+                        textureData.rawRGBAData[i * 4 + 3] = texel.r;
+                    } else if (p_singleChannelChannelId == 2) {
+                        textureData.rawRGBAData[i * 4 + 0] = texel.g;
+                        textureData.rawRGBAData[i * 4 + 1] = texel.g;
+                        textureData.rawRGBAData[i * 4 + 2] = texel.g;
+                        textureData.rawRGBAData[i * 4 + 3] = texel.g;
+                    } else if (p_singleChannelChannelId == 3) {
+                        textureData.rawRGBAData[i * 4 + 0] = texel.b;
+                        textureData.rawRGBAData[i * 4 + 1] = texel.b;
+                        textureData.rawRGBAData[i * 4 + 2] = texel.b;
+                        textureData.rawRGBAData[i * 4 + 3] = texel.b;
+                    } else if (p_singleChannelChannelId == 4) {
+                        textureData.rawRGBAData[i * 4 + 0] = texel.a;
+                        textureData.rawRGBAData[i * 4 + 1] = texel.a;
+                        textureData.rawRGBAData[i * 4 + 2] = texel.a;
+                        textureData.rawRGBAData[i * 4 + 3] = texel.a;
+                    }
 				}
 			}
 		}
@@ -300,6 +400,21 @@ namespace
 			textureData.sourceType = OvRendering::Resources::EmbeddedTextureData::ESourceType::EXTERNAL_FILE;
 			textureData.sourcePath = normalizedTexturePath;
 			textureData.extension = GetTextureExtensionFromPath(normalizedTexturePath);
+
+			// One channel of a file next to the model is kept in a copy of its own; the file itself stays shared
+			if (p_singleChannelChannelId != 0)
+			{
+				if (std::ifstream file{ sourceKey, std::ios::binary })
+				{
+					const std::vector<uint8_t> encoded{ std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
+
+					if (DecodeToRawRGBA8(encoded.data(), encoded.size(), textureData))
+					{
+						textureData.sourcePath.clear();
+						KeepChannel(textureData.rawRGBAData, p_singleChannelChannelId);
+					}
+				}
+			}
 		}
 
 		const auto newIndex = static_cast<uint32_t>(p_embeddedTextures.size());
@@ -315,13 +430,30 @@ namespace
 		aiTextureType type;
 	};
 
+    bool HasTexture(
+        aiMaterial& p_material,
+        std::span<const aiTextureType> p_textureTypes
+    )
+    {
+        for (const auto textureType : p_textureTypes)
+        {
+            if (p_material.GetTextureCount(textureType) > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
 	std::optional<TextureSearchResult> FindFirstTexture(
 		const aiScene& p_scene,
 		aiMaterial& p_material,
 		std::span<const aiTextureType> p_textureTypes,
 		const std::filesystem::path& p_modelDirectory,
 		std::unordered_map<std::string, uint32_t>& p_textureIndexByKey,
-		std::vector<OvRendering::Resources::EmbeddedTextureData>& p_embeddedTextures
+		std::vector<OvRendering::Resources::EmbeddedTextureData>& p_embeddedTextures,
+        uint32_t p_singleChannelChannelId = 0
 	)
 	{
 		aiString texturePath;
@@ -346,7 +478,8 @@ namespace
 					texturePath.C_Str(),
 					p_modelDirectory,
 					p_textureIndexByKey,
-					p_embeddedTextures
+					p_embeddedTextures,
+                    p_singleChannelChannelId
 				))
 				{
 					return TextureSearchResult{
@@ -366,7 +499,8 @@ namespace
 		std::span<const aiTextureType> p_textureTypes,
 		const std::filesystem::path& p_modelDirectory,
 		std::unordered_map<std::string, uint32_t>& p_textureIndexByKey,
-		std::vector<OvRendering::Resources::EmbeddedTextureData>& p_embeddedTextures
+		std::vector<OvRendering::Resources::EmbeddedTextureData>& p_embeddedTextures,
+        uint32_t p_singleChannelChannelId = 0
 	)
 	{
 		if (const auto foundTexture = FindFirstTexture(
@@ -375,7 +509,8 @@ namespace
 			p_textureTypes,
 			p_modelDirectory,
 			p_textureIndexByKey,
-			p_embeddedTextures
+			p_embeddedTextures,
+            p_singleChannelChannelId
 		))
 		{
 			return foundTexture->index;
@@ -463,23 +598,46 @@ namespace
 			);
 			embeddedMaterial.normalTexture = normalTexture ? std::optional<uint32_t>{ normalTexture->index } : std::nullopt;
 
-			embeddedMaterial.metallicTexture = FindFirstTextureIndex(
-				*p_scene,
-				*material,
-				std::span{ kMetallicTextureTypes },
-				p_modelDirectory,
-				textureIndexByKey,
-				p_embeddedTextures
-			);
 
-			embeddedMaterial.roughnessTexture = FindFirstTextureIndex(
-				*p_scene,
-				*material,
-				std::span{ kRoughnessTextureTypes },
-				p_modelDirectory,
-				textureIndexByKey,
-				p_embeddedTextures
-			);
+            if (HasTexture(*material, kMetallicRoughnessTextureTypes)) {
+                embeddedMaterial.metallicTexture = FindFirstTextureIndex(
+                    *p_scene,
+                    *material,
+                    std::span{ kMetallicRoughnessTextureTypes },
+                    p_modelDirectory,
+                    textureIndexByKey,
+                    p_embeddedTextures,
+                    3 // B = Metallic
+                );
+
+                embeddedMaterial.roughnessTexture = FindFirstTextureIndex(
+                    *p_scene,
+                    *material,
+                    std::span{ kMetallicRoughnessTextureTypes },
+                    p_modelDirectory,
+                    textureIndexByKey,
+                    p_embeddedTextures,
+                    2 // G = Roughness
+                );
+            } else {
+                embeddedMaterial.metallicTexture = FindFirstTextureIndex(
+                    *p_scene,
+                    *material,
+                    std::span{ kMetallicTextureTypes },
+                    p_modelDirectory,
+                    textureIndexByKey,
+                    p_embeddedTextures
+                );
+
+                embeddedMaterial.roughnessTexture = FindFirstTextureIndex(
+                    *p_scene,
+                    *material,
+                    std::span{ kRoughnessTextureTypes },
+                    p_modelDirectory,
+                    textureIndexByKey,
+                    p_embeddedTextures
+                );
+            }
 
 			embeddedMaterial.ambientOcclusionTexture = FindFirstTextureIndex(
 				*p_scene,
@@ -745,7 +903,8 @@ namespace
 		const aiMatrix4x4& p_transform,
 		aiMesh* p_mesh,
 		OvRendering::Animation::Skeleton* p_skeleton,
-		const std::unordered_map<const aiNode*, uint32_t>* p_nodeIndexByPointer
+		const std::unordered_map<const aiNode*, uint32_t>* p_nodeIndexByPointer,
+		std::optional<uint32_t> p_rigidBone = std::nullopt
 	)
 	{
 		std::vector<uint32_t> indices;
@@ -778,13 +937,31 @@ namespace
 			return nullptr;
 		}
 
+		// Directions take the node's rotation and scale, never its translation. Normals take its cofactors, the inverse
+		// transpose times the determinant: no division, so a node flattened or scaled down to nothing still gives them
+		const aiMatrix3x3 directionTransform(p_transform);
+		const aiMatrix3x3& m = directionTransform;
+		const float handedness = m.Determinant() < 0.0f ? -1.0f : 1.0f;
+		const aiMatrix3x3 normalTransform(
+			handedness * (m.b2 * m.c3 - m.b3 * m.c2), handedness * (m.b3 * m.c1 - m.b1 * m.c3), handedness * (m.b1 * m.c2 - m.b2 * m.c1),
+			handedness * (m.a3 * m.c2 - m.a2 * m.c3), handedness * (m.a1 * m.c3 - m.a3 * m.c1), handedness * (m.a2 * m.c1 - m.a1 * m.c2),
+			handedness * (m.a2 * m.b3 - m.a3 * m.b2), handedness * (m.a3 * m.b1 - m.a1 * m.b3), handedness * (m.a1 * m.b2 - m.a2 * m.b1)
+		);
+
 		auto fillGeometry = [&](OvRendering::Geometry::Vertex& v, uint32_t i)
 		{
 			const aiVector3D position = p_transform * p_mesh->mVertices[i];
 			const aiVector3D texCoords = p_mesh->mTextureCoords[0] ? p_mesh->mTextureCoords[0][i] : aiVector3D(0.0f, 0.0f, 0.0f);
-			const aiVector3D normal = p_transform * (p_mesh->mNormals ? p_mesh->mNormals[i] : aiVector3D(0.0f, 0.0f, 0.0f));
-			const aiVector3D tangent = p_transform * (p_mesh->mTangents ? p_mesh->mTangents[i] : aiVector3D(0.0f, 0.0f, 0.0f));
-			const aiVector3D bitangent = p_transform * (p_mesh->mBitangents ? p_mesh->mBitangents[i] : aiVector3D(0.0f, 0.0f, 0.0f));
+			const aiVector3D sourceNormal = p_mesh->mNormals ? p_mesh->mNormals[i] : aiVector3D(0.0f, 0.0f, 0.0f);
+			aiVector3D normal = (normalTransform * sourceNormal).NormalizeSafe();
+
+			if (const float length = normal.SquareLength(); !std::isfinite(length) || length == 0.0f)
+			{
+				normal = aiVector3D(sourceNormal).NormalizeSafe();
+			}
+
+			const aiVector3D tangent = (directionTransform * (p_mesh->mTangents ? p_mesh->mTangents[i] : aiVector3D(0.0f, 0.0f, 0.0f))).NormalizeSafe();
+			const aiVector3D bitangent = (directionTransform * (p_mesh->mBitangents ? p_mesh->mBitangents[i] : aiVector3D(0.0f, 0.0f, 0.0f))).NormalizeSafe();
 
 			v.position[0] = position.x;
 			v.position[1] = position.y;
@@ -805,6 +982,18 @@ namespace
 			v.bitangent[1] = -bitangent.y;
 			v.bitangent[2] = -bitangent.z;
 		};
+
+		if (p_rigidBone)
+		{
+			std::vector<OvRendering::Geometry::SkinnedVertex> vertices(p_mesh->mNumVertices);
+			for (uint32_t i = 0; i < p_mesh->mNumVertices; ++i)
+			{
+				fillGeometry(vertices[i], i);
+				AddBoneData(vertices[i], *p_rigidBone, 1.0f);
+			}
+
+			return new OvRendering::Resources::Mesh(std::span(vertices), std::span(indices), p_mesh->mMaterialIndex);
+		}
 
 		if (p_skeleton && p_mesh->HasBones())
 		{
@@ -908,22 +1097,92 @@ namespace
 		return new OvRendering::Resources::Mesh(std::span(vertices), std::span(indices), p_mesh->mMaterialIndex);
 	}
 
+	struct RigidMesh
+	{
+		size_t slot;
+		aiMesh* mesh;
+		const aiNode* node;
+		aiMatrix4x4 transform;
+	};
+
+	aiMatrix4x4 GetGlobalTransform(const aiNode* p_node)
+	{
+		aiMatrix4x4 transform = p_node->mTransformation;
+
+		for (const aiNode* parent = p_node->mParent; parent; parent = parent->mParent)
+		{
+			transform = parent->mTransformation * transform;
+		}
+
+		return transform;
+	}
+
+	/**
+	* A mesh without weights in a skinned model, such as a helmet parented to the head, is bound whole to the
+	* nearest bone above it. It joins no new bone, so the animation sources stay compatible, and it is baked so
+	* that this bone at rest puts it exactly where it stood. Without such a bone it stays static.
+	*/
+	OvRendering::Resources::Mesh* ProcessRigidMesh(
+		const RigidMesh& p_rigid,
+		const OvRendering::Animation::Skeleton& p_skeleton,
+		const std::unordered_map<const aiNode*, uint32_t>& p_nodeIndexByPointer
+	)
+	{
+		for (const aiNode* node = p_rigid.node; node; node = node->mParent)
+		{
+			const auto found = p_nodeIndexByPointer.find(node);
+			if (found == p_nodeIndexByPointer.end())
+			{
+				continue;
+			}
+
+			const int32_t boneIndex = p_skeleton.nodes[found->second].boneIndex;
+			if (boneIndex < 0 || static_cast<size_t>(boneIndex) >= p_skeleton.bones.size())
+			{
+				continue;
+			}
+
+			aiMatrix4x4 bake = GetGlobalTransform(node) * ToAiMatrix4x4(p_skeleton.bones[boneIndex].offsetMatrix);
+			if (std::abs(bake.Determinant()) <= std::numeric_limits<float>::epsilon())
+			{
+				break;
+			}
+
+			bake.Inverse();
+
+			return ProcessMesh(bake * p_rigid.transform, p_rigid.mesh, nullptr, nullptr, static_cast<uint32_t>(boneIndex));
+		}
+
+		return ProcessMesh(p_rigid.transform, p_rigid.mesh, nullptr, nullptr);
+	}
+
 	void ProcessNode(
 		const aiMatrix4x4& p_transform,
 		aiNode* p_node,
 		const aiScene* p_scene,
 		std::vector<OvRendering::Resources::Mesh*>& p_meshes,
 		OvRendering::Animation::Skeleton* p_skeleton,
-		const std::unordered_map<const aiNode*, uint32_t>* p_nodeIndexByPointer
+		const std::unordered_map<const aiNode*, uint32_t>* p_nodeIndexByPointer,
+		std::vector<RigidMesh>* p_rigidMeshes
 	)
 	{
 		const aiMatrix4x4 nodeTransform = p_transform * p_node->mTransformation;
 
 		for (uint32_t i = 0; i < p_node->mNumMeshes; ++i)
 		{
+			aiMesh* mesh = p_scene->mMeshes[p_node->mMeshes[i]];
+
+			// Bound once every bone of the skinned meshes exists; its slot keeps the order of the meshes
+			if (p_skeleton && p_rigidMeshes && !mesh->HasBones())
+			{
+				p_rigidMeshes->push_back({ p_meshes.size(), mesh, p_node, nodeTransform });
+				p_meshes.push_back(nullptr);
+				continue;
+			}
+
 			if (OvRendering::Resources::Mesh* result = ProcessMesh(
 				nodeTransform,
-				p_scene->mMeshes[p_node->mMeshes[i]],
+				mesh,
 				p_skeleton,
 				p_nodeIndexByPointer
 			))
@@ -940,7 +1199,8 @@ namespace
 				p_scene,
 				p_meshes,
 				p_skeleton,
-				p_nodeIndexByPointer
+				p_nodeIndexByPointer,
+				p_rigidMeshes
 			);
 		}
 	}
@@ -1008,14 +1268,24 @@ bool OvRendering::Resources::Parsers::AssimpParser::LoadModel(
 		AddSkeletonNodeRecursive(p_skeleton.value(), scene->mRootNode, -1, &nodeIndexByPointer);
 	}
 
+	std::vector<RigidMesh> rigidMeshes;
+
 	ProcessNode(
 		aiMatrix4x4{},
 		scene->mRootNode,
 		scene,
 		p_meshes,
 		p_skeleton ? &p_skeleton.value() : nullptr,
-		p_skeleton ? &nodeIndexByPointer : nullptr
+		p_skeleton ? &nodeIndexByPointer : nullptr,
+		&rigidMeshes
 	);
+
+	for (const auto& rigid : rigidMeshes)
+	{
+		p_meshes[rigid.slot] = ProcessRigidMesh(rigid, p_skeleton.value(), nodeIndexByPointer);
+	}
+
+	std::erase(p_meshes, nullptr);
 
 	if (hasAnimations && p_skeleton.has_value())
 	{

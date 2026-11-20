@@ -10,6 +10,7 @@
 #include <OvCore/Scripting/ScriptEngine.h>
 #include <OvDebug/Assertion.h>
 #include <OvEditor/Core/Context.h>
+#include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Utils/FileSystem.h>
 #include <OvEditor/Utils/ProjectManagement.h>
 #include <OvEditor/Settings/EditorSettings.h>
@@ -66,6 +67,42 @@ std::array<int, 4> FindBestFitWindowSizeAndPosition(std::array<int, 4> p_workAre
 	return {};
 }
 
+namespace
+{
+	/**
+	* Returns the most optimized build type for which a game builder is available.
+	* Debug builds are unoptimized and run with synchronous OpenGL debug output, so they should
+	* only be the default when no other builder is available.
+	*/
+	OvEditor::Core::EBuildType FindDefaultBuildType()
+	{
+		using enum OvEditor::Core::EBuildType;
+
+		const std::string executableName =
+#if defined(_WIN32)
+			"OvGame.exe";
+#else
+			"OvGame";
+#endif
+
+		for (const auto buildType : { Publish, Release, Debug })
+		{
+			const auto builderExecutable =
+				std::filesystem::current_path() /
+				"Builder" /
+				OvEditor::Core::GetBuildTypeName(buildType) /
+				executableName;
+
+			if (std::filesystem::exists(builderExecutable))
+			{
+				return buildType;
+			}
+		}
+
+		return Release;
+	}
+}
+
 OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	projectFolder(p_projectFolder),
 	projectFile(Utils::ProjectManagement::GetProjectFile(p_projectFolder)),
@@ -85,10 +122,16 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	TextureManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	ShaderManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	MaterialManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
+	FontManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	SoundManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 
 	materialManager.ProvideStandardShaderDefinition({
 		.shaderPath = ":Shaders/Standard.ovfx"
+	});
+	uiResourceRegistry.ProvideDefinition({
+		.imageMaterialPath = ":Materials/Image.ovmat",
+		.textMaterialPath = ":Materials/Text.ovmat",
+		.defaultFontPath = ":Fonts/Roboto-Regular.ttf"
 	});
 
 	/* Settings */
@@ -113,8 +156,14 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	device->SetVsync(true);
 
 	/* Graphics context creation */
-	driver = std::make_unique<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{ true });
-	textureRegistry = std::make_unique<OvEditor::Utils::TextureRegistry>();
+	// The OpenGL debug output is synchronous, which serializes every GL call. Only enable it in debug builds.
+	driver = std::make_unique<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{
+#ifdef _DEBUG
+		true
+#else
+		false
+#endif
+	});
 
 	std::filesystem::create_directories(Utils::FileSystem::kEditorDataPath);
 
@@ -154,6 +203,11 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 		engineAssetsPath
 	);
 
+	// Play mode keeps its saves where the built game will: they are the same game's
+	saveStorage = std::make_unique<OvTools::Filesystem::SaveStorage>(
+		OvTools::Filesystem::SaveStorage::GetDefaultRoot(projectSettings.GetOrDefault<std::string>("executable_name", "Game"))
+	);
+
 	// Ensures lua project files are up-to-date. This is necessary for Lua's LSP to function properly.
 	// If Overload's installation directory changes, references to engine symbols would be lost,
 	// hence this invocation.
@@ -168,13 +222,16 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	ServiceLocator::Provide<TextureManager>(textureManager);
 	ServiceLocator::Provide<ShaderManager>(shaderManager);
 	ServiceLocator::Provide<MaterialManager>(materialManager);
+	ServiceLocator::Provide<FontManager>(fontManager);
 	ServiceLocator::Provide<SoundManager>(soundManager);
+	ServiceLocator::Provide<UIResourceRegistry>(uiResourceRegistry);
 	ServiceLocator::Provide<OvWindowing::Inputs::InputManager>(*inputManager);
 	ServiceLocator::Provide<OvWindowing::Window>(*window);
 	ServiceLocator::Provide<OvCore::SceneSystem::SceneManager>(sceneManager);
 	ServiceLocator::Provide<OvAudio::Core::AudioEngine>(*audioEngine);
 	ServiceLocator::Provide<OvCore::Scripting::ScriptEngine>(*scriptEngine);
-	ServiceLocator::Provide<OvEditor::Utils::TextureRegistry>(*textureRegistry);
+	ServiceLocator::Provide<OvTools::Filesystem::SaveStorage>(*saveStorage);
+	ServiceLocator::Provide<OvTools::Time::Clock>(clock);
 
 	ApplyProjectSettings();
 }
@@ -185,6 +242,7 @@ OvEditor::Core::Context::~Context()
 	textureManager.UnloadResources();
 	shaderManager.UnloadResources();
 	materialManager.UnloadResources();
+	fontManager.UnloadResources();
 	soundManager.UnloadResources();
 }
 
@@ -195,12 +253,13 @@ void OvEditor::Core::Context::ResetProjectSettings()
 	projectSettings.Add<int>("x_resolution", 1280);
 	projectSettings.Add<int>("y_resolution", 720);
 	projectSettings.Add<bool>("fullscreen", false);
+	projectSettings.Add<bool>("resizable", false);
 	projectSettings.Add<std::string>("executable_name", "Game");
 	projectSettings.Add<std::string>("start_scene", "");
 	projectSettings.Add<bool>("vsync", true);
 	projectSettings.Add<bool>("multisampling", false);
 	projectSettings.Add<int>("samples", 4);
-	projectSettings.Add<int>("build_type", 0);
+	projectSettings.Add<int>("build_type", static_cast<int>(FindDefaultBuildType()));
 	projectSettings.Add<std::string>("window_icon", "");
 }
 
@@ -211,6 +270,7 @@ bool OvEditor::Core::Context::IsProjectSettingsIntegrityVerified()
 		projectSettings.IsKeyExisting("x_resolution") &&
 		projectSettings.IsKeyExisting("y_resolution") &&
 		projectSettings.IsKeyExisting("fullscreen") &&
+		projectSettings.IsKeyExisting("resizable") &&
 		projectSettings.IsKeyExisting("executable_name") &&
 		projectSettings.IsKeyExisting("start_scene") &&
 		projectSettings.IsKeyExisting("vsync") &&

@@ -7,7 +7,7 @@
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Rendering/PostProcess/TonemappingEffect.h>
 #include <OvCore/ResourceManagement/ShaderManager.h>
-#include <OvRendering/HAL/Profiling.h>
+#include <OvRendering/Utils/Profiling.h>
 
 OvCore::Rendering::PostProcess::TonemappingEffect::TonemappingEffect(OvRendering::Core::CompositeRenderer& p_renderer) : AEffect(p_renderer)
 {
@@ -16,8 +16,8 @@ OvCore::Rendering::PostProcess::TonemappingEffect::TonemappingEffect(OvRendering
 
 void OvCore::Rendering::PostProcess::TonemappingEffect::Draw(
 	OvRendering::Data::PipelineState p_pso,
-	OvRendering::HAL::Framebuffer& p_src,
-	OvRendering::HAL::Framebuffer& p_dst,
+	baregl::Framebuffer& p_src,
+	baregl::Framebuffer& p_dst,
 	const EffectSettings& p_settings
 )
 {
@@ -30,5 +30,13 @@ void OvCore::Rendering::PostProcess::TonemappingEffect::Draw(
 	m_tonemappingMaterial.SetProperty("_Exposure", tonemappingSettings.exposure, true);
 	m_tonemappingMaterial.SetProperty("_Mode", static_cast<int>(tonemappingSettings.mode), true);
 	m_tonemappingMaterial.SetProperty("_GammaCorrection", static_cast<int>(tonemappingSettings.gammaCorrection), true);
+
+	// Colour grading and vignette
+	m_tonemappingMaterial.SetProperty("_Temperature", tonemappingSettings.temperature, true);
+	m_tonemappingMaterial.SetProperty("_Tint", tonemappingSettings.tint, true);
+	m_tonemappingMaterial.SetProperty("_Saturation", tonemappingSettings.saturation, true);
+	m_tonemappingMaterial.SetProperty("_Contrast", tonemappingSettings.contrast, true);
+	m_tonemappingMaterial.SetProperty("_VignetteIntensity", tonemappingSettings.vignetteIntensity, true);
+	m_tonemappingMaterial.SetProperty("_VignetteSmoothness", tonemappingSettings.vignetteSmoothness, true);
 	m_renderer.Blit(p_pso, p_src, p_dst, m_tonemappingMaterial);
 }

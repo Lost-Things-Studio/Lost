@@ -57,15 +57,26 @@ OvGame::Core::Context::Context() :
 	TextureManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	ShaderManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	MaterialManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
+	FontManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	SoundManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 
 	materialManager.ProvideStandardShaderDefinition({
 		.shaderPath = ":Shaders/Standard.ovfx"
 	});
+	uiResourceRegistry.ProvideDefinition({
+		.imageMaterialPath = ":Materials/Image.ovmat",
+		.textMaterialPath = ":Materials/Text.ovmat",
+		.defaultFontPath = ":Fonts/Roboto-Regular.ttf"
+	});
 
 	/* Settings */
+	// Only request a multisampled default framebuffer when multisampling is enabled.
+	// Otherwise the "samples" setting (4 by default) would allocate an unused MSAA back buffer.
+	const bool multisampling = projectSettings.GetOrDefault<bool>("multisampling", false);
+	const int samples = multisampling ? projectSettings.GetOrDefault<int>("samples", 0) : 0;
+
 	OvWindowing::Settings::DeviceSettings deviceSettings;
-	projectSettings.TryGet("samples", deviceSettings.samples);
+	deviceSettings.samples = static_cast<uint8_t>(samples);
 
 	OvWindowing::Settings::WindowSettings windowSettings;
 	projectSettings.TryGet("executable_name", windowSettings.title);
@@ -73,9 +84,9 @@ OvGame::Core::Context::Context() :
 	projectSettings.TryGet("x_resolution", targetWindowResolution[0]);
 	projectSettings.TryGet("y_resolution", targetWindowResolution[1]);
 	windowSettings.maximized = false;
-	windowSettings.resizable = false;
+	projectSettings.TryGet("resizable", windowSettings.resizable);
 	projectSettings.TryGet("fullscreen", windowSettings.fullscreen);
-	projectSettings.TryGet("samples", windowSettings.samples);
+	windowSettings.samples = static_cast<uint32_t>(samples);
 
 	/* Window creation */
 	device = std::make_unique<OvWindowing::Context::Device>(deviceSettings);
@@ -119,7 +130,7 @@ OvGame::Core::Context::Context() :
 	device->SetVsync(projectSettings.GetOrDefault<bool>("vsync", true));
 
 	OvRendering::Data::PipelineState basePSO;
-	basePSO.multisample = projectSettings.GetOrDefault<bool>("multisampling", false);
+	basePSO.multisample = multisampling;
 
 	/* Graphics context creation */
 	driver = std::make_unique<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{
@@ -155,20 +166,28 @@ OvGame::Core::Context::Context() :
 		engineAssetsPath
 	);
 
+	saveStorage = std::make_unique<OvTools::Filesystem::SaveStorage>(
+		OvTools::Filesystem::SaveStorage::GetDefaultRoot(projectSettings.GetOrDefault<std::string>("executable_name", "Game"))
+	);
+
 	/* Service Locator providing */
 	ServiceLocator::Provide<OvPhysics::Core::PhysicsEngine>(*physicsEngine);
 	ServiceLocator::Provide<ModelManager>(modelManager);
 	ServiceLocator::Provide<TextureManager>(textureManager);
 	ServiceLocator::Provide<ShaderManager>(shaderManager);
 	ServiceLocator::Provide<MaterialManager>(materialManager);
+	ServiceLocator::Provide<FontManager>(fontManager);
 	ServiceLocator::Provide<SoundManager>(soundManager);
+	ServiceLocator::Provide<UIResourceRegistry>(uiResourceRegistry);
 	ServiceLocator::Provide<OvWindowing::Inputs::InputManager>(*inputManager);
 	ServiceLocator::Provide<OvWindowing::Window>(*window);
 	ServiceLocator::Provide<OvCore::SceneSystem::SceneManager>(sceneManager);
 	ServiceLocator::Provide<OvAudio::Core::AudioEngine>(*audioEngine);
 	ServiceLocator::Provide<OvCore::Scripting::ScriptEngine>(*scriptEngine);
+	ServiceLocator::Provide<OvTools::Filesystem::SaveStorage>(*saveStorage);
+	ServiceLocator::Provide<OvTools::Time::Clock>(clock);
 
-	framebuffer = std::make_unique<OvRendering::HAL::Framebuffer>("Main");
+	framebuffer = std::make_unique<baregl::Framebuffer>("Main");
 
 	OvCore::Rendering::FramebufferUtil::SetupFramebuffer(
 		*framebuffer,
@@ -176,6 +195,12 @@ OvGame::Core::Context::Context() :
 		windowSettings.height,
 		true, false, false
 	);
+
+	// A minimized window reports 0x0: the framebuffer keeps its last size until it is restored
+	window->FramebufferResizeEvent.AddListener([this](unsigned short width, unsigned short height) {
+		if (width > 0 && height > 0)
+			framebuffer->Resize(width, height);
+	});
 }
 
 OvGame::Core::Context::~Context()
@@ -184,5 +209,6 @@ OvGame::Core::Context::~Context()
 	textureManager.UnloadResources();
 	shaderManager.UnloadResources();
 	materialManager.UnloadResources();
+	fontManager.UnloadResources();
 	soundManager.UnloadResources();
 }

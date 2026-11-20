@@ -94,36 +94,42 @@ void RenderCurrentScene(
 
 void OvGame::Core::Game::Update(float p_deltaTime)
 {
+	// A minimized window has nothing to draw into (0x0 on Windows): the game goes on, unseen
+	const auto [windowWidth, windowHeight] = m_context.window->GetSize();
+	const bool drawable = !m_context.window->IsMinimized() && windowWidth > 0 && windowHeight > 0;
+
 	if (auto currentScene = m_context.sceneManager.GetCurrentScene())
 	{
 		{
-			#ifdef _DEBUG
 			ZoneScopedN("Physics Update");
-			#endif
 
 			if (m_context.physicsEngine->Update(p_deltaTime))
 				currentScene->FixedUpdate(p_deltaTime);
 		}
 
 		{
-			#ifdef _DEBUG
 			ZoneScopedN("Scene Update");
-			#endif
 			currentScene->Update(p_deltaTime);
 			currentScene->LateUpdate(p_deltaTime);
 		}
 
 		{
-			#ifdef _DEBUG
 			ZoneScopedN("Audio Update");
-			#endif
 			m_context.audioEngine->Update();
 		}
 
-		RenderCurrentScene(m_sceneRenderer, m_context);
+		if (drawable)
+		{
+			RenderCurrentScene(m_sceneRenderer, m_context);
+			m_context.framebuffer->BlitToBackBuffer(windowWidth, windowHeight);
+		}
 
-		auto [windowWidth, windowHeight] = m_context.window->GetSize();
-		m_context.framebuffer->BlitToBackBuffer(windowWidth, windowHeight);
+		{
+			// The actors destroyed this frame freed, as the editor does each frame: a game that builds and drops actors
+			// as the player goes (a world streamed in tiles) would otherwise keep every one of them, drawn
+			ZoneScopedN("Scene garbage collection");
+			currentScene->CollectGarbages();
+		}
 	}
 
 	m_context.sceneManager.Update();
@@ -138,8 +144,11 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 		auto& frameInfoRenderFeature = m_sceneRenderer.GetFeature<OvRendering::Features::FrameInfoRenderFeature>();
 		auto& frameInfo = frameInfoRenderFeature.GetFrameInfo();
 		m_frameInfo.Update(frameInfo);
+        m_driverInfo.Update();
 		#endif
-		m_context.uiManager->Render();
+
+		if (drawable)
+			m_context.uiManager->Render();
 	}
 }
 
@@ -150,4 +159,5 @@ void OvGame::Core::Game::PostUpdate()
 	m_context.window->SwapBuffers();
 	m_context.inputManager->ClearEvents();
 	m_context.driver->OnFrameCompleted();
+	m_context.driver->OnFramePresented();
 }

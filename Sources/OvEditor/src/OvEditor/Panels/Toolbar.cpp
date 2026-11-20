@@ -71,9 +71,9 @@ OvEditor::Panels::Toolbar::Toolbar
 	m_stopButton = &CreateWidget<ButtonImage>(editorResources->GetTexture("Stop")->GetTexture().GetID(), iconSize);
 	m_nextButton = &CreateWidget<ButtonImage>(editorResources->GetTexture("Next")->GetTexture().GetID(), iconSize);
 
-	m_playButton->tooltip = "Play (or resume) the game";
+	m_playButton->tooltip = "Play (or resume) the game [F5]";
 	m_pauseButton->tooltip = "Pause the game";
-	m_stopButton->tooltip = "Stop the game";
+	m_stopButton->tooltip = "Stop the game [F5 while playing]";
 	m_nextButton->tooltip = "Step to the next frame";
 
 	CreateWidget<Layout::Spacing>(0).lineBreak = false;
@@ -91,6 +91,19 @@ OvEditor::Panels::Toolbar::Toolbar
 	m_stopButton->ClickedEvent += EDITOR_BIND(StopPlaying);
 	m_nextButton->ClickedEvent += EDITOR_BIND(NextFrame);
 	refreshButton.ClickedEvent += EDITOR_BIND(RefreshScripts);
+
+	CreateWidget<Layout::Spacing>(0).lineBreak = false;
+	m_sceneUIButton = &CreateWidget<ButtonImage>(editorResources->GetTexture("Font")->GetTexture().GetID(), iconSize);
+	m_sceneUIButton->lineBreak = false;
+	m_sceneUIButton->tooltip = "Toggle Scene View UI screen-space mode";
+	m_sceneUIButton->ClickedEvent += []() { EDITOR_EXEC(ToggleSceneUIRendering()); };
+
+	auto updateSceneUIRendering = [this](bool p_enabled) {
+		m_sceneUIButton->tint = GetButtonTint(p_enabled);
+	};
+
+	updateSceneUIRendering(EDITOR_EXEC(IsSceneUIRenderingEnabled()));
+	EDITOR_EVENT(SceneUIRenderingChangedEvent) += updateSceneUIRendering;
 
 	EDITOR_EVENT(EditorModeChangedEvent) += [this](Core::EditorActions::EEditorMode p_mode) {
 		using enum Core::EditorActions::EEditorMode;

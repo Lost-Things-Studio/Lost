@@ -4,84 +4,140 @@
 * @licence: MIT
 */
 
+#include <cstring>
+
 #include <tracy/Tracy.hpp>
 
+#include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Rendering/EngineBufferRenderFeature.h>
 #include <OvCore/Rendering/EngineDrawableDescriptor.h>
+#include <OvCore/Rendering/InstancingDrawableDescriptor.h>
 #include <OvRendering/Core/CompositeRenderer.h>
+#include <OvTools/Time/Clock.h>
 
 namespace
 {
-	constexpr size_t kUBOSize =
-		sizeof(OvMaths::FMatrix4) +	// Model matrix
-		sizeof(OvMaths::FMatrix4) +	// View matrix
-		sizeof(OvMaths::FMatrix4) +	// Projection matrix
-		sizeof(OvMaths::FVector3) +	// Camera position
-		sizeof(float) +				// Elapsed time
-		sizeof(OvMaths::FMatrix4);	// User matrix
+	constexpr uint32_t kEngineUBOBindingPoint = 0;
+
+	/**
+	* Returns the matrix to upload so that GLSL reads a normal matrix for the given model matrix.
+	* The normal matrix only matters up to a positive scale (normals are normalized), so the adjugate
+	* of the upper 3x3 (det * inverse) is used: unlike an actual inverse, it needs no division and
+	* stays accurate for tiny or huge scales. It is signed by the determinant to keep normals
+	* oriented for mirrored transforms. Matrices are uploaded transposed (row-major to column-major),
+	* so uploading adjugate(M) makes GLSL read transpose(adjugate(M)) ~ transpose(inverse(M)).
+	*/
+	OvMaths::FMatrix4 CalculateNormalMatrix(const OvMaths::FMatrix4& p_modelMatrix)
+	{
+		const float* m = p_modelMatrix.data;
+
+		// Cofactors of the upper 3x3
+		const float c00 = m[5] * m[10] - m[6] * m[9];
+		const float c01 = m[6] * m[8] - m[4] * m[10];
+		const float c02 = m[4] * m[9] - m[5] * m[8];
+		const float c10 = m[2] * m[9] - m[1] * m[10];
+		const float c11 = m[0] * m[10] - m[2] * m[8];
+		const float c12 = m[1] * m[8] - m[0] * m[9];
+		const float c20 = m[1] * m[6] - m[2] * m[5];
+		const float c21 = m[2] * m[4] - m[0] * m[6];
+		const float c22 = m[0] * m[5] - m[1] * m[4];
+
+		const float determinant = m[0] * c00 + m[1] * c01 + m[2] * c02;
+		const float sign = determinant < 0.0f ? -1.0f : 1.0f;
+
+		// Adjugate = transposed cofactor matrix
+		OvMaths::FMatrix4 result = OvMaths::FMatrix4::Identity;
+		result.data[0] = sign * c00; result.data[1] = sign * c10; result.data[2] = sign * c20;
+		result.data[4] = sign * c01; result.data[5] = sign * c11; result.data[6] = sign * c21;
+		result.data[8] = sign * c02; result.data[9] = sign * c12; result.data[10] = sign * c22;
+		return result;
+	}
 }
 
 OvCore::Rendering::EngineBufferRenderFeature::EngineBufferRenderFeature(
 	OvRendering::Core::CompositeRenderer& p_renderer,
 	OvRendering::Features::EFeatureExecutionPolicy p_executionPolicy
 ) : 
-	ARenderFeature(p_renderer, p_executionPolicy)
+	ARenderFeature(p_renderer, p_executionPolicy),
+	m_instancesBuffer(64 * 1024) // Grows on demand
 {
-	m_engineBuffer = std::make_unique<OvRendering::HAL::UniformBuffer>();
-	m_engineBuffer->Allocate(kUBOSize, OvRendering::Settings::EAccessSpecifier::STREAM_DRAW);
+	static_assert(sizeof(EngineUBO) == 448, "EngineUBO must match the std140 layout of EngineUBO.ovfxh");
+	static_assert(sizeof(InstanceData) == 192, "InstanceData must match the std430 layout of InstancesSSBO.ovfxh");
 	m_startTime = std::chrono::high_resolution_clock::now();
 }
 
 void OvCore::Rendering::EngineBufferRenderFeature::SetCamera(const OvRendering::Entities::Camera& p_camera)
 {
-	struct
-	{
-		OvMaths::FMatrix4 viewMatrix;
-		OvMaths::FMatrix4 projectionMatrix;
-		OvMaths::FVector3 cameraPosition;
-	} uboDataPage{
-		.viewMatrix = OvMaths::FMatrix4::Transpose(p_camera.GetViewMatrix()),
-		.projectionMatrix = OvMaths::FMatrix4::Transpose(p_camera.GetProjectionMatrix()),
-		.cameraPosition = p_camera.GetPosition()
+	m_frameCamera = {
+		.view = p_camera.GetViewMatrix(),
+		.projection = p_camera.GetProjectionMatrix(),
+		.position = p_camera.GetPosition()
 	};
 
-	m_engineBuffer->Upload(&uboDataPage, OvRendering::HAL::BufferMemoryRange{
-		.offset = sizeof(OvMaths::FMatrix4), // Skip uploading the first matrix (Model matrix)
-		.size = sizeof(uboDataPage)
-	});
+	ApplyCamera(m_frameCamera);
+	m_cameraOverrideActive = false;
+	ApplyFogState();
+}
+
+void OvCore::Rendering::EngineBufferRenderFeature::ApplyCamera(const CameraData& p_camera)
+{
+	m_data.view = OvMaths::FMatrix4::Transpose(p_camera.view);
+	m_data.projection = OvMaths::FMatrix4::Transpose(p_camera.projection);
+	m_data.viewProjection = OvMaths::FMatrix4::Transpose(p_camera.projection * p_camera.view);
+	m_data.viewPos = p_camera.position;
+	m_dirty = true;
+}
+
+void OvCore::Rendering::EngineBufferRenderFeature::SetDepthOnly(bool p_depthOnly)
+{
+	m_data.depthOnly = p_depthOnly ? 1 : 0;
+	m_dirty = true;
+}
+
+void OvCore::Rendering::EngineBufferRenderFeature::SetFog(const FogSettings& p_settings)
+{
+	m_fogEnabled = p_settings.enabled;
+	m_data.fogStart = p_settings.start;
+	m_data.fogDensity = p_settings.density;
+	m_data.fogMax = p_settings.maxOpacity;
+	m_data.fogColor = {
+		p_settings.color.x * p_settings.intensity,
+		p_settings.color.y * p_settings.intensity,
+		p_settings.color.z * p_settings.intensity,
+		0.0f
+	};
+	ApplyFogState();
+}
+
+void OvCore::Rendering::EngineBufferRenderFeature::ApplyFogState()
+{
+	m_data.fogColor.w = m_fogEnabled && !m_cameraOverrideActive ? 1.0f : 0.0f;
+	m_dirty = true;
 }
 
 void OvCore::Rendering::EngineBufferRenderFeature::OnBeginFrame(const OvRendering::Data::FrameDescriptor& p_frameDescriptor)
 {
 	OVASSERT(p_frameDescriptor.camera.has_value(), "Camera is not set in the frame descriptor");
 
+	m_engineBuffer.BeginFrame();
+	m_instancesBuffer.BeginFrame();
+
 	auto currentTime = std::chrono::high_resolution_clock::now();
 	auto elapsedTime = std::chrono::duration_cast<std::chrono::duration<float>>(currentTime - m_startTime);
 
-	struct
-	{
-		OvMaths::FMatrix4 viewMatrix;
-		OvMaths::FMatrix4 projectionMatrix;
-		OvMaths::FVector3 cameraPosition;
-		float elapsedTime;
-	} uboDataPage{
-		.viewMatrix = OvMaths::FMatrix4::Transpose(p_frameDescriptor.camera->GetViewMatrix()),
-		.projectionMatrix = OvMaths::FMatrix4::Transpose(p_frameDescriptor.camera->GetProjectionMatrix()),
-		.cameraPosition = p_frameDescriptor.camera->GetPosition(),
-		.elapsedTime = elapsedTime.count()
-	};
+	SetCamera(p_frameDescriptor.camera.value());
+	m_data.time = elapsedTime.count();
 
-	m_engineBuffer->Upload(&uboDataPage, OvRendering::HAL::BufferMemoryRange{
-		.offset = sizeof(OvMaths::FMatrix4), // Skip uploading the first matrix (Model matrix)
-		.size = sizeof(uboDataPage)
-	});
-
-	m_engineBuffer->Bind(0);
+	// The same clock as the scripts (Time.GetGameTime): a script can stamp a start time once and leave the rest to
+	// a shader, which then slows down and stops with the game
+	m_data.gameTime = OVSERVICE(OvTools::Time::Clock).GetTimeSinceStart();
 }
 
 void OvCore::Rendering::EngineBufferRenderFeature::OnEndFrame()
 {
-	m_engineBuffer->Unbind();
+	m_cameraOverrideActive = false;
+	m_engineBuffer.EndFrame();
+	m_instancesBuffer.EndFrame();
 }
 
 void OvCore::Rendering::EngineBufferRenderFeature::OnBeforeDraw(OvRendering::Data::PipelineState& p_pso, const OvRendering::Entities::Drawable& p_drawable)
@@ -89,21 +145,83 @@ void OvCore::Rendering::EngineBufferRenderFeature::OnBeforeDraw(OvRendering::Dat
 	ZoneScoped;
 
 	OvTools::Utils::OptRef<const EngineDrawableDescriptor> descriptor;
+	const bool hasDescriptor = p_drawable.TryGetDescriptor<EngineDrawableDescriptor>(descriptor);
 
-	if (p_drawable.TryGetDescriptor<EngineDrawableDescriptor>(descriptor))
+	// Some drawables (e.g. screen space UI) are drawn with their own camera matrices,
+	// the camera of the frame is restored for the next drawables.
+	if (hasDescriptor && (descriptor->viewMatrixOverride || descriptor->projectionMatrixOverride))
+	{
+		ApplyCamera({
+			.view = descriptor->viewMatrixOverride.value_or(m_frameCamera.view),
+			.projection = descriptor->projectionMatrixOverride.value_or(m_frameCamera.projection),
+			.position = descriptor->viewMatrixOverride ? OvMaths::FVector3::Zero : m_frameCamera.position
+		});
+		m_cameraOverrideActive = true;
+		ApplyFogState();
+	}
+	else if (m_cameraOverrideActive)
+	{
+		ApplyCamera(m_frameCamera);
+		m_cameraOverrideActive = false;
+		ApplyFogState();
+	}
+
+	if (hasDescriptor)
 	{
 		const auto modelMatrix = OvMaths::FMatrix4::Transpose(descriptor->modelMatrix);
-		
-		// Upload model matrix (First matrix in the UBO)
-		m_engineBuffer->Upload(&modelMatrix, OvRendering::HAL::BufferMemoryRange{
-			.offset = 0,
-			.size = sizeof(modelMatrix)
-		});
 
-		// Upload user matrix (Last matrix in the UBO)
-		m_engineBuffer->Upload(&descriptor->userMatrix, OvRendering::HAL::BufferMemoryRange{
-			.offset = kUBOSize - sizeof(modelMatrix),
-			.size = sizeof(modelMatrix)
-		});
+		// Consecutive draws often share the same matrices (e.g. meshes of the same model):
+		// in that case, the currently bound data can be reused as is.
+		if (m_dirty ||
+			std::memcmp(&modelMatrix, &m_data.model, sizeof(modelMatrix)) != 0 ||
+			std::memcmp(&descriptor->userMatrix, &m_data.userMatrix, sizeof(m_data.userMatrix)) != 0)
+		{
+			m_data.model = modelMatrix;
+			m_data.normalMatrix = CalculateNormalMatrix(descriptor->modelMatrix);
+			m_data.userMatrix = descriptor->userMatrix;
+			m_dirty = true;
+		}
+	}
+
+	// An instanced draw reads the matrices of its instances from the instances buffer, which ubo_InstanceCount tells
+	OvTools::Utils::OptRef<const InstancingDrawableDescriptor> instancing;
+	const int32_t instanceCount =
+		p_drawable.TryGetDescriptor<InstancingDrawableDescriptor>(instancing) && instancing->instances ?
+		static_cast<int32_t>(instancing->count) :
+		0;
+
+	if (instanceCount > 0)
+	{
+		ZoneScopedN("Instances Upload");
+
+		m_instances.resize(instancing->count);
+
+		for (uint32_t index = 0; index < instancing->count; ++index)
+		{
+			const auto& instance = *instancing->instances[index];
+
+			m_instances[index] = {
+				.model = OvMaths::FMatrix4::Transpose(instance.modelMatrix),
+				.normalMatrix = CalculateNormalMatrix(instance.modelMatrix),
+				.userMatrix = instance.userMatrix
+			};
+		}
+
+		const auto range = m_instancesBuffer.Push(m_instances.data(), m_instances.size() * sizeof(InstanceData));
+		m_instancesBuffer.GetBuffer().Bind(baregl::types::EBufferType::SHADER_STORAGE, kInstancesBufferBindingPoint, range);
+	}
+
+	if (m_data.instanceCount != instanceCount)
+	{
+		m_data.instanceCount = instanceCount;
+		m_dirty = true;
+	}
+
+	// Drawables without descriptor keep the previous model/user matrices (only the camera data may have changed)
+	if (m_dirty)
+	{
+		const auto range = m_engineBuffer.Push(&m_data, sizeof(m_data));
+		m_engineBuffer.GetBuffer().Bind(baregl::types::EBufferType::UNIFORM, kEngineUBOBindingPoint, range);
+		m_dirty = false;
 	}
 }

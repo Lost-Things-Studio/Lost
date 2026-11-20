@@ -9,10 +9,12 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <OvCore/API/ISerializable.h>
 #include <OvCore/ECS/Actor.h>
+#include <OvCore/ECS/Components/CBoneAttachment.h>
 #include <OvCore/ECS/Components/CCamera.h>
 #include <OvCore/ECS/Components/CLight.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
@@ -39,6 +41,7 @@ namespace OvCore::SceneSystem
 			std::vector<ECS::Components::CLight*> lights;
 			std::vector<ECS::Components::CPostProcessStack*> postProcessStacks;
 			std::vector<ECS::Components::CReflectionProbe*> reflectionProbes;
+			std::vector<ECS::Components::CBoneAttachment*> boneAttachments;
 		};
 
 		/**
@@ -113,6 +116,12 @@ namespace OvCore::SceneSystem
 		void LateUpdate(float p_deltaTime);
 
 		/**
+		* Places every bone attachment on its bone, parents first. Called at the end of LateUpdate, once every script
+		* has run.
+		*/
+		void UpdateBoneAttachments();
+
+		/**
 		* Create an actor with a default name and return a reference to it.
 		*/
 		ECS::Actor& CreateActor();
@@ -142,6 +151,13 @@ namespace OvCore::SceneSystem
 		* @param p_target (The actor to remove from the scene)
 		*/
 		bool DestroyActor(ECS::Actor& p_target);
+
+		/**
+		* Move the given actor at the end of the actor list, which defines the order in which
+		* actors are stored, updated and serialized
+		* @param p_actor
+		*/
+		void MoveActorToBack(ECS::Actor& p_actor);
 
 		/**
 		* Collect garbages by removing Destroyed-marked actors
@@ -230,12 +246,18 @@ namespace OvCore::SceneSystem
 		void BeginBatchActorCreation();
 		void EndBatchActorCreation(bool p_startCreatedActors);
 		ECS::Actor* InstantiatePrefabInternal(const std::string& p_prefabPath, OvTools::Utils::OptRef<ECS::Actor> p_parent);
+		void IndexActorGUID(ECS::Actor& p_actor, uint64_t p_guid);
+		void UnindexActorGUID(const ECS::Actor* p_actor, uint64_t p_guid);
 
 		int64_t m_availableID = 1;
 		bool m_isPlaying = false;
 		bool m_batchActorCreation = false;
 		std::vector<ECS::Actor*> m_actors;
 		std::vector<std::reference_wrapper<ECS::Actor>> m_batchCreatedActors;
+
+		/* Actors by GUID. When two actors share one, the first keeps the entry and the other waits in the shadow map */
+		std::unordered_map<uint64_t, ECS::Actor*> m_actorsByGUID;
+		std::unordered_multimap<uint64_t, ECS::Actor*> m_shadowedActorsByGUID;
 
 		FastAccessComponents m_fastAccessComponents;
 		std::filesystem::path m_projectAssetsPath;

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <deque>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -19,8 +20,8 @@
 #include <OvDebug/Assertion.h>
 #include <OvDebug/Logger.h>
 
-#include <OvRendering/HAL/ShaderProgram.h>
-#include <OvRendering/HAL/ShaderStage.h>
+#include <baregl/ShaderProgram.h>
+#include <baregl/ShaderStage.h>
 #include <OvRendering/Resources/Loaders/ShaderLoader.h>
 #include <OvRendering/Resources/Shader.h>
 #include <OvRendering/Utils/ShaderUtil.h>
@@ -32,6 +33,7 @@ namespace
 		constexpr std::string_view kPassToken = "#pass";
 		constexpr std::string_view kFeatureToken = "#feature";
 		constexpr std::string_view kEngineFeatureToken = "#engine_feature";
+		constexpr std::string_view kEngineCapabilityToken = "#engine_capability";
 		constexpr std::string_view kVertexShaderToken = "#shader vertex";
 		constexpr std::string_view kFragmentShaderToken = "#shader fragment";
 		constexpr std::string_view kIncludeToken = "#include";
@@ -67,6 +69,7 @@ namespace
 		const std::unordered_set<std::string> passes;
 		const OvRendering::Data::FeatureSet userFeatures;
 		const OvRendering::Data::FeatureSet engineFeatures;
+		const OvRendering::Data::FeatureSet engineCapabilities;
 	};
 
 	struct ShaderAssembleResult
@@ -75,18 +78,19 @@ namespace
 		const uint32_t failures; // How many variants failed to compile
 		OvRendering::Resources::Shader::Variants variants;
 		OvRendering::Data::FeatureSet engineFeatures;
+		OvRendering::Data::FeatureSet engineCapabilities;
 	};
 
 	struct ShaderStageDesc
 	{
 		const std::string source;
-		const OvRendering::Settings::EShaderType type;
+		const baregl::types::EShaderType type;
 	};
 
 	struct ProcessedShaderStage
 	{
-		const OvRendering::HAL::ShaderStage stage;
-		std::optional<OvRendering::Settings::ShaderCompilationResult> compilationResult;
+		const baregl::ShaderStage stage;
+		std::optional<baregl::data::ShaderCompilationResult> compilationResult;
 	};
 
 	std::string Trim(const std::string_view p_str)
@@ -158,7 +162,7 @@ namespace
 		return result;
 	}
 
-	std::unique_ptr<OvRendering::HAL::ShaderProgram> CreateProgram(
+	std::unique_ptr<baregl::ShaderProgram> CreateProgram(
 		const ShaderInputInfo& p_shaderInputInfo,
 		std::span<const ShaderStageDesc> p_stages,
 		const std::string_view p_pass,
@@ -167,8 +171,7 @@ namespace
 	)
 	{
 		// Process and compile all shader stages
-		std::vector<ProcessedShaderStage> processedStages;
-		processedStages.reserve(p_stages.size());
+		std::deque<ProcessedShaderStage> processedStages;
 
 		bool compilationFailed = false;
 
@@ -219,7 +222,7 @@ namespace
 		}
 
 		// Link the program
-		auto program = std::make_unique<OvRendering::HAL::ShaderProgram>();
+		auto program = std::make_unique<baregl::ShaderProgram>();
 
 		// Attach all stages
 		for (const auto& processedStage : processedStages)
@@ -267,7 +270,7 @@ namespace
 		}
 	}
 
-	std::unique_ptr<OvRendering::HAL::ShaderProgram> CreateDefaultProgram()
+	std::unique_ptr<baregl::ShaderProgram> CreateDefaultProgram()
 	{
 		const std::string vertex = R"(
 #version 450 core
@@ -292,8 +295,8 @@ void main()
 )";
 
 		auto shaders = std::array<ShaderStageDesc, 2>{
-			ShaderStageDesc{vertex, OvRendering::Settings::EShaderType::VERTEX},
-			ShaderStageDesc{fragment, OvRendering::Settings::EShaderType::FRAGMENT}
+			ShaderStageDesc{vertex, baregl::types::EShaderType::VERTEX},
+			ShaderStageDesc{fragment, baregl::types::EShaderType::FRAGMENT}
 		};
 
 		auto program = CreateProgram(
@@ -381,17 +384,16 @@ void main()
 	*/
 	ShaderParseResult ParseShader(const ShaderLoadResult& p_shaderLoadResult)
 	{
-		using namespace OvRendering::Settings;
-
 		std::istringstream stream(p_shaderLoadResult.source); // Add this line to create a stringstream from shaderCode
 		std::string line;
-		std::unordered_map<EShaderType, std::stringstream> shaderSources;
+		std::unordered_map<baregl::types::EShaderType, std::stringstream> shaderSources;
 		OvRendering::Data::FeatureSet userFeatures;
 		OvRendering::Data::FeatureSet engineFeatures;
+		OvRendering::Data::FeatureSet engineCapabilities;
 		std::unordered_set<std::string> passes;
 		passes.emplace(); // Default pass if none is specified (empty string)
 
-		auto currentType = EShaderType::NONE;
+		auto currentType = baregl::types::EShaderType::NONE;
 
 		while (std::getline(stream, line))
 		{
@@ -427,6 +429,21 @@ void main()
 
 				engineFeatures.insert(featureName);
 			}
+			else if (trimmedLine.starts_with(Grammar::kEngineCapabilityToken))
+			{
+				std::string capabilityName;
+				capabilityName.reserve(16);
+
+				for (auto& c : trimmedLine |
+					std::views::drop(Grammar::kEngineCapabilityToken.size()) |
+					std::views::drop_while(isspace) |
+					std::views::take_while([](char c) { return !isspace(c); }))
+				{
+					capabilityName += c;
+				}
+
+				engineCapabilities.insert(capabilityName);
+			}
 			else if (trimmedLine.starts_with(Grammar::kFeatureToken))
 			{
 				std::string featureName;
@@ -444,13 +461,13 @@ void main()
 			}
 			else if (trimmedLine.starts_with(Grammar::kVertexShaderToken))
 			{
-				currentType = EShaderType::VERTEX;
+				currentType = baregl::types::EShaderType::VERTEX;
 			}
 			else if (trimmedLine.starts_with(Grammar::kFragmentShaderToken))
 			{
-				currentType = EShaderType::FRAGMENT;
+				currentType = baregl::types::EShaderType::FRAGMENT;
 			}
-			else if (currentType != EShaderType::NONE)
+			else if (currentType != baregl::types::EShaderType::NONE)
 			{
 				shaderSources[currentType] << line << '\n';
 			}
@@ -458,11 +475,12 @@ void main()
 
 		return ShaderParseResult{
 			.inputInfo = p_shaderLoadResult.inputInfo,
-			.vertexShader = shaderSources[EShaderType::VERTEX].str(),
-			.fragmentShader = shaderSources[EShaderType::FRAGMENT].str(),
+			.vertexShader = shaderSources[baregl::types::EShaderType::VERTEX].str(),
+			.fragmentShader = shaderSources[baregl::types::EShaderType::FRAGMENT].str(),
 			.passes = passes,
 			.userFeatures = userFeatures,
-			.engineFeatures = engineFeatures
+			.engineFeatures = engineFeatures,
+			.engineCapabilities = engineCapabilities
 		};
 	}
 
@@ -502,8 +520,8 @@ void main()
 				}
 
 				const auto stages = std::to_array<ShaderStageDesc>({
-					{ p_parseResult.vertexShader, OvRendering::Settings::EShaderType::VERTEX },
-					{ p_parseResult.fragmentShader, OvRendering::Settings::EShaderType::FRAGMENT }
+					{ p_parseResult.vertexShader, baregl::types::EShaderType::VERTEX },
+					{ p_parseResult.fragmentShader, baregl::types::EShaderType::FRAGMENT }
 					});
 
 				auto program = CreateProgram(
@@ -569,7 +587,8 @@ void main()
 			p_parseResult.inputInfo,
 			failures,
 			std::move(variants),
-			p_parseResult.engineFeatures
+			p_parseResult.engineFeatures,
+			p_parseResult.engineCapabilities
 		};
 	}
 
@@ -602,7 +621,8 @@ void main()
 			.fragmentShader = p_fragmentShader,
 			.passes = {{}}, // Default pass (empty string)
 			.userFeatures = {}, // No support for features in embedded shaders
-			.engineFeatures = {}
+			.engineFeatures = {},
+			.engineCapabilities = {}
 		};
 
 		return AssembleShader(shaderParseResult);
@@ -624,7 +644,7 @@ namespace OvRendering::Resources::Loaders
 	Shader* ShaderLoader::Create(const std::string& p_filePath, FilePathParserCallback p_pathParser)
 	{
 		auto result = CompileShaderFromFile(p_filePath, p_pathParser);
-		return new Shader(p_filePath, std::move(result.variants), std::move(result.engineFeatures));
+		return new Shader(p_filePath, std::move(result.variants), std::move(result.engineFeatures), std::move(result.engineCapabilities));
 	}
 
 	Shader* ShaderLoader::CreateFromSource(const std::string& p_vertexShader, const std::string& p_fragmentShader)
@@ -639,7 +659,7 @@ namespace OvRendering::Resources::Loaders
 
 		if (result.failures == 0)
 		{
-			p_shader.SetVariants(std::move(result.variants), std::move(result.engineFeatures));
+			p_shader.SetVariants(std::move(result.variants), std::move(result.engineFeatures), std::move(result.engineCapabilities));
 		}
 		else
 		{

@@ -21,7 +21,7 @@ namespace
 	}
 }
 
-OvRendering::HAL::ShaderProgram& OvRendering::Resources::Shader::GetVariant(std::optional<const std::string_view> p_pass, const Data::FeatureSet& p_featureSet)
+baregl::ShaderProgram& OvRendering::Resources::Shader::GetVariant(std::optional<const std::string_view> p_pass, const Data::FeatureSet& p_featureSet)
 {
 	ZoneScoped;
 
@@ -56,6 +56,11 @@ const OvRendering::Data::FeatureSet& OvRendering::Resources::Shader::GetEngineFe
 	return m_engineFeatures;
 }
 
+const OvRendering::Data::FeatureSet& OvRendering::Resources::Shader::GetEngineCapabilities() const
+{
+	return m_engineCapabilities;
+}
+
 const std::unordered_set<std::string>& OvRendering::Resources::Shader::GetPasses() const
 {
 	return m_passes;
@@ -64,17 +69,20 @@ const std::unordered_set<std::string>& OvRendering::Resources::Shader::GetPasses
 OvRendering::Resources::Shader::Shader(
 	const std::string p_path,
 	Variants&& p_variants,
-	Data::FeatureSet p_engineFeatures
+	Data::FeatureSet p_engineFeatures,
+	Data::FeatureSet p_engineCapabilities
 ) : path(p_path)
 {
-	SetVariants(std::move(p_variants), std::move(p_engineFeatures));
+	SetVariants(std::move(p_variants), std::move(p_engineFeatures), std::move(p_engineCapabilities));
 }
 
-void OvRendering::Resources::Shader::SetVariants(Variants&& p_variants, Data::FeatureSet p_engineFeatures)
+void OvRendering::Resources::Shader::SetVariants(Variants&& p_variants, Data::FeatureSet p_engineFeatures, Data::FeatureSet p_engineCapabilities)
 {
 	ValidateVariants(p_variants);
 	m_variants = std::move(p_variants);
+	++m_variantsVersion;
 	m_engineFeatures = std::move(p_engineFeatures);
+	m_engineCapabilities = std::move(p_engineCapabilities);
 
 	m_passes.clear();
 	m_features.clear();
@@ -100,4 +108,9 @@ void OvRendering::Resources::Shader::SetVariants(Variants&& p_variants, Data::Fe
 const OvRendering::Resources::Shader::Variants& OvRendering::Resources::Shader::GetVariants() const
 {
 	return m_variants;
+}
+
+uint64_t OvRendering::Resources::Shader::GetVariantsVersion() const
+{
+	return m_variantsVersion;
 }

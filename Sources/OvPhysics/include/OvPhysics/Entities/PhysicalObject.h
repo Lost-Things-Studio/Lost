@@ -7,6 +7,7 @@
 #pragma once
 
 #include <any>
+#include <cstdint>
 #include <memory>
 
 #include <OvMaths/FTransform.h>
@@ -15,9 +16,12 @@
 
 namespace OvPhysics::Core { class PhysicsEngine; }
 
-class btCollisionShape;
-class btRigidBody;
-class btMotionState;
+namespace JPH
+{
+	class Body;
+	class BodyInterface;
+	class Shape;
+}
 
 namespace OvPhysics::Entities
 {
@@ -36,18 +40,6 @@ namespace OvPhysics::Entities
 		{
 			DISCRETE,
 			CONTINUOUS
-		};
-
-		/**
-		* Defines some activation states that a physical object can have
-		*/
-		enum class EActivationState
-		{
-			ACTIVE				= 1,
-			SLEEPING			= 2,
-			LOOKING_FOR_SLEEP	= 3,
-			ALWAYS_ACTIVE		= 4,
-			ALWAYS_SLEEPING		= 5
 		};
 
 		/**
@@ -135,9 +127,10 @@ namespace OvPhysics::Entities
 		bool IsKinematic() const;
 
 		/**
-		* Returns the current activation state
+		* Returns true if the physical object is static: it never moves by itself, never sleeps nor wakes up, and its
+		* body is only moved when its transform changes
 		*/
-		EActivationState GetActivationState() const;
+		bool IsStatic() const;
 
 		/**
 		* Returns a reference to the transform of the physical object
@@ -205,10 +198,10 @@ namespace OvPhysics::Entities
 		void SetKinematic(bool p_kinematic);
 
 		/**
-		* Defines the new activation state for the physical object
-		* @param p_activationState
+		* Defines if the physical object should be static or not (a static object ignores the kinematic setting)
+		* @param p_static
 		*/
-		void SetActivationState(EActivationState p_activationState);
+		void SetStatic(bool p_static);
 
 		/**
 		* Defines if the physical object should be enabled or not
@@ -235,8 +228,19 @@ namespace OvPhysics::Entities
 	protected:
 		void Init();
 		void RecreateBody();
-		void ApplyInertia();
-		virtual void SetLocalScaling(const OvMaths::FVector3& p_scaling) = 0;
+
+		/**
+		* Creates the collision shape of the physical object
+		* @param p_scale
+		* @return A new shape, owned by the body it is given to
+		*/
+		virtual JPH::Shape* CreateShape(const OvMaths::FVector3& p_scale) const = 0;
+
+		/**
+		* Returns true if the shape of the physical object can only be used by a static body
+		*/
+		virtual bool MustBeStatic() const;
+
 		void Consider();
 		void Unconsider();
 
@@ -244,11 +248,9 @@ namespace OvPhysics::Entities
 		/* Internal */
 		void CreateBody(const Settings::BodySettings& p_bodySettings);
 		Settings::BodySettings DestroyBody();
-		OvMaths::FVector3 CalculateInertia() const;
 
 		/* Needed by the physics engine */
-		btRigidBody&			GetBody();
-		void					UpdateBtTransform();
+		void					UpdateBodyTransform();
 		void					UpdateFTransform();
 
 	public:
@@ -261,6 +263,8 @@ namespace OvPhysics::Entities
 		OvTools::Eventing::Event<PhysicalObject&>			TriggerStopEvent;
 
 	private:
+		static constexpr uint16_t kObjectLayer = 0;
+
 		/* Transform stuff */
 		OvMaths::FTransform* const		m_transform;
 		const bool						m_internalTransform;
@@ -268,24 +272,27 @@ namespace OvPhysics::Entities
 		/* Settings */
 		float					m_mass = 1.f;
 		bool					m_kinematic = false;
+		bool					m_static = false;
 		bool					m_trigger = false;
 		bool					m_enabled = true;
 		bool					m_considered = false;
 		ECollisionDetectionMode m_collisionMode = ECollisionDetectionMode::DISCRETE;
+		OvMaths::FVector3		m_linearFactor = OvMaths::FVector3::One;
+		OvMaths::FVector3		m_angularFactor = OvMaths::FVector3::One;
 
 		/* Other */
 		std::any m_userData;
 		OvMaths::FVector3 m_previousScale = { 0.0f, 0.0f, 0.0f };
+		OvMaths::FVector3 m_bodyPosition;
+		OvMaths::FQuaternion m_bodyRotation;
 		static OvTools::Eventing::Event<PhysicalObject&>	CreatedEvent;
 		static OvTools::Eventing::Event<PhysicalObject&>	DestroyedEvent;
-		static OvTools::Eventing::Event<btRigidBody&>		ConsiderEvent;
-		static OvTools::Eventing::Event<btRigidBody&>		UnconsiderEvent;
 
-		/* Bullet relatives */
-		std::unique_ptr<btMotionState>		m_motion;
-		std::unique_ptr<btRigidBody>		m_body;
+		/* Jolt relatives */
+		JPH::BodyInterface*		m_bodyInterface = nullptr;
+		JPH::Body*				m_body = nullptr;
 
 	protected:
-		std::unique_ptr<btCollisionShape>	m_shape;
+		static constexpr float kMinimumShapeRadius = 0.001f;
 	};
 }

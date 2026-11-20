@@ -4,9 +4,14 @@
 * @licence: MIT
 */
 
+#include <algorithm>
+#include <optional>
+
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
+#include <OvCore/Rendering/UIRenderingUtils.h>
 
 #include <OvEditor/Rendering/DebugSceneRenderer.h>
+#include <OvEditor/Rendering/GridRenderPass.h>
 #include <OvEditor/Rendering/PickingRenderPass.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Panels/SceneView.h>
@@ -30,6 +35,31 @@ namespace
 		}
 
 		return std::nullopt;
+	}
+
+	std::optional<OvEditor::Core::GizmoBehaviour::UITranslationContext> ResolveUIGizmoContext(
+		OvCore::ECS::Actor& p_actor,
+		const OvCore::Rendering::UIRenderingUtils::UIFrameResolver& p_uiFrameResolver
+	)
+	{
+		OvCore::Rendering::UIRenderingUtils::ResolvedUIGizmoTransform resolvedTransform;
+		if (!OvCore::Rendering::UIRenderingUtils::ResolveUIGizmoTransform(
+			p_uiFrameResolver,
+			p_actor,
+			resolvedTransform
+		))
+		{
+			return std::nullopt;
+		}
+
+		return OvEditor::Core::GizmoBehaviour::UITranslationContext{
+			.origin = resolvedTransform.position,
+			.xPositionDirection = resolvedTransform.xPositionDirection,
+			.yPositionDirection = resolvedTransform.yPositionDirection,
+			.xWorldAxis = resolvedTransform.xWorldAxis,
+			.yWorldAxis = resolvedTransform.yWorldAxis,
+			.screenSpace = resolvedTransform.screenSpace
+		};
 	}
 }
 
@@ -104,6 +134,12 @@ void OvEditor::Panels::SceneView::InitFrame()
 {
 	AViewControllable::InitFrame();
 
+	m_renderer->SetDescriptor<Rendering::GridRenderPass::GridDescriptor>({
+		m_gridColor,
+		m_camera.GetPosition(),
+		!EDITOR_EXEC(IsSceneUIRenderingEnabled())
+	});
+
 	OvTools::Utils::OptRef<OvCore::ECS::Actor> selectedActor;
 
 	if (EDITOR_EXEC(IsAnyActorSelected()))
@@ -121,11 +157,27 @@ void OvEditor::Panels::SceneView::InitFrame()
 	auto& pickingPass = m_renderer->GetPass<OvEditor::Rendering::PickingRenderPass>("Picking");
 
 	// Enable picking pass only when the scene view is hovered, not picking, and not operating the camera
-	pickingPass.SetEnabled(
+	const bool pickingEnabled =
 		IsHovered() &&
 		!m_gizmoOperations.IsPicking() &&
-		!m_cameraController.IsOperating()
-	);
+		!m_cameraController.IsOperating();
+
+	pickingPass.SetEnabled(pickingEnabled);
+
+	if (pickingEnabled)
+	{
+		const auto mousePosition = GetMousePosition();
+		const auto [width, height] = GetSafeSize();
+
+		pickingPass.SetPickingPosition(
+			static_cast<uint32_t>(std::max(mousePosition.x, 0.0f)),
+			static_cast<uint32_t>(std::max(static_cast<float>(height) - mousePosition.y, 0.0f))
+		);
+	}
+	else
+	{
+		pickingPass.ResetPickingResult();
+	}
 }
 
 OvCore::SceneSystem::Scene* OvEditor::Panels::SceneView::GetScene()
@@ -148,6 +200,8 @@ OvCore::Rendering::SceneRenderer::SceneDescriptor OvEditor::Panels::SceneView::C
 {
 	auto descriptor = AViewControllable::CreateSceneDescriptor();
 	descriptor.fallbackMaterial = m_fallbackMaterial;
+	descriptor.includeUI = true;
+	descriptor.renderUIInScreenSpace = EDITOR_EXEC(IsSceneUIRenderingEnabled());
 
 	if (Settings::EditorSettings::DebugFrustumCulling)
 	{
@@ -222,11 +276,27 @@ void OvEditor::Panels::SceneView::HandleActorPicking()
 		{
 			if (m_highlightedGizmoDirection)
 			{
+				auto& selectedActor = EDITOR_EXEC(GetSelectedActor());
+				auto [winWidth, winHeight] = GetSafeSize();
+				const auto renderSize = OvMaths::FVector2{
+					winWidth > 0 ? static_cast<float>(winWidth) : 1.0f,
+					winHeight > 0 ? static_cast<float>(winHeight) : 1.0f
+				};
+				const OvCore::Rendering::UIRenderingUtils::UIFrameResolver uiFrameResolver{
+					renderSize,
+					EDITOR_EXEC(IsSceneUIRenderingEnabled())
+				};
+				const auto uiGizmoContext = ResolveUIGizmoContext(
+					selectedActor,
+					uiFrameResolver
+				);
 				m_gizmoOperations.StartPicking(
-					EDITOR_EXEC(GetSelectedActor()),
+					selectedActor,
 					m_camera.GetPosition(),
 					m_currentOperation,
-					m_highlightedGizmoDirection.value());
+					m_highlightedGizmoDirection.value(),
+					uiGizmoContext ? &uiGizmoContext.value() : nullptr
+				);
 			}
 			else if (m_highlightedActor)
 			{
@@ -248,9 +318,7 @@ void OvEditor::Panels::SceneView::HandleActorPicking()
 	{
 		auto [winWidth, winHeight] = GetSafeSize();
 
-		auto mousePosition = EDITOR_CONTEXT(inputManager)->GetMousePosition();
-
-		m_gizmoOperations.SetCurrentMouse({ static_cast<float>(mousePosition.first - m_position.x), static_cast<float>(mousePosition.second - m_position.y - ImGui::GetFrameHeight()) });
+		m_gizmoOperations.SetCurrentMouse(GetMousePosition());
 		m_gizmoOperations.ApplyOperation(m_camera.GetViewMatrix(), m_camera.GetProjectionMatrix(), m_camera.GetPosition(), { static_cast<float>(winWidth), static_cast<float>(winHeight) });
 		m_highlightedGizmoDirection = m_gizmoOperations.GetDirection();
 	}
@@ -258,20 +326,14 @@ void OvEditor::Panels::SceneView::HandleActorPicking()
 
 OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Panels::SceneView::GetPickingResult()
 {
-	auto [mouseX, mouseY] = EDITOR_CONTEXT(inputManager)->GetMousePosition();
-	mouseX -= m_position.x;
-	mouseY -= m_position.y;
-	mouseY = GetSafeSize().second - mouseY + ImGui::GetFrameHeight();
-
 	auto& scene = *GetScene();
 
 	auto& actorPickingFeature = m_renderer->GetPass<OvEditor::Rendering::PickingRenderPass>("Picking");
 
-	return actorPickingFeature.ReadbackPickingResult(
-		scene,
-		static_cast<uint32_t>(mouseX),
-		static_cast<uint32_t>(mouseY)
-	);
+	// Asynchronous: the result comes from a previous frame, so reading it never stalls on the GPU, except on a click,
+	// which waits for the last frame drawn so as not to pick what the mouse was over a few frames earlier
+	const bool clicked = EDITOR_CONTEXT(inputManager)->IsMouseButtonPressed(OvWindowing::Inputs::EMouseButton::MOUSE_BUTTON_LEFT);
+	return actorPickingFeature.GetPickingResult(scene, clicked);
 }
 
 void OvEditor::Panels::SceneView::OnSceneDropped(const std::string& p_path)

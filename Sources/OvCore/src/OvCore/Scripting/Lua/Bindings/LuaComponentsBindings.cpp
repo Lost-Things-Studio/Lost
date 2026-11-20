@@ -4,6 +4,13 @@
 * @licence: MIT
 */
 
+#include <cmath>
+#include <format>
+#include <optional>
+#include <string>
+#include <tuple>
+#include <vector>
+
 #include <sol/sol.hpp>
 
 #include <OvCore/ECS/Actor.h>  
@@ -11,19 +18,147 @@
 #include <OvCore/ECS/Components/CAmbientSphereLight.h>  
 #include <OvCore/ECS/Components/CAudioListener.h>  
 #include <OvCore/ECS/Components/CAudioSource.h>  
+#include <OvCore/ECS/Components/CBoneAttachment.h>
 #include <OvCore/ECS/Components/CCamera.h>  
 #include <OvCore/ECS/Components/CDirectionalLight.h>  
 #include <OvCore/ECS/Components/CMaterialRenderer.h>  
 #include <OvCore/ECS/Components/CModelRenderer.h>  
 #include <OvCore/ECS/Components/CPhysicalBox.h>  
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>  
+#include <OvCore/ECS/Components/CPhysicalHeightField.h>
+#include <OvCore/ECS/Components/CPhysicalMesh.h>
+#include <OvCore/Helpers/DistanceField.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>  
 #include <OvCore/ECS/Components/CPointLight.h>  
 #include <OvCore/ECS/Components/CPostProcessStack.h>  
 #include <OvCore/ECS/Components/CReflectionProbe.h>  
-#include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>  
-#include <OvCore/ECS/Components/CSpotLight.h>  
+#include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
+#include <OvCore/ECS/Components/CSpotLight.h>
 #include <OvCore/ECS/Components/CTransform.h>
+#include <OvCore/ECS/Components/UI/CCanvas.h>
+#include <OvCore/ECS/Components/UI/CHorizontalLayout.h>
+#include <OvCore/ECS/Components/UI/CImage.h>
+#include <OvCore/ECS/Components/UI/CLayoutGroup.h>
+#include <OvCore/ECS/Components/UI/CText.h>
+#include <OvCore/ECS/Components/UI/CVerticalLayout.h>
+#include <OvCore/Scripting/Common/ScriptPropertyValue.h>
+
+namespace
+{
+	constexpr uint32_t kMinimumHeightFieldSampleCount = 3;
+	constexpr uint32_t kMaximumHeightFieldSampleCount = 4096;
+
+	// true, or false and why: the heights are only applied when every argument is valid
+	std::tuple<bool, std::optional<std::string>> SetHeights(
+		OvCore::ECS::Components::CPhysicalHeightField& p_heightField,
+		const sol::object& p_sampleCount,
+		const sol::object& p_spacing,
+		const sol::object& p_heights
+	)
+	{
+		const auto count = p_sampleCount.as<sol::optional<double>>();
+		if (!count || *count != std::floor(*count) || *count < kMinimumHeightFieldSampleCount || *count > kMaximumHeightFieldSampleCount)
+		{
+			return { false, std::format("the sample count must be a whole number from {} to {}", kMinimumHeightFieldSampleCount, kMaximumHeightFieldSampleCount) };
+		}
+
+		const auto spacing = p_spacing.as<sol::optional<double>>();
+		if (!spacing || !std::isfinite(*spacing) || *spacing <= 0.0)
+		{
+			return { false, "the spacing must be a positive number" };
+		}
+
+		if (p_heights.get_type() != sol::type::table)
+		{
+			return { false, "the heights must be an array of numbers" };
+		}
+
+		const auto sampleCount = static_cast<uint32_t>(*count);
+		const sol::table table = p_heights.as<sol::table>();
+		const size_t expectedSize = static_cast<size_t>(sampleCount) * sampleCount;
+		const size_t size = table.size();
+
+		if (size != 0 && size != expectedSize)
+		{
+			return { false, std::format("{} heights given for {} samples", size, expectedSize) };
+		}
+
+		std::vector<float> heights(size);
+
+		for (size_t index = 0; index < size; ++index)
+		{
+			const auto height = table.raw_get<sol::optional<double>>(index + 1);
+			const bool hole = height && std::isinf(*height) && *height > 0.0;
+			if (!height || (!std::isfinite(*height) && !hole))
+			{
+				return { false, std::format("the height {} is neither a finite number nor math.huge", index + 1) };
+			}
+
+			heights[index] = static_cast<float>(*height);
+		}
+
+		p_heightField.SetHeights(sampleCount, static_cast<float>(*spacing), std::move(heights));
+		return { true, std::nullopt };
+	}
+
+	// true, or false and why: the triangles are only applied when both arrays are valid
+	std::tuple<bool, std::optional<std::string>> SetTriangles(
+		OvCore::ECS::Components::CPhysicalMesh& p_mesh,
+		const sol::object& p_positions,
+		const sol::object& p_indices
+	)
+	{
+		if (p_positions.get_type() != sol::type::table || p_indices.get_type() != sol::type::table)
+		{
+			return { false, "the positions and the indices must be arrays of numbers" };
+		}
+
+		const sol::table positionTable = p_positions.as<sol::table>();
+		const sol::table indexTable = p_indices.as<sol::table>();
+		const size_t positionCount = positionTable.size();
+		const size_t indexCount = indexTable.size();
+
+		if (positionCount % 3 != 0 || indexCount % 3 != 0)
+		{
+			return { false, std::format("{} positions and {} indices are not whole vertices and triangles", positionCount, indexCount) };
+		}
+
+		std::vector<float> positions(positionCount);
+
+		for (size_t index = 0; index < positionCount; ++index)
+		{
+			const auto value = positionTable.raw_get<sol::optional<double>>(index + 1);
+			if (!value || !std::isfinite(*value))
+			{
+				return { false, std::format("the position {} is not a finite number", index + 1) };
+			}
+
+			positions[index] = static_cast<float>(*value);
+		}
+
+		const size_t vertexCount = positionCount / 3;
+		if (vertexCount == 0 && indexCount > 0)
+		{
+			return { false, std::string("the indices name vertices, but no positions are given") };
+		}
+
+		std::vector<uint32_t> indices(indexCount);
+
+		for (size_t index = 0; index < indexCount; ++index)
+		{
+			const auto value = indexTable.raw_get<sol::optional<double>>(index + 1);
+			if (!value || *value != std::floor(*value) || *value < 0.0 || *value >= static_cast<double>(vertexCount))
+			{
+				return { false, std::format("the index {} is not a vertex from 0 to {}", index + 1, vertexCount - 1) };
+			}
+
+			indices[index] = static_cast<uint32_t>(*value);
+		}
+
+		p_mesh.SetTriangles(std::move(positions), std::move(indices));
+		return { true, std::nullopt };
+	}
+}
 
 void BindLuaComponents(sol::state& p_luaState)
 {
@@ -32,7 +167,7 @@ void BindLuaComponents(sol::state& p_luaState)
 	using namespace OvCore::ECS::Components;
 
 	p_luaState.new_usertype<AComponent>("Component",
-		"GetOwner", [](AComponent& p_component) -> Actor& { return p_component.owner; }
+		"GetOwner", [](AComponent& p_component) { return OvCore::Scripting::ActorRef{ p_component.owner.GetGUID() }; }
 	);
 
 	p_luaState.new_usertype<CTransform>("Transform",
@@ -63,7 +198,23 @@ void BindLuaComponents(sol::state& p_luaState)
 		"GetLocalRight", &CTransform::GetLocalRight,
 		"GetWorldForward", &CTransform::GetWorldForward,
 		"GetWorldUp", &CTransform::GetWorldUp,
-		"GetWorldRight", &CTransform::GetWorldRight
+		"GetWorldRight", &CTransform::GetWorldRight,
+		"EnableUIData", &CTransform::EnableUIData,
+		"DisableUIData", &CTransform::DisableUIData,
+		"HasUIData", &CTransform::HasUIData,
+		"HasActiveUIData", &CTransform::HasActiveUIData,
+		"GetUIPosition", [](CTransform& p_this) -> FVector2 { return p_this.GetUIPosition(); },
+		"SetUIPosition", &CTransform::SetUIPosition,
+		"GetUIRotation", &CTransform::GetUIRotation,
+		"SetUIRotation", &CTransform::SetUIRotation,
+		"GetUIScale", [](CTransform& p_this) -> FVector2 { return p_this.GetUIScale(); },
+		"SetUIScale", &CTransform::SetUIScale,
+		"GetUISize", [](CTransform& p_this) -> FVector2 { return p_this.GetUISize(); },
+		"SetUISize", &CTransform::SetUISize,
+		"GetUIPivot", [](CTransform& p_this) -> FVector2 { return p_this.GetUIPivot(); },
+		"SetUIPivot", &CTransform::SetUIPivot,
+		"GetUIAnchorPreset", &CTransform::GetUIAnchorPreset,
+		"SetUIAnchorPreset", &CTransform::SetUIAnchorPreset
 	);
 
 	p_luaState.new_enum<OvCore::ECS::Components::CModelRenderer::EFrustumBehaviour>("FrustumBehaviour", {
@@ -81,50 +232,129 @@ void BindLuaComponents(sol::state& p_luaState)
 			p_this.SetModel(p_model);
 		},
 		"GetFrustumBehaviour", &CModelRenderer::GetFrustumBehaviour,
-		"SetFrustumBehaviour", &CModelRenderer::SetFrustumBehaviour
+		"SetFrustumBehaviour", &CModelRenderer::SetFrustumBehaviour,
+		"GetMaxDrawDistance", &CModelRenderer::GetMaxDrawDistance,
+		"SetMaxDrawDistance", &CModelRenderer::SetMaxDrawDistance
 	);
+
+	p_luaState.new_enum<OvCore::Rendering::EVisibilityFlags>("VisibilityFlags", {
+		{ "NONE", OvCore::Rendering::EVisibilityFlags::NONE },
+		{ "GEOMETRY", OvCore::Rendering::EVisibilityFlags::GEOMETRY },
+		{ "SHADOW", OvCore::Rendering::EVisibilityFlags::SHADOW },
+		{ "REFLECTION", OvCore::Rendering::EVisibilityFlags::REFLECTION },
+		{ "ALL", OvCore::Rendering::EVisibilityFlags::ALL }
+	});
 
 	p_luaState.new_usertype<CMaterialRenderer>("MaterialRenderer",
 		sol::base_classes, sol::bases<AComponent>(),
 		"SetMaterial", &CMaterialRenderer::SetMaterialAtIndex,
 		"SetUserMatrixElement", &CMaterialRenderer::SetUserMatrixElement,
-		"GetUserMatrixElement", &CMaterialRenderer::GetUserMatrixElement
+		"GetUserMatrixElement", &CMaterialRenderer::GetUserMatrixElement,
+		"SetVisibilityFlags", &CMaterialRenderer::SetVisibilityFlags,
+		"GetVisibilityFlags", &CMaterialRenderer::GetVisibilityFlags
+	);
+
+	p_luaState.new_usertype<CBoneAttachment>("BoneAttachment",
+		sol::base_classes, sol::bases<AComponent>(),
+		"SetBone", &CBoneAttachment::SetBone,
+		"GetBone", &CBoneAttachment::GetBone,
+		"SetOffsetPosition", &CBoneAttachment::SetOffsetPosition,
+		"GetOffsetPosition", &CBoneAttachment::GetOffsetPosition,
+		"SetOffsetRotation", &CBoneAttachment::SetOffsetRotation,
+		"GetOffsetRotation", &CBoneAttachment::GetOffsetRotation,
+		"SetOffsetScale", &CBoneAttachment::SetOffsetScale,
+		"GetOffsetScale", &CBoneAttachment::GetOffsetScale,
+		"SetTarget", [](CBoneAttachment& p_this, std::optional<OvCore::Scripting::ActorRef> p_target) {
+			p_this.SetTarget(p_target && p_target->guid != 0 ? &p_target->Resolve() : nullptr);
+		},
+		"GetTarget", [](CBoneAttachment& p_this) -> std::optional<OvCore::Scripting::ActorRef> {
+			if (p_this.GetTargetGUID() == 0) return std::nullopt;
+			return OvCore::Scripting::ActorRef{ p_this.GetTargetGUID() };
+		},
+		"IsAttached", &CBoneAttachment::IsAttached
 	);
 
 	p_luaState.new_usertype<CSkinnedMeshRenderer>("SkinnedMeshRenderer",
 		sol::base_classes, sol::bases<AComponent>(),
-		"Play", &CSkinnedMeshRenderer::Play,
-		"Pause", &CSkinnedMeshRenderer::Pause,
-		"Stop", &CSkinnedMeshRenderer::Stop,
-		"IsPlaying", &CSkinnedMeshRenderer::IsPlaying,
-		"SetLooping", &CSkinnedMeshRenderer::SetLooping,
-		"IsLooping", &CSkinnedMeshRenderer::IsLooping,
-		"SetPlaybackSpeed", &CSkinnedMeshRenderer::SetPlaybackSpeed,
-		"GetPlaybackSpeed", &CSkinnedMeshRenderer::GetPlaybackSpeed,
+		"GetLayerCount", &CSkinnedMeshRenderer::GetLayerCount,
+		"AddLayer", &CSkinnedMeshRenderer::AddLayer,
+		"RemoveLayer", &CSkinnedMeshRenderer::RemoveLayer,
+		"Play", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { p_this.Play(p_layer.value_or(0)); },
+		"Pause", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { p_this.Pause(p_layer.value_or(0)); },
+		"Stop", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { p_this.Stop(p_layer.value_or(0)); },
+		"IsPlaying", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.IsPlaying(p_layer.value_or(0)); },
+		"SetLooping", [](CSkinnedMeshRenderer& p_this, bool p_value, std::optional<uint32_t> p_layer) { p_this.SetLooping(p_value, p_layer.value_or(0)); },
+		"IsLooping", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.IsLooping(p_layer.value_or(0)); },
+		"SetPlaybackSpeed", [](CSkinnedMeshRenderer& p_this, float p_value, std::optional<uint32_t> p_layer) { p_this.SetPlaybackSpeed(p_value, p_layer.value_or(0)); },
+		"GetPlaybackSpeed", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetPlaybackSpeed(p_layer.value_or(0)); },
+		"SetLayerWeight", [](CSkinnedMeshRenderer& p_this, float p_value, std::optional<uint32_t> p_layer) { p_this.SetLayerWeight(p_value, p_layer.value_or(0)); },
+		"GetLayerWeight", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetLayerWeight(p_layer.value_or(0)); },
+		"SetLayerMask", [](CSkinnedMeshRenderer& p_this, const std::string& p_nodeName, std::optional<uint32_t> p_layer) { p_this.SetLayerMask(p_nodeName, p_layer.value_or(0)); },
+		"GetLayerMask", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetLayerMask(p_layer.value_or(0)); },
 		"SetMeshBoundsScale", &CSkinnedMeshRenderer::SetMeshBoundsScale,
 		"GetMeshBoundsScale", &CSkinnedMeshRenderer::GetMeshBoundsScale,
-		"SetTime", &CSkinnedMeshRenderer::SetTime,
-		"GetTime", &CSkinnedMeshRenderer::GetTime,
-		"SetAnimationSourceModel", &CSkinnedMeshRenderer::SetAnimationSourceModel,
-		"GetAnimationSourceModel", &CSkinnedMeshRenderer::GetAnimationSourceModel,
-		"IsAnimationSourceCompatible", &CSkinnedMeshRenderer::IsAnimationSourceCompatible,
-		"GetAnimationCount", &CSkinnedMeshRenderer::GetAnimationCount,
-		"GetAnimationName", &CSkinnedMeshRenderer::GetAnimationName,
-		"SetAnimation", sol::overload(
-			sol::resolve<bool(std::optional<uint32_t>)>(&CSkinnedMeshRenderer::SetAnimation),
-			sol::resolve<bool(const std::string&)>(&CSkinnedMeshRenderer::SetAnimation)
+		"SetTime", [](CSkinnedMeshRenderer& p_this, float p_timeSeconds, std::optional<uint32_t> p_layer) { p_this.SetTime(p_timeSeconds, p_layer.value_or(0)); },
+		"GetTime", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetTime(p_layer.value_or(0)); },
+		"SetAnimationSourceModel", sol::overload(
+			[](CSkinnedMeshRenderer& p_this, OvRendering::Resources::Model* p_model, std::optional<uint32_t> p_layer) { p_this.SetAnimationSourceModel(p_model, p_layer.value_or(0)); },
+			[](CSkinnedMeshRenderer& p_this, const OvCore::Scripting::AssetRef& p_asset, std::optional<uint32_t> p_layer) { p_this.SetAnimationSourceModel(p_asset.path, p_layer.value_or(0)); }
 		),
-		"GetActiveAnimationIndex", &CSkinnedMeshRenderer::GetActiveAnimationIndex,
-		"GetActiveAnimationName", &CSkinnedMeshRenderer::GetActiveAnimationName,
+		"GetAnimationSourceModel", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetAnimationSourceModel(p_layer.value_or(0)); },
+		"IsAnimationSourceCompatible", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.IsAnimationSourceCompatible(p_layer.value_or(0)); },
+		"GetAnimationCount", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetAnimationCount(p_layer.value_or(0)); },
+		"GetAnimationName", [](CSkinnedMeshRenderer& p_this, uint32_t p_index, std::optional<uint32_t> p_layer) { return p_this.GetAnimationName(p_index, p_layer.value_or(0)); },
+		"SetAnimation", sol::overload(
+			[](CSkinnedMeshRenderer& p_this, const std::string& p_name, std::optional<uint32_t> p_layer)
+			{
+				return p_this.SetAnimation(p_name, p_layer.value_or(0));
+			},
+			[](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_index, std::optional<uint32_t> p_layer)
+			{
+				return p_this.SetAnimation(p_index, p_layer.value_or(0));
+			}
+		),
+		"GetActiveAnimationIndex", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetActiveAnimationIndex(p_layer.value_or(0)); },
+		"GetActiveAnimationName", [](CSkinnedMeshRenderer& p_this, std::optional<uint32_t> p_layer) { return p_this.GetActiveAnimationName(p_layer.value_or(0)); },
 		"GetBoneCount", &CSkinnedMeshRenderer::GetBoneCount,
 		"GetBoneName", &CSkinnedMeshRenderer::GetBoneName,
 		"GetBoneIndex", &CSkinnedMeshRenderer::GetBoneIndex,
 		"GetBoneLocalPosition", &CSkinnedMeshRenderer::GetBoneLocalPosition,
 		"GetBoneLocalRotation", &CSkinnedMeshRenderer::GetBoneLocalRotation,
 		"GetBoneLocalScale", &CSkinnedMeshRenderer::GetBoneLocalScale,
+		"GetBoneGlobalPosition", &CSkinnedMeshRenderer::GetBoneGlobalPosition,
+		"GetBoneGlobalRotation", &CSkinnedMeshRenderer::GetBoneGlobalRotation,
+		"GetBoneGlobalScale", &CSkinnedMeshRenderer::GetBoneGlobalScale,
 		"SetBoneLocalPosition", &CSkinnedMeshRenderer::SetBoneLocalPosition,
 		"SetBoneLocalRotation", &CSkinnedMeshRenderer::SetBoneLocalRotation,
-		"SetBoneLocalScale", &CSkinnedMeshRenderer::SetBoneLocalScale
+		"SetBoneLocalScale", &CSkinnedMeshRenderer::SetBoneLocalScale,
+		"StartRagdoll", [](CSkinnedMeshRenderer& p_this, sol::table p_parts, sol::optional<FVector3> p_linearVelocity)
+		{
+			std::vector<CSkinnedMeshRenderer::RagdollPart> parts;
+
+			for (size_t index = 1; index <= p_parts.size(); ++index)
+			{
+				const sol::optional<sol::table> entry = p_parts[index];
+				if (!entry.has_value())
+				{
+					continue;
+				}
+
+				CSkinnedMeshRenderer::RagdollPart part;
+				part.bone = entry->get_or<std::string>("Bone", "");
+				part.to = entry->get_or<std::string>("To", "");
+				part.length = entry->get_or("Length", part.length);
+				part.radius = entry->get_or("Radius", part.radius);
+				part.mass = entry->get_or("Mass", part.mass);
+				part.swing = entry->get_or("Swing", part.swing);
+				part.twist = entry->get_or("Twist", part.twist);
+				parts.push_back(std::move(part));
+			}
+
+			return p_this.StartRagdoll(parts, p_linearVelocity.value_or(FVector3::Zero));
+		},
+		"StopRagdoll", &CSkinnedMeshRenderer::StopRagdoll,
+		"IsRagdoll", &CSkinnedMeshRenderer::IsRagdoll,
+		"AddRagdollImpulse", &CSkinnedMeshRenderer::AddRagdollImpulse
 	);
 
 	p_luaState.new_enum<OvPhysics::Entities::PhysicalObject::ECollisionDetectionMode>("CollisionDetectionMode", {
@@ -155,7 +385,9 @@ void BindLuaComponents(sol::state& p_luaState)
 		"ClearForces", &CPhysicalObject::ClearForces,
 		"SetCollisionDetectionMode", &CPhysicalObject::SetCollisionDetectionMode,
 		"GetCollisionMode", &CPhysicalObject::GetCollisionDetectionMode,
-		"SetKinematic", &CPhysicalObject::SetKinematic
+		"SetKinematic", &CPhysicalObject::SetKinematic,
+		"IsStatic", &CPhysicalObject::IsStatic,
+		"SetStatic", &CPhysicalObject::SetStatic
 	);
 
 	p_luaState.new_usertype<CPhysicalBox>("PhysicalBox",
@@ -178,6 +410,30 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetHeight", &CPhysicalCapsule::SetHeight
 	);
 
+	p_luaState.new_usertype<CPhysicalHeightField>("PhysicalHeightField",
+		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
+		"SetHeights", &SetHeights,
+		"GetSampleCount", &CPhysicalHeightField::GetSampleCount,
+		"GetSpacing", &CPhysicalHeightField::GetSpacing
+	);
+
+	p_luaState.new_usertype<CPhysicalMesh>("PhysicalMesh",
+		sol::base_classes, sol::bases<CPhysicalObject, AComponent>(),
+		"SetTriangles", &SetTriangles,
+		"SetMesh", [](CPhysicalMesh& p_mesh, const OvCore::Helpers::MeshData& p_data) {
+			std::vector<float> positions;
+			positions.reserve(p_data.vertices.size() * 3);
+
+			for (const auto& vertex : p_data.vertices)
+			{
+				positions.insert(positions.end(), { vertex.position[0], vertex.position[1], vertex.position[2] });
+			}
+
+			return p_mesh.SetTriangles(std::move(positions), p_data.indices);
+		},
+		"GetTriangleCount", &CPhysicalMesh::GetTriangleCount
+	);
+
 	p_luaState.new_enum<OvRendering::Settings::EProjectionMode>("ProjectionMode", {
 		{"ORTHOGRAPHIC", OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC},
 		{"PERSPECTIVE", OvRendering::Settings::EProjectionMode::PERSPECTIVE}
@@ -197,10 +453,184 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetClearColor", &CCamera::SetClearColor,
 		"HasFrustumGeometryCulling", &CCamera::HasFrustumGeometryCulling,
 		"HasFrustumLightCulling", &CCamera::HasFrustumLightCulling,
+		"HasDepthPrePass", &CCamera::HasDepthPrePass,
 		"GetProjectionMode", &CCamera::GetProjectionMode,
 		"SetFrustumGeometryCulling", &CCamera::SetFrustumGeometryCulling,
 		"SetFrustumLightCulling", &CCamera::SetFrustumLightCulling,
+		"SetDepthPrePass", &CCamera::SetDepthPrePass,
 		"SetProjectionMode", &CCamera::SetProjectionMode
+	);
+
+	p_luaState.new_enum<UI::CCanvas::EScalerMode>("CanvasScalerMode", {
+		{"CONSTANT_PIXEL_SIZE", UI::CCanvas::EScalerMode::CONSTANT_PIXEL_SIZE},
+		{"SCALE_WITH_SCREEN_SIZE", UI::CCanvas::EScalerMode::SCALE_WITH_SCREEN_SIZE}
+	});
+
+	p_luaState.new_enum<UI::CCanvas::EScreenMatchMode>("CanvasScreenMatchMode", {
+		{"MATCH_WIDTH_OR_HEIGHT", UI::CCanvas::EScreenMatchMode::MATCH_WIDTH_OR_HEIGHT},
+		{"EXPAND", UI::CCanvas::EScreenMatchMode::EXPAND},
+		{"SHRINK", UI::CCanvas::EScreenMatchMode::SHRINK}
+	});
+
+	p_luaState.new_enum<UI::CCanvas::ERenderMode>("CanvasRenderMode", {
+		{"SCREEN_SPACE", UI::CCanvas::ERenderMode::SCREEN_SPACE},
+		{"WORLD_SPACE", UI::CCanvas::ERenderMode::WORLD_SPACE}
+	});
+
+	p_luaState.new_enum<CTransform::EUIAnchorPreset>("AnchorPreset", {
+		{"TOP_LEFT", CTransform::EUIAnchorPreset::TOP_LEFT},
+		{"TOP_CENTER", CTransform::EUIAnchorPreset::TOP_CENTER},
+		{"TOP_RIGHT", CTransform::EUIAnchorPreset::TOP_RIGHT},
+		{"MIDDLE_LEFT", CTransform::EUIAnchorPreset::MIDDLE_LEFT},
+		{"CENTER", CTransform::EUIAnchorPreset::CENTER},
+		{"MIDDLE_RIGHT", CTransform::EUIAnchorPreset::MIDDLE_RIGHT},
+		{"BOTTOM_LEFT", CTransform::EUIAnchorPreset::BOTTOM_LEFT},
+		{"BOTTOM_CENTER", CTransform::EUIAnchorPreset::BOTTOM_CENTER},
+		{"BOTTOM_RIGHT", CTransform::EUIAnchorPreset::BOTTOM_RIGHT},
+		{"HORIZONTAL_STRETCH_TOP", CTransform::EUIAnchorPreset::HORIZONTAL_STRETCH_TOP},
+		{"HORIZONTAL_STRETCH_MIDDLE", CTransform::EUIAnchorPreset::HORIZONTAL_STRETCH_MIDDLE},
+		{"HORIZONTAL_STRETCH_BOTTOM", CTransform::EUIAnchorPreset::HORIZONTAL_STRETCH_BOTTOM},
+		{"VERTICAL_STRETCH_LEFT", CTransform::EUIAnchorPreset::VERTICAL_STRETCH_LEFT},
+		{"VERTICAL_STRETCH_CENTER", CTransform::EUIAnchorPreset::VERTICAL_STRETCH_CENTER},
+		{"VERTICAL_STRETCH_RIGHT", CTransform::EUIAnchorPreset::VERTICAL_STRETCH_RIGHT},
+		{"STRETCH_BOTH", CTransform::EUIAnchorPreset::STRETCH_BOTH}
+	});
+
+	p_luaState.new_enum<UI::CLayoutGroup::EDirection>("LayoutDirection", {
+		{"HORIZONTAL", UI::CLayoutGroup::EDirection::HORIZONTAL},
+		{"VERTICAL", UI::CLayoutGroup::EDirection::VERTICAL}
+	});
+
+	p_luaState.new_enum<UI::CLayoutGroup::EHorizontalAlignment>("LayoutHorizontalAlignment", {
+		{"LEFT", UI::CLayoutGroup::EHorizontalAlignment::LEFT},
+		{"CENTER", UI::CLayoutGroup::EHorizontalAlignment::CENTER},
+		{"RIGHT", UI::CLayoutGroup::EHorizontalAlignment::RIGHT}
+	});
+
+	p_luaState.new_enum<UI::CLayoutGroup::EVerticalAlignment>("LayoutVerticalAlignment", {
+		{"TOP", UI::CLayoutGroup::EVerticalAlignment::TOP},
+		{"CENTER", UI::CLayoutGroup::EVerticalAlignment::CENTER},
+		{"BOTTOM", UI::CLayoutGroup::EVerticalAlignment::BOTTOM}
+	});
+
+	p_luaState.new_enum<UI::CText::EHorizontalAlignment>("TextHorizontalAlignment", {
+		{"LEFT", UI::CText::EHorizontalAlignment::LEFT},
+		{"CENTER", UI::CText::EHorizontalAlignment::CENTER},
+		{"RIGHT", UI::CText::EHorizontalAlignment::RIGHT}
+	});
+
+	p_luaState.new_enum<UI::CText::EVerticalAlignment>("TextVerticalAlignment", {
+		{"TOP", UI::CText::EVerticalAlignment::TOP},
+		{"CENTER", UI::CText::EVerticalAlignment::CENTER},
+		{"BOTTOM", UI::CText::EVerticalAlignment::BOTTOM}
+	});
+
+	p_luaState.new_usertype<UI::CCanvas>("Canvas",
+		sol::base_classes, sol::bases<AComponent>(),
+		"GetReferenceResolution", [](UI::CCanvas& p_this) -> FVector2 { return p_this.GetReferenceResolution(); },
+		"SetReferenceResolution", &UI::CCanvas::SetReferenceResolution,
+		"GetScaleFactor", &UI::CCanvas::GetScaleFactor,
+		"SetScaleFactor", &UI::CCanvas::SetScaleFactor,
+		"GetScalerMode", &UI::CCanvas::GetScalerMode,
+		"SetScalerMode", &UI::CCanvas::SetScalerMode,
+		"GetScreenMatchMode", &UI::CCanvas::GetScreenMatchMode,
+		"SetScreenMatchMode", &UI::CCanvas::SetScreenMatchMode,
+		"GetMatchWidthOrHeight", &UI::CCanvas::GetMatchWidthOrHeight,
+		"SetMatchWidthOrHeight", &UI::CCanvas::SetMatchWidthOrHeight,
+		"GetRenderMode", &UI::CCanvas::GetRenderMode,
+		"SetRenderMode", &UI::CCanvas::SetRenderMode,
+		"GetWorldScale", &UI::CCanvas::GetWorldScale,
+		"SetWorldScale", &UI::CCanvas::SetWorldScale
+	);
+
+	p_luaState.new_usertype<UI::CImage>("Image",
+		sol::base_classes, sol::bases<AComponent>(),
+		"GetTexture", &UI::CImage::GetTexture,
+		"SetTexture", &UI::CImage::SetTexture,
+		"GetSize", [](UI::CImage& p_this) -> FVector2 { return p_this.GetSize(); },
+		"SetSize", &UI::CImage::SetSize,
+		"GetTint", [](UI::CImage& p_this) -> FVector4 { return p_this.GetTint(); },
+		"SetTint", &UI::CImage::SetTint,
+		"GetPreserveAspect", &UI::CImage::GetPreserveAspect,
+		"SetPreserveAspect", &UI::CImage::SetPreserveAspect
+	);
+
+	p_luaState.new_usertype<UI::CLayoutGroup>("LayoutGroup",
+		sol::base_classes, sol::bases<AComponent>(),
+		"GetDirection", &UI::CLayoutGroup::GetDirection,
+		"SetDirection", &UI::CLayoutGroup::SetDirection,
+		"GetSpacing", &UI::CLayoutGroup::GetSpacing,
+		"SetSpacing", &UI::CLayoutGroup::SetSpacing,
+		"GetPadding", [](UI::CLayoutGroup& p_this) -> FVector4 { return p_this.GetPadding(); },
+		"SetPadding", &UI::CLayoutGroup::SetPadding,
+		"GetHorizontalAlignment", &UI::CLayoutGroup::GetHorizontalAlignment,
+		"SetHorizontalAlignment", &UI::CLayoutGroup::SetHorizontalAlignment,
+		"GetVerticalAlignment", &UI::CLayoutGroup::GetVerticalAlignment,
+		"SetVerticalAlignment", &UI::CLayoutGroup::SetVerticalAlignment,
+		"GetControlChildrenWidth", &UI::CLayoutGroup::GetControlChildrenWidth,
+		"SetControlChildrenWidth", &UI::CLayoutGroup::SetControlChildrenWidth,
+		"GetControlChildrenHeight", &UI::CLayoutGroup::GetControlChildrenHeight,
+		"SetControlChildrenHeight", &UI::CLayoutGroup::SetControlChildrenHeight,
+		"GetForceExpandWidth", &UI::CLayoutGroup::GetForceExpandWidth,
+		"SetForceExpandWidth", &UI::CLayoutGroup::SetForceExpandWidth,
+		"GetForceExpandHeight", &UI::CLayoutGroup::GetForceExpandHeight,
+		"SetForceExpandHeight", &UI::CLayoutGroup::SetForceExpandHeight
+	);
+
+	p_luaState.new_usertype<UI::CHorizontalLayout>("HorizontalLayout",
+		sol::base_classes, sol::bases<AComponent, UI::CLayoutGroup>(),
+		"GetSpacing", &UI::CHorizontalLayout::GetSpacing,
+		"SetSpacing", &UI::CHorizontalLayout::SetSpacing,
+		"GetPadding", [](UI::CHorizontalLayout& p_this) -> FVector4 { return p_this.GetPadding(); },
+		"SetPadding", &UI::CHorizontalLayout::SetPadding,
+		"GetHorizontalAlignment", &UI::CHorizontalLayout::GetHorizontalAlignment,
+		"SetHorizontalAlignment", &UI::CHorizontalLayout::SetHorizontalAlignment,
+		"GetVerticalAlignment", &UI::CHorizontalLayout::GetVerticalAlignment,
+		"SetVerticalAlignment", &UI::CHorizontalLayout::SetVerticalAlignment,
+		"GetControlChildrenWidth", &UI::CHorizontalLayout::GetControlChildrenWidth,
+		"SetControlChildrenWidth", &UI::CHorizontalLayout::SetControlChildrenWidth,
+		"GetControlChildrenHeight", &UI::CHorizontalLayout::GetControlChildrenHeight,
+		"SetControlChildrenHeight", &UI::CHorizontalLayout::SetControlChildrenHeight,
+		"GetForceExpandWidth", &UI::CHorizontalLayout::GetForceExpandWidth,
+		"SetForceExpandWidth", &UI::CHorizontalLayout::SetForceExpandWidth,
+		"GetForceExpandHeight", &UI::CHorizontalLayout::GetForceExpandHeight,
+		"SetForceExpandHeight", &UI::CHorizontalLayout::SetForceExpandHeight
+	);
+
+	p_luaState.new_usertype<UI::CVerticalLayout>("VerticalLayout",
+		sol::base_classes, sol::bases<AComponent, UI::CLayoutGroup>(),
+		"GetSpacing", &UI::CVerticalLayout::GetSpacing,
+		"SetSpacing", &UI::CVerticalLayout::SetSpacing,
+		"GetPadding", [](UI::CVerticalLayout& p_this) -> FVector4 { return p_this.GetPadding(); },
+		"SetPadding", &UI::CVerticalLayout::SetPadding,
+		"GetHorizontalAlignment", &UI::CVerticalLayout::GetHorizontalAlignment,
+		"SetHorizontalAlignment", &UI::CVerticalLayout::SetHorizontalAlignment,
+		"GetVerticalAlignment", &UI::CVerticalLayout::GetVerticalAlignment,
+		"SetVerticalAlignment", &UI::CVerticalLayout::SetVerticalAlignment,
+		"GetControlChildrenWidth", &UI::CVerticalLayout::GetControlChildrenWidth,
+		"SetControlChildrenWidth", &UI::CVerticalLayout::SetControlChildrenWidth,
+		"GetControlChildrenHeight", &UI::CVerticalLayout::GetControlChildrenHeight,
+		"SetControlChildrenHeight", &UI::CVerticalLayout::SetControlChildrenHeight,
+		"GetForceExpandWidth", &UI::CVerticalLayout::GetForceExpandWidth,
+		"SetForceExpandWidth", &UI::CVerticalLayout::SetForceExpandWidth,
+		"GetForceExpandHeight", &UI::CVerticalLayout::GetForceExpandHeight,
+		"SetForceExpandHeight", &UI::CVerticalLayout::SetForceExpandHeight
+	);
+
+	p_luaState.new_usertype<UI::CText>("Text",
+		sol::base_classes, sol::bases<AComponent>(),
+		"GetText", &UI::CText::GetText,
+		"SetText", &UI::CText::SetText,
+		"GetFontPath", &UI::CText::GetFontPath,
+		"SetFontPath", &UI::CText::SetFontPath,
+		"GetFontSize", &UI::CText::GetFontSize,
+		"SetFontSize", &UI::CText::SetFontSize,
+		"GetColor", [](UI::CText& p_this) -> FVector4 { return p_this.GetColor(); },
+		"SetColor", &UI::CText::SetColor,
+		"GetHorizontalAlignment", &UI::CText::GetHorizontalAlignment,
+		"SetHorizontalAlignment", &UI::CText::SetHorizontalAlignment,
+		"GetVerticalAlignment", &UI::CText::GetVerticalAlignment,
+		"SetVerticalAlignment", &UI::CText::SetVerticalAlignment
 	);
 
 	p_luaState.new_usertype<CLight>("Light",
@@ -247,6 +677,11 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetRadius", &CAmbientSphereLight::SetRadius
 	);
 
+	p_luaState.new_enum<OvRendering::Settings::EShadowMapUpdateMode>("ShadowMapUpdateMode", {
+		{ "REALTIME", OvRendering::Settings::EShadowMapUpdateMode::REALTIME },
+		{ "ON_CHANGE", OvRendering::Settings::EShadowMapUpdateMode::ON_CHANGE }
+	});
+
 	p_luaState.new_usertype<CDirectionalLight>("DirectionalLight",
 		sol::base_classes, sol::bases<CLight>(),
 		"GetCastShadow", &CDirectionalLight::GetCastShadows,
@@ -256,7 +691,10 @@ void BindLuaComponents(sol::state& p_luaState)
 		"GetShadowFollowCamera", &CDirectionalLight::GetShadowFollowCamera,
 		"SetShadowFollowCamera", &CDirectionalLight::SetShadowFollowCamera,
 		"GetShadowMapResolution", &CDirectionalLight::GetShadowMapResolution,
-		"SetShadowMapResolution", &CDirectionalLight::SetShadowMapResolution
+		"SetShadowMapResolution", &CDirectionalLight::SetShadowMapResolution,
+		"GetShadowMapUpdateMode", &CDirectionalLight::GetShadowMapUpdateMode,
+		"SetShadowMapUpdateMode", &CDirectionalLight::SetShadowMapUpdateMode,
+		"RequestShadowMapUpdate", &CDirectionalLight::RequestShadowMapUpdate
 	);
 
 	p_luaState.new_usertype<CAudioSource>("AudioSource",
@@ -320,11 +758,26 @@ void BindLuaComponents(sol::state& p_luaState)
 		sol::base_classes, sol::bases<OvCore::Rendering::PostProcess::EffectSettings>(),
 		"Exposure", &OvCore::Rendering::PostProcess::TonemappingSettings::exposure,
 		"Mode", &OvCore::Rendering::PostProcess::TonemappingSettings::mode,
-		"GammaCorrection", &OvCore::Rendering::PostProcess::TonemappingSettings::gammaCorrection
+		"GammaCorrection", &OvCore::Rendering::PostProcess::TonemappingSettings::gammaCorrection,
+		"Temperature", &OvCore::Rendering::PostProcess::TonemappingSettings::temperature,
+		"Tint", &OvCore::Rendering::PostProcess::TonemappingSettings::tint,
+		"Saturation", &OvCore::Rendering::PostProcess::TonemappingSettings::saturation,
+		"Contrast", &OvCore::Rendering::PostProcess::TonemappingSettings::contrast,
+		"VignetteIntensity", &OvCore::Rendering::PostProcess::TonemappingSettings::vignetteIntensity,
+		"VignetteSmoothness", &OvCore::Rendering::PostProcess::TonemappingSettings::vignetteSmoothness
 	);
 
 	p_luaState.new_usertype<OvCore::Rendering::PostProcess::FXAASettings>("FXAASettings",
 		sol::base_classes, sol::bases<OvCore::Rendering::PostProcess::EffectSettings>()
+	);
+
+	p_luaState.new_usertype<OvCore::Rendering::FogSettings>("FogSettings",
+		"Enabled", &OvCore::Rendering::FogSettings::enabled,
+		"Color", &OvCore::Rendering::FogSettings::color,
+		"Intensity", &OvCore::Rendering::FogSettings::intensity,
+		"Start", &OvCore::Rendering::FogSettings::start,
+		"Density", &OvCore::Rendering::FogSettings::density,
+		"MaxOpacity", &OvCore::Rendering::FogSettings::maxOpacity
 	);
 
 	p_luaState.new_usertype<CPostProcessStack>("PostProcessStack",
@@ -336,7 +789,9 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetTonemappingSettings", &CPostProcessStack::SetTonemappingSettings,
 		"SetBloomSettings", &CPostProcessStack::SetBloomSettings,
 		"SetAutoExposureSettings", &CPostProcessStack::SetAutoExposureSettings,
-		"SetFXAASettings", &CPostProcessStack::SetFXAASettings
+		"SetFXAASettings", &CPostProcessStack::SetFXAASettings,
+		"GetFogSettings", &CPostProcessStack::GetFogSettings,
+		"SetFogSettings", &CPostProcessStack::SetFogSettings
 	);
 
 	p_luaState.new_enum<CReflectionProbe::ERefreshMode>("ReflectionProbeRefreshMode", {
@@ -373,6 +828,8 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetInfluenceSize", &CReflectionProbe::SetInfluenceSize,
 		"GetInfluenceSize", &CReflectionProbe::GetInfluenceSize,
 		"SetBoxProjection", &CReflectionProbe::SetBoxProjection,
+		"SetBrightness", &CReflectionProbe::SetBrightness,
+		"GetBrightness", &CReflectionProbe::GetBrightness,
 		"IsBoxProjectionEnabled", &CReflectionProbe::IsBoxProjectionEnabled,
 		"RequestCapture", &CReflectionProbe::RequestCapture,
 		"GetCubemap", &CReflectionProbe::GetCubemap

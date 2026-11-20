@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include <cstdint>
+#include <optional>
+
 #include <OvRendering/Data/Describable.h>
 #include <OvRendering/Data/Material.h>
 #include <OvRendering/Resources/IMesh.h>
@@ -21,8 +24,9 @@ namespace OvRendering::Entities
 		OvTools::Utils::OptRef<OvRendering::Resources::IMesh> mesh;
 		OvTools::Utils::OptRef<OvRendering::Data::Material> material;
 		Data::StateMask stateMask;
-		Settings::EPrimitiveMode primitiveMode = OvRendering::Settings::EPrimitiveMode::TRIANGLES;
+		baregl::types::EPrimitiveMode primitiveMode = baregl::types::EPrimitiveMode::TRIANGLES;
 		std::optional<std::string> pass = std::nullopt;
 		std::optional<Data::FeatureSet> featureSetOverride = std::nullopt;
+		std::optional<uint32_t> gpuInstancesOverride = std::nullopt; // Instances to draw instead of the material's
 	};
 }

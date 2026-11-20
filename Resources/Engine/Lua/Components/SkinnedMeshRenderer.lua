@@ -1,6 +1,9 @@
 ---@meta
 
 --- A component responsible for skeletal animation playback and skinning runtime control
+--- Any number of animations can play at once, each layer owning its own animation source model,
+--- animation, time, speed, loop mode and weight.
+--- Layer arguments default to 0 (the base layer), which always exists
 ---@class SkinnedMeshRenderer : Component
 SkinnedMeshRenderer = {}
 
@@ -8,34 +11,82 @@ SkinnedMeshRenderer = {}
 ---@return Actor
 function SkinnedMeshRenderer:GetOwner() end
 
---- Starts/resumes animation playback
-function SkinnedMeshRenderer:Play() end
+--- Returns the number of active animation layers (always at least 1)
+---@return integer
+function SkinnedMeshRenderer:GetLayerCount() end
 
---- Pauses animation playback
-function SkinnedMeshRenderer:Pause() end
+--- Appends a new animation layer and returns its index
+---@return integer
+function SkinnedMeshRenderer:AddLayer() end
 
---- Stops playback and resets time to start
-function SkinnedMeshRenderer:Stop() end
-
---- Returns whether playback is active
+--- Removes an animation layer, shifting the following layers down by one.
+--- Fails when the index is invalid or when only one layer remains
+---@param layer integer
 ---@return boolean
-function SkinnedMeshRenderer:IsPlaying() end
+function SkinnedMeshRenderer:RemoveLayer(layer) end
 
---- Sets looping mode
+--- Starts/resumes animation playback on a layer
+---@param layer? integer
+function SkinnedMeshRenderer:Play(layer) end
+
+--- Pauses animation playback on a layer
+---@param layer? integer
+function SkinnedMeshRenderer:Pause(layer) end
+
+--- Stops playback on a layer and resets its time to start
+---@param layer? integer
+function SkinnedMeshRenderer:Stop(layer) end
+
+--- Returns whether playback is active on a layer
+---@param layer? integer
+---@return boolean
+function SkinnedMeshRenderer:IsPlaying(layer) end
+
+--- Sets looping mode on a layer
 ---@param loop boolean
-function SkinnedMeshRenderer:SetLooping(loop) end
+---@param layer? integer
+function SkinnedMeshRenderer:SetLooping(loop, layer) end
 
---- Returns whether looping is enabled
+--- Returns whether looping is enabled on a layer
+---@param layer? integer
 ---@return boolean
-function SkinnedMeshRenderer:IsLooping() end
+function SkinnedMeshRenderer:IsLooping(layer) end
 
---- Sets animation playback speed
+--- Sets animation playback speed on a layer
 ---@param speed number
-function SkinnedMeshRenderer:SetPlaybackSpeed(speed) end
+---@param layer? integer
+function SkinnedMeshRenderer:SetPlaybackSpeed(speed, layer) end
 
---- Returns current playback speed
+--- Returns the playback speed of a layer
+---@param layer? integer
 ---@return number
-function SkinnedMeshRenderer:GetPlaybackSpeed() end
+function SkinnedMeshRenderer:GetPlaybackSpeed(layer) end
+
+--- Sets the blend weight of a layer, clamped to the [0,1] range
+--- Weights are normalized per bone against the other layers animating that bone, so a layer
+--- animating a bone alone contributes fully until its weight reaches 0, where the bone falls
+--- back to its bind pose
+---@param weight number
+---@param layer? integer
+function SkinnedMeshRenderer:SetLayerWeight(weight, layer) end
+
+--- Returns the blend weight of a layer
+---@param layer? integer
+---@return number
+function SkinnedMeshRenderer:GetLayerWeight(layer) end
+
+--- Limits a layer to the subtree under a node: the other nodes ignore the layer and keep following
+--- the layers below it. An empty name lifts the limit; an unknown one is reported and ignored.
+--- On the nodes it keeps, the layer still blends with the others by weight, so the layers below it
+--- should stay above zero to keep driving the rest
+---@param nodeName string
+---@param layer? integer
+function SkinnedMeshRenderer:SetLayerMask(nodeName, layer) end
+
+--- Returns the name of the node a layer is limited to, empty when it is not limited
+---@param layer? integer
+---@return string
+function SkinnedMeshRenderer:GetLayerMask(layer) end
 
 --- Sets the bounds scale used during frustum culling for skinned meshes
 --- Values below 1.0 are clamped to 1.0
@@ -47,48 +98,59 @@ function SkinnedMeshRenderer:SetMeshBoundsScale(scale) end
 ---@return number
 function SkinnedMeshRenderer:GetMeshBoundsScale() end
 
---- Sets playback time in seconds
+--- Sets the playback time of a layer in seconds
 ---@param timeSeconds number
-function SkinnedMeshRenderer:SetTime(timeSeconds) end
+---@param layer? integer
+function SkinnedMeshRenderer:SetTime(timeSeconds, layer) end
 
---- Returns playback time in seconds
+--- Returns the playback time of a layer in seconds
+---@param layer? integer
 ---@return number
-function SkinnedMeshRenderer:GetTime() end
+function SkinnedMeshRenderer:GetTime(layer) end
 
---- Sets an external model used as animation source, or nil to use the rendered model
----@param model Model|nil
-function SkinnedMeshRenderer:SetAnimationSourceModel(model) end
+--- Sets the external model used as animation source by a layer, or nil to use the rendered model.
+--- Accepts either a Model returned by GetAnimationSourceModel, or an asset reference whose path is
+--- resolved (and loaded on first use) through the model manager
+---@overload fun(self: SkinnedMeshRenderer, model: Model|nil, layer?: integer)
+---@overload fun(self: SkinnedMeshRenderer, asset: AssetRef, layer?: integer)
+function SkinnedMeshRenderer:SetAnimationSourceModel(...) end
 
---- Returns the external animation source model, or nil when the rendered model is used
+--- Returns the external animation source model of a layer, or nil when the rendered model is used
+---@param layer? integer
 ---@return Model|nil
-function SkinnedMeshRenderer:GetAnimationSourceModel() end
+function SkinnedMeshRenderer:GetAnimationSourceModel(layer) end
 
---- Returns whether the current animation source is compatible with the rendered model skeleton
+--- Returns whether the animation source of a layer is compatible with the rendered model skeleton
+---@param layer? integer
 ---@return boolean
-function SkinnedMeshRenderer:IsAnimationSourceCompatible() end
+function SkinnedMeshRenderer:IsAnimationSourceCompatible(layer) end
 
---- Returns the number of available animation clips
+--- Returns the number of animation clips available to a layer
+---@param layer? integer
 ---@return integer
-function SkinnedMeshRenderer:GetAnimationCount() end
+function SkinnedMeshRenderer:GetAnimationCount(layer) end
 
---- Returns clip name at index or nil
+--- Returns the clip name at index for a layer, or nil
 ---@param index integer
+---@param layer? integer
 ---@return string|nil
-function SkinnedMeshRenderer:GetAnimationName(index) end
+function SkinnedMeshRenderer:GetAnimationName(index, layer) end
 
---- Sets the active animation clip by index or name, returns true on success
----@overload fun(self: SkinnedMeshRenderer, index: integer|nil): boolean
----@overload fun(self: SkinnedMeshRenderer, name: string): boolean
+--- Sets the active animation clip of a layer by index or name, returns true on success
+---@overload fun(self: SkinnedMeshRenderer, name: string, layer?: integer): boolean
+---@overload fun(self: SkinnedMeshRenderer, index: integer|nil, layer?: integer): boolean
 ---@return boolean
 function SkinnedMeshRenderer:SetAnimation(...) end
 
---- Returns current clip index or nil
+--- Returns the current clip index of a layer, or nil
+---@param layer? integer
 ---@return integer|nil
-function SkinnedMeshRenderer:GetActiveAnimationIndex() end
+function SkinnedMeshRenderer:GetActiveAnimationIndex(layer) end
 
---- Returns current clip name or nil
+--- Returns the current clip name of a layer, or nil
+---@param layer? integer
 ---@return string|nil
-function SkinnedMeshRenderer:GetActiveAnimationName() end
+function SkinnedMeshRenderer:GetActiveAnimationName(layer) end
 
 --- Returns the number of available bones
 ---@return integer
@@ -119,6 +181,21 @@ function SkinnedMeshRenderer:GetBoneLocalRotation(boneIndex) end
 ---@return Vector3|nil
 function SkinnedMeshRenderer:GetBoneLocalScale(boneIndex) end
 
+--- Returns the current bone global position in skeleton/model space, excluding the owning actor's world transform, or nil
+---@param boneIndex integer
+---@return Vector3|nil
+function SkinnedMeshRenderer:GetBoneGlobalPosition(boneIndex) end
+
+--- Returns the current bone global rotation in skeleton/model space, excluding the owning actor's world transform, or nil
+---@param boneIndex integer
+---@return Quaternion|nil
+function SkinnedMeshRenderer:GetBoneGlobalRotation(boneIndex) end
+
+--- Returns the current bone global scale in skeleton/model space, excluding the owning actor's world transform, or nil
+---@param boneIndex integer
+---@return Vector3|nil
+function SkinnedMeshRenderer:GetBoneGlobalScale(boneIndex) end
+
 --- Sets local bone position
 ---@param boneIndex integer
 ---@param position Vector3
@@ -136,3 +213,35 @@ function SkinnedMeshRenderer:SetBoneLocalRotation(boneIndex, rotation) end
 ---@param scale Vector3
 ---@return boolean
 function SkinnedMeshRenderer:SetBoneLocalScale(boneIndex, scale) end
+
+--- One part of a ragdoll: the bone it moves, and a capsule from it to the bone To, or, without To, running Length
+--- metres on from the bone's parent. Swing and Twist are degrees
+---@class RagdollPart
+---@field Bone string
+---@field To string|nil
+---@field Length number|nil
+---@field Radius number|nil
+---@field Mass number|nil
+---@field Swing number|nil
+---@field Twist number|nil
+
+--- Hands the skeleton over to physics from the current pose: every part becomes a capsule joined to the nearest part
+--- above it, and the animation stops driving the skeleton until StopRagdoll. The ragdoll falls on everything but the
+--- dynamic bodies, which it goes through, and raycasts never see it. Returns false when a bone is unknown
+---@param parts RagdollPart[]
+---@param linearVelocity Vector3|nil Of every part at the start, world space
+---@return boolean
+function SkinnedMeshRenderer:StartRagdoll(parts, linearVelocity) end
+
+--- Removes the ragdoll from the simulation and gives the skeleton back to the animation
+function SkinnedMeshRenderer:StopRagdoll() end
+
+--- Returns true while a ragdoll drives the skeleton
+---@return boolean
+function SkinnedMeshRenderer:IsRagdoll() end
+
+--- Pushes the ragdoll's part that moves the given bone, or the nearest part above it
+---@param boneName string
+---@param impulse Vector3 World space
+---@return boolean
+function SkinnedMeshRenderer:AddRagdollImpulse(boneName, impulse) end

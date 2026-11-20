@@ -26,10 +26,15 @@
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
+#include <OvCore/ECS/Components/UI/CImage.h>
+#include <OvCore/ECS/Components/UI/CText.h>
+#include <OvCore/ResourceManagement/FontManager.h>
 #include <OvCore/Resources/Loaders/MaterialLoader.h>
 
+#include <OvCore/Global/QuitRequest.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/Helpers/GUIHelpers.h>
+#include <OvCore/Helpers/InputHelpers.h>
 
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Core/GizmoBehaviour.h>
@@ -435,10 +440,17 @@ OvEditor::Core::EditorActions::EditorActions(Context& p_context, PanelsManager& 
 		std::string titleExtra = " - " + (p_newPath.empty() ? "Untitled Scene" : GetResourcePath(p_newPath));
 		m_context.window->SetTitle(m_context.windowSettings.title + titleExtra);
 	};
+
+	// A game asking to quit from the editor leaves play mode, once the frame running its scripts is over
+	m_quitListener = OvCore::Global::QuitRequest::RequestedEvent += [this]
+	{
+		DelayAction([this] { StopPlaying(); });
+	};
 }
 
 OvEditor::Core::EditorActions::~EditorActions()
 {
+	OvCore::Global::QuitRequest::RequestedEvent -= m_quitListener;
 }
 
 void OvEditor::Core::EditorActions::LoadEmptyScene()
@@ -636,6 +648,11 @@ void OvEditor::Core::EditorActions::BuildAtLocation(
 #endif
 
 	const std::string executableName = m_context.projectSettings.Get<std::string>("executable_name") + extension;
+
+	if (p_buildType == EBuildType::Debug)
+	{
+		OVLOG_WARNING("Building the game in Debug: the executable is unoptimized and uses synchronous OpenGL debug output. Use Release or Publish (Project Settings > Build) to measure performance.");
+	}
 
 	bool failed = false;
 
@@ -968,6 +985,7 @@ void OvEditor::Core::EditorActions::StartPlaying()
 			tinyxml2::XMLNode* node = m_sceneBackup->NewElement("root");
 			m_sceneBackup->InsertFirstChild(node);
 			m_context.sceneManager.GetCurrentScene()->OnSerialize(*m_sceneBackup, node);
+			OvCore::Helpers::InputHelpers::ResetGameInputGate();
 			m_panelsManager.GetPanelAs<OvEditor::Panels::GameView>("Game View").Focus();
 			m_context.sceneManager.GetCurrentScene()->Play();
 			SetEditorMode(EEditorMode::PLAY);
@@ -976,6 +994,7 @@ void OvEditor::Core::EditorActions::StartPlaying()
 	else
 	{
 		m_context.audioEngine->Unsuspend();
+		m_panelsManager.GetPanelAs<OvEditor::Panels::GameView>("Game View").Focus();
 		SetEditorMode(EEditorMode::PLAY);
 	}
 }
@@ -991,6 +1010,9 @@ void OvEditor::Core::EditorActions::StopPlaying()
 	if (m_editorMode != EEditorMode::EDIT)
 	{
 		m_context.window->SetCursorMode(OvWindowing::Cursor::ECursorMode::NORMAL);
+		OvCore::Helpers::InputHelpers::UpdateGameInputGate(false, true); // The game's lock and cursor shape leave with it
+		OvCore::Helpers::InputHelpers::ResetGameInputGate();
+		m_context.clock.SetTimeScale(1.0f);
 		SetEditorMode(EEditorMode::EDIT);
 		bool loadedFromDisk = m_context.sceneManager.IsCurrentSceneLoadedFromDisk();
 		std::string sceneSourcePath = m_context.sceneManager.GetCurrentSceneSourcePath();
@@ -1028,6 +1050,25 @@ OvEditor::Core::EGizmoOperation OvEditor::Core::EditorActions::GetGizmoOperation
 {
 	auto& sceneView = m_panelsManager.GetPanelAs<OvEditor::Panels::SceneView>("Scene View");
 	return sceneView.GetGizmoOperation();
+}
+
+void OvEditor::Core::EditorActions::SetSceneUIRenderingEnabled(bool p_enabled)
+{
+	if (m_sceneUIRenderingEnabled != p_enabled)
+	{
+		m_sceneUIRenderingEnabled = p_enabled;
+		SceneUIRenderingChangedEvent.Invoke(m_sceneUIRenderingEnabled);
+	}
+}
+
+void OvEditor::Core::EditorActions::ToggleSceneUIRendering()
+{
+	SetSceneUIRenderingEnabled(!m_sceneUIRenderingEnabled);
+}
+
+bool OvEditor::Core::EditorActions::IsSceneUIRenderingEnabled() const
+{
+	return m_sceneUIRenderingEnabled;
 }
 
 OvMaths::FVector3 OvEditor::Core::EditorActions::CalculateActorSpawnPoint(float p_distanceToCamera)
@@ -1121,12 +1162,13 @@ void OvEditor::Core::EditorActions::DuplicateActor
 	p_toDuplicate.OnSerialize(doc, actorsRoot);
 	auto& newActor = CreateEmptyActor(false);
 	int64_t idToUse = newActor.GetID();
-	uint64_t guidToUse = newActor.GetGUID();
 	tinyxml2::XMLElement* currentActor = actorsRoot->FirstChildElement("actor");
+
+	// The copy keeps its own GUID, never shared with the duplicated actor
+	SetActorNodeValue(doc, *currentActor, "guid", std::to_string(newActor.GetGUID()));
 	newActor.OnDeserialize(doc, currentActor);
 	
 	newActor.SetID(idToUse);
-	newActor.SetGUID(guidToUse);
 	auto currentScene = m_context.sceneManager.GetCurrentScene();
 
 	if (p_forcedParent)
@@ -1506,21 +1548,23 @@ bool OvEditor::Core::EditorActions::ImportAsset(const std::string& p_initialDest
 {
 	using namespace OvWindowing::Dialogs;
 
-	std::string modelFormats = "*.fbx;*.obj;";
+	std::string modelFormats = "*.fbx;*.obj;*.glb;*.vrm;";
 	std::string textureFormats = "*.png;*.jpeg;*.jpg;*.tga;*.hdr;";
 	std::string shaderFormats = "*.ovfx;";
 	std::string shaderPartFormats = "*.ovfxh;";
 	std::string soundFormats = "*.mp3;*.ogg;*.wav;";
 	std::string scriptFormats = "*.lua;";
+	std::string fontFormats = "*.ttf;*.otf;";
 
 	OpenFileDialog selectAssetDialog("Select an asset to import");
-	selectAssetDialog.AddFileType("Any supported format", modelFormats + textureFormats + shaderFormats + shaderPartFormats + soundFormats + scriptFormats);
-	selectAssetDialog.AddFileType("Model (.fbx, .obj)", modelFormats);
+	selectAssetDialog.AddFileType("Any supported format", modelFormats + textureFormats + shaderFormats + shaderPartFormats + soundFormats + scriptFormats + fontFormats);
+	selectAssetDialog.AddFileType("Model (.fbx, .obj, .glb, .vrm)", modelFormats);
 	selectAssetDialog.AddFileType("Texture (.png, .jpeg, .jpg, .tga, .hdr)", textureFormats);
 	selectAssetDialog.AddFileType("Shader (.ovfx)", shaderFormats);
 	selectAssetDialog.AddFileType("Shader Parts (.ovfxh)", shaderPartFormats);
 	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav)", soundFormats);
 	selectAssetDialog.AddFileType("Script (.lua)", scriptFormats);
+	selectAssetDialog.AddFileType("Font (.ttf, .otf)", fontFormats);
 	selectAssetDialog.Show();
 
 	if (selectAssetDialog.HasSucceeded())
@@ -1591,21 +1635,23 @@ bool OvEditor::Core::EditorActions::ImportAssetAtLocation(const std::string& p_d
 {
 	using namespace OvWindowing::Dialogs;
 
-	std::string modelFormats = "*.fbx;*.obj;";
+	std::string modelFormats = "*.fbx;*.obj;*.glb;*.vrm;";
 	std::string textureFormats = "*.png;*.jpeg;*.jpg;*.tga;*.hdr;";
 	std::string shaderFormats = "*.ovfx;";
 	std::string shaderPartFormats = "*.ovfxh;";
 	std::string soundFormats = "*.mp3;*.ogg;*.wav;";
 	std::string scriptFormats = "*.lua;";
+	std::string fontFormats = "*.ttf;*.otf;";
 
 	OpenFileDialog selectAssetDialog("Select an asset to import");
-	selectAssetDialog.AddFileType("Any supported format", modelFormats + textureFormats + shaderFormats + soundFormats + scriptFormats);
-	selectAssetDialog.AddFileType("Model (.fbx, .obj)", modelFormats);
+	selectAssetDialog.AddFileType("Any supported format", modelFormats + textureFormats + shaderFormats + shaderPartFormats + soundFormats + scriptFormats + fontFormats);
+	selectAssetDialog.AddFileType("Model (.fbx, .obj, .glb, .vrm)", modelFormats);
 	selectAssetDialog.AddFileType("Texture (.png, .jpeg, .jpg, .tga, .hdr)", textureFormats);
 	selectAssetDialog.AddFileType("Shader (.ovfx)", shaderFormats);
 	selectAssetDialog.AddFileType("Shader Parts (.ovfxh)", shaderPartFormats);
 	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav)", soundFormats);
 	selectAssetDialog.AddFileType("Script (.lua)", scriptFormats);
+	selectAssetDialog.AddFileType("Font (.ttf, .otf)", fontFormats);
 	selectAssetDialog.Show();
 
 	if (selectAssetDialog.HasSucceeded())
@@ -1860,6 +1906,12 @@ void OvEditor::Core::EditorActions::PropagateFileRename(std::string p_previousNa
 			const_cast<std::string&>(resource->path) = p_newName;
 		}
 
+		if (OvCore::Global::ServiceLocator::Get<OvCore::ResourceManagement::FontManager>().MoveResource(p_previousName, p_newName))
+		{
+			OvRendering::Resources::Font* resource = OvCore::Global::ServiceLocator::Get<OvCore::ResourceManagement::FontManager>()[p_newName];
+			const_cast<std::string&>(resource->path) = p_newName;
+		}
+
 		if (OvTools::Utils::PathParser::GetFileType(p_previousName) == OvTools::Utils::PathParser::EFileType::MODEL)
 		{
 			MoveAllEmbeddedResourcesForRenamedModel(p_previousName, p_newName);
@@ -1890,6 +1942,11 @@ void OvEditor::Core::EditorActions::PropagateFileRename(std::string p_previousNa
 			auto assetViewRes = assetView.GetResource();
 			if (auto pval = std::get_if<OvRendering::Resources::Texture*>(&assetViewRes); pval && *pval)
 				assetView.ClearResource();
+
+			if (auto currentScene = m_context.sceneManager.GetCurrentScene())
+				for (auto actor : currentScene->GetActors())
+					if (auto image = actor->GetComponent<OvCore::ECS::Components::UI::CImage>(); image && image->GetTexture() == texture)
+						image->SetTexture(nullptr);
 
 			OvCore::Global::ServiceLocator::Get<OvCore::ResourceManagement::TextureManager>().UnloadResource(p_previousName);
 		}
@@ -1949,6 +2006,9 @@ void OvEditor::Core::EditorActions::PropagateFileRename(std::string p_previousNa
 
 			OvCore::Global::ServiceLocator::Get<OvCore::ResourceManagement::SoundManager>().UnloadResource(p_previousName);
 		}
+
+		if (OvCore::Global::ServiceLocator::Get<OvCore::ResourceManagement::FontManager>().GetResource(p_previousName, false))
+			OvCore::Global::ServiceLocator::Get<OvCore::ResourceManagement::FontManager>().UnloadResource(p_previousName);
 	}
 
 	switch (OvTools::Utils::PathParser::GetFileType(p_previousName))
@@ -1994,9 +2054,20 @@ void OvEditor::Core::EditorActions::PropagateFileRename(std::string p_previousNa
 		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::MATERIAL);
 		break;
 	case OvTools::Utils::PathParser::EFileType::TEXTURE:
+		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::SCENE);
+		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::PREFAB);
 		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::MATERIAL);
 		break;
 	case OvTools::Utils::PathParser::EFileType::SOUND:
+		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::SCENE);
+		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::PREFAB);
+		break;
+	case OvTools::Utils::PathParser::EFileType::FONT:
+		if (auto currentScene = m_context.sceneManager.GetCurrentScene())
+			for (auto actor : currentScene->GetActors())
+				if (auto text = actor->GetComponent<OvCore::ECS::Components::UI::CText>(); text && text->GetFontPath() == p_previousName)
+					text->SetFontPath(p_newName);
+
 		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::SCENE);
 		PropagateFileRenameThroughSavedFilesOfType(p_previousName, p_newName, OvTools::Utils::PathParser::EFileType::PREFAB);
 		break;

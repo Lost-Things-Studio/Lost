@@ -6,9 +6,6 @@
 
 #pragma once
 
-#include <OvRendering/HAL/UniformBuffer.h>
-#include <OvRendering/HAL/ShaderStorageBuffer.h>
-
 #include <OvPhysics/Core/PhysicsEngine.h>
 
 #include <OvWindowing/Context/Device.h>
@@ -17,17 +14,21 @@
 
 #include <OvUI/Core/UIManager.h>
 
+#include <OvCore/ResourceManagement/FontManager.h>
 #include <OvCore/ResourceManagement/ModelManager.h>
 #include <OvCore/ResourceManagement/TextureManager.h>
 #include <OvCore/ResourceManagement/ShaderManager.h>
 #include <OvCore/ResourceManagement/MaterialManager.h>
 #include <OvCore/ResourceManagement/SoundManager.h>
+#include <OvCore/ResourceManagement/UIResourceRegistry.h>
 #include <OvCore/SceneSystem/SceneManager.h>
 #include <OvCore/Scripting/ScriptEngine.h>
 
 #include <OvAudio/Core/AudioEngine.h>
 
 #include <OvTools/Filesystem/IniFile.h>
+#include <OvTools/Filesystem/SaveStorage.h>
+#include <OvTools/Time/Clock.h>
 
 namespace OvGame::Core
 {
@@ -59,15 +60,19 @@ namespace OvGame::Core
 		std::unique_ptr<OvPhysics::Core::PhysicsEngine> physicsEngine;
 		std::unique_ptr<OvAudio::Core::AudioEngine> audioEngine;
 		std::unique_ptr<OvCore::Scripting::ScriptEngine> scriptEngine;
-		std::unique_ptr<OvRendering::HAL::Framebuffer> framebuffer;
+		std::unique_ptr<OvTools::Filesystem::SaveStorage> saveStorage;
+		std::unique_ptr<baregl::Framebuffer> framebuffer;
 
 		OvCore::SceneSystem::SceneManager sceneManager;
+		OvTools::Time::Clock clock;
 
 		OvCore::ResourceManagement::ModelManager modelManager;
 		OvCore::ResourceManagement::TextureManager textureManager;
 		OvCore::ResourceManagement::ShaderManager shaderManager;
 		OvCore::ResourceManagement::MaterialManager materialManager;
+		OvCore::ResourceManagement::FontManager fontManager;
 		OvCore::ResourceManagement::SoundManager soundManager;
+		OvCore::ResourceManagement::UIResourceRegistry uiResourceRegistry;
 		
 		OvTools::Filesystem::IniFile projectSettings;
 	};

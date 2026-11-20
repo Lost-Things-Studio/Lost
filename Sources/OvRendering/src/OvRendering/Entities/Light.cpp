@@ -5,23 +5,26 @@
 */
 
 #include <bit>
+#include <cmath>
 #include <format>
+#include <limits>
 
 #include <OvDebug/Assertion.h>
 #include <OvRendering/Entities/Light.h>
-#include <OvRendering/HAL/Renderbuffer.h>
+#include <baregl/Renderbuffer.h>
 
 namespace
 {
 	void SetupFramebufferForShadowMapping(
-		OvRendering::HAL::Framebuffer& p_framebuffer,
+		baregl::Framebuffer& p_framebuffer,
 		uint32_t p_resolution
 	)
 	{
-		using namespace OvRendering::HAL;
+		using namespace baregl::types;
+		using namespace baregl::data;
 		using namespace OvRendering::Settings;
 
-		const auto renderTexture = std::make_shared<Texture>(
+		const auto renderTexture = std::make_shared<baregl::Texture>(
 			ETextureType::TEXTURE_2D,
 			std::format(
 				"{}/Depth",
@@ -45,8 +48,9 @@ namespace
 		};
 
 		renderTexture->Allocate(renderTextureDesc);
-		renderTexture->SetBorderColor(OvMaths::FVector4::One);
-		p_framebuffer.Attach<Texture>(renderTexture, EFramebufferAttachment::DEPTH);
+		// Past the map, the depth is the farthest: a shadow tap that falls outside counts as lit
+		renderTexture->SetBorderColor(baregl::math::Vec4{1.0f, 1.0f, 1.0f, 1.0f});
+		p_framebuffer.Attach<baregl::Texture>(renderTexture, EFramebufferAttachment::DEPTH);
 		p_framebuffer.Validate();
 		p_framebuffer.SetTargetDrawBuffer(std::nullopt);
 		p_framebuffer.SetTargetReadBuffer(std::nullopt);
@@ -105,8 +109,9 @@ void OvRendering::Entities::Light::PrepareForShadowRendering(const OvRendering::
 
 	if (!shadowBuffer)
 	{
-		shadowBuffer = std::make_unique<OvRendering::HAL::Framebuffer>("DirectionalShadow");
+		shadowBuffer = std::make_unique<baregl::Framebuffer>("DirectionalShadow");
 		SetupFramebufferForShadowMapping(*shadowBuffer, static_cast<uint32_t>(shadowMapResolution));
+		InvalidateShadowMap();
 	}
 	else
 	{
@@ -118,6 +123,11 @@ void OvRendering::Entities::Light::PrepareForShadowRendering(const OvRendering::
 		shadowCamera->GetViewMatrix();
 
 	OVASSERT(IsSetupForShadowRendering(), "Light failed to setup for shadow rendering!");
+}
+
+void OvRendering::Entities::Light::InvalidateShadowMap()
+{
+	shadowMapSignature.clear();
 }
 
 bool OvRendering::Entities::Light::IsSetupForShadowRendering() const
@@ -154,6 +164,13 @@ OvMaths::FMatrix4 OvRendering::Entities::Light::GenerateMatrix() const
 	result.data[11] = quadratic;
 	result.data[15] = intensity;
 
+	// Effect range, used by shaders to skip lights that cannot affect a fragment.
+	// An infinite range is stored as the largest finite float, to keep the value shader-friendly.
+	if (type == Settings::ELightType::POINT || type == Settings::ELightType::SPOT)
+	{
+		result.data[10] = std::min(CalculateEffectRange(), std::numeric_limits<float>::max());
+	}
+
 	return result;
 }
 
@@ -166,45 +183,42 @@ float CalculateLuminosity(float p_constant, float p_linear, float p_quadratic, f
 float CalculatePointLightRadius(float p_constant, float p_linear, float p_quadratic, float p_intensity)
 {
 	constexpr float threshold = 1 / 255.0f;
-	constexpr float step = 1.0f;
 
-	float distance = 0.0f;
-
-	#define TRY_GREATER(value)\
-	else if (CalculateLuminosity(p_constant, p_linear, p_quadratic, p_intensity, value) > threshold)\
-	{\
-		distance = value;\
-	}
-
-	#define TRY_LESS(value, newValue)\
-	else if (CalculateLuminosity(p_constant, p_linear, p_quadratic, p_intensity, value) < threshold)\
-	{\
-		distance = newValue;\
-	}
-
-	// Prevents infinite while true. If a light has a bigger radius than 10000 we ignore it and make it infinite
+	// If a light has a bigger radius than 1000 we ignore it and make it infinite
 	if (CalculateLuminosity(p_constant, p_linear, p_quadratic, p_intensity, 1000.0f) > threshold)
 	{
 		return std::numeric_limits<float>::infinity();
 	}
-	TRY_LESS(20.0f, 0.0f)
-	TRY_GREATER(750.0f)
-	TRY_LESS(50.0f, 20.0f + step)
-	TRY_LESS(100.0f, 50.0f + step)
-	TRY_GREATER(500.0f)
-	TRY_GREATER(250.0f)
 
-	while (true)
+	// The radius is the first distance at which the luminosity drops below the threshold:
+	// constant + linear * d + quadratic * d^2 > |intensity| / threshold
+	if (p_constant >= 0.0f && p_linear >= 0.0f && p_quadratic >= 0.0f)
 	{
-		if (CalculateLuminosity(p_constant, p_linear, p_quadratic, p_intensity, distance) < threshold) // If the light has a very low luminosity for the given distance, we consider the current distance as the light radius
+		const double c = static_cast<double>(p_constant) - std::abs(static_cast<double>(p_intensity)) / threshold;
+		double root = 0.0;
+
+		if (p_quadratic > 0.0f)
 		{
-			return distance;
+			const double discriminant = static_cast<double>(p_linear) * p_linear - 4.0 * p_quadratic * c;
+			root = (-static_cast<double>(p_linear) + std::sqrt(std::max(discriminant, 0.0))) / (2.0 * p_quadratic);
 		}
-		else
+		else if (p_linear > 0.0f)
 		{
-			distance += step;
+			root = -c / p_linear;
 		}
+
+		return static_cast<float>(std::ceil(std::max(root, 0.0)));
 	}
+
+	// Non-monotonic attenuation (negative coefficients): step until the luminosity drops below the threshold
+	float distance = 0.0f;
+
+	while (distance < 1000.0f && CalculateLuminosity(p_constant, p_linear, p_quadratic, p_intensity, distance) >= threshold)
+	{
+		distance += 1.0f;
+	}
+
+	return distance;
 }
 
 float CalculateAmbientBoxLightRadius(const OvMaths::FVector3& p_position, const OvMaths::FVector3& p_size)

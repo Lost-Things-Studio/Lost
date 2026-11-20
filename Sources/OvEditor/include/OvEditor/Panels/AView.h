@@ -6,11 +6,12 @@
 
 #pragma once
 
+#include <baregl/Buffer.h>
+#include <baregl/Framebuffer.h>
+
 #include <OvCore/Rendering/SceneRenderer.h>
-#include <OvRendering/HAL/UniformBuffer.h>
-#include <OvRendering/Entities/Camera.h>
 #include <OvRendering/Core/CompositeRenderer.h>
-#include <OvRendering/HAL/Framebuffer.h>
+#include <OvRendering/Entities/Camera.h>
 #include <OvUI/Panels/PanelWindow.h>
 #include <OvUI/Widgets/Visual/Image.h>
 
@@ -77,6 +78,12 @@ namespace OvEditor::Panels
 		std::pair<uint16_t, uint16_t> GetSafeSize() const;
 
 		/**
+		* Returns the mouse position relative to the top-left corner of the rendered image
+		* @note The position isn't clamped, so it can be outside of the view
+		*/
+		OvMaths::FVector2 GetMousePosition() const;
+
+		/**
 		* Returns the renderer used by this view
 		*/
 		const OvCore::Rendering::SceneRenderer& GetRenderer() const;
@@ -89,7 +96,7 @@ namespace OvEditor::Panels
 
 		OvMaths::FVector3 m_gridColor = OvMaths::FVector3 { 0.176f, 0.176f, 0.176f };
 
-		OvRendering::HAL::Framebuffer m_framebuffer;
+		baregl::Framebuffer m_framebuffer;
 		std::unique_ptr<OvCore::Rendering::SceneRenderer> m_renderer;
 	};
 }

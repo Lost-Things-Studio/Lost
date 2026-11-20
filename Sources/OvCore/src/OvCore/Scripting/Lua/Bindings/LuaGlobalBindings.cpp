@@ -4,18 +4,30 @@
 * @licence: MIT
 */
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <format>
+#include <limits>
+#include <optional>
 #include <string>
+#include <tuple>
+#include <vector>
 
 #include <OvDebug/Logger.h>
 #include <OvMaths/FVector2.h>
 #include <OvMaths/FVector3.h>
+#include <OvTools/Time/Clock.h>
 #include <OvTools/Utils/PathParser.h>
 #include <OvTools/Utils/Random.h>
 
+
 #include "OvCore/ECS/Actor.h"
 #include "OvCore/ECS/PhysicsWrapper.h"
+#include "OvCore/Global/QuitRequest.h"
 #include "OvCore/Global/ServiceLocator.h"
+#include "OvCore/Helpers/DistanceField.h"
+#include "OvCore/Helpers/InputHelpers.h"
 #include "OvCore/SceneSystem/SceneManager.h"
 #include "OvCore/ResourceManagement/ModelManager.h"
 #include "OvCore/ResourceManagement/ShaderManager.h"
@@ -23,12 +35,240 @@
 #include "OvCore/ResourceManagement/MaterialManager.h"
 #include "OvCore/ResourceManagement/SoundManager.h"
 #include "OvCore/Scripting/Common/ScriptPropertyValue.h"
+#include "OvCore/Scripting/ScriptEngine.h"
 
 #include <OvPhysics/Entities/PhysicalObject.h>
 
+#include <OvRendering/Geometry/Vertex.h>
+#include <OvRendering/Resources/Mesh.h>
+
+#include <OvWindowing/Cursor/ECursorShape.h>
 #include <OvWindowing/Inputs/InputManager.h>
 
 #include <sol/sol.hpp>
+
+namespace
+{
+	using Results = std::tuple<sol::object, sol::object>;
+
+	/**
+	* Reads the flat array of numbers p_name of p_geometry: nothing when it is absent, or an error when it is not an
+	* array of finite numbers whose size is p_valuesPerVertex * p_vertexCount (any multiple of p_valuesPerVertex when
+	* p_vertexCount is 0)
+	*/
+	std::optional<std::string> ReadNumbers(
+		const sol::table& p_geometry,
+		const char* p_name,
+		size_t p_valuesPerVertex,
+		size_t p_vertexCount,
+		std::vector<float>& p_values
+	)
+	{
+		const sol::object array = p_geometry.raw_get<sol::object>(p_name);
+
+		if (array.get_type() == sol::type::lua_nil)
+		{
+			return std::nullopt;
+		}
+
+		if (array.get_type() != sol::type::table)
+		{
+			return std::format("{} must be an array of numbers", p_name);
+		}
+
+		const sol::table table = array.as<sol::table>();
+		const size_t size = table.size();
+
+		if (size == 0 || size % p_valuesPerVertex != 0 || (p_vertexCount != 0 && size != p_valuesPerVertex * p_vertexCount))
+		{
+			return p_vertexCount != 0 ?
+				std::format("{} must hold {} numbers ({} per vertex), not {}", p_name, p_valuesPerVertex * p_vertexCount, p_valuesPerVertex, size) :
+				std::format("{} must hold a multiple of {} numbers, not {}", p_name, p_valuesPerVertex, size);
+		}
+
+		p_values.resize(size);
+
+		for (size_t index = 0; index < size; ++index)
+		{
+			const auto value = table.raw_get<sol::optional<double>>(index + 1);
+			if (!value || !std::isfinite(*value))
+			{
+				return std::format("{}[{}] is not a finite number", p_name, index + 1);
+			}
+
+			p_values[index] = static_cast<float>(*value);
+		}
+
+		return std::nullopt;
+	}
+
+	/**
+	* Model(), or nil and why: one mesh from flat arrays (Positions and Indices required, Normals, TexCoords, Tangents
+	* and Bitangents optional) or from a MeshData, registered under the path or replacing the meshes of the model made
+	* there before
+	*/
+	Results CreateModel(sol::this_state p_state, const sol::object& p_path, const sol::object& p_geometry, const sol::object& p_materialName)
+	{
+		using namespace OvRendering;
+		using OvMaths::FVector3;
+
+		const auto failure = [&p_state](const std::string& p_error) -> Results {
+			return { sol::make_object(p_state, sol::lua_nil), sol::make_object(p_state, p_error) };
+		};
+
+		if (p_path.get_type() != sol::type::string || p_path.as<std::string>().empty())
+		{
+			return failure("the path must be a non-empty string");
+		}
+
+		if (p_materialName.get_type() != sol::type::lua_nil && p_materialName.get_type() != sol::type::string)
+		{
+			return failure("the material name must be a string");
+		}
+
+		const std::string materialName = p_materialName.get_type() == sol::type::string ? p_materialName.as<std::string>() : "Material";
+
+		const auto registered = [&](Resources::Mesh* p_mesh) -> Results {
+			auto* model = OVSERVICE(OvCore::ResourceManagement::ModelManager).CreateFromGeometry(p_path.as<std::string>(), { p_mesh }, { materialName });
+
+			if (!model)
+			{
+				delete p_mesh;
+				return failure("a model loaded from a file already has this path");
+			}
+
+			return { sol::make_object(p_state, model), sol::make_object(p_state, sol::lua_nil) };
+		};
+
+		if (p_geometry.is<OvCore::Helpers::MeshData>())
+		{
+			const auto& data = p_geometry.as<const OvCore::Helpers::MeshData&>();
+
+			if (data.vertices.empty() || data.indices.empty())
+			{
+				return failure("the mesh data is empty");
+			}
+
+			return registered(new Resources::Mesh(data.vertices, data.indices, 0));
+		}
+
+		if (p_geometry.get_type() != sol::type::table)
+		{
+			return failure("the geometry must be a table or a MeshData");
+		}
+
+		const sol::table geometry = p_geometry.as<sol::table>();
+		std::vector<float> positions, indexValues, normals, texCoords, tangents, bitangents;
+
+		if (auto error = ReadNumbers(geometry, "Positions", 3, 0, positions))
+		{
+			return failure(*error);
+		}
+
+		if (auto error = ReadNumbers(geometry, "Indices", 3, 0, indexValues))
+		{
+			return failure(*error);
+		}
+
+		if (positions.empty() || indexValues.empty())
+		{
+			return failure("Positions and Indices are required");
+		}
+
+		const size_t vertexCount = positions.size() / 3;
+
+		if (vertexCount > std::numeric_limits<uint32_t>::max())
+		{
+			return failure("too many vertices");
+		}
+
+		for (const auto& [name, valuesPerVertex, values] : {
+			std::tuple{ "Normals", size_t{ 3 }, &normals },
+			std::tuple{ "TexCoords", size_t{ 2 }, &texCoords },
+			std::tuple{ "Tangents", size_t{ 3 }, &tangents },
+			std::tuple{ "Bitangents", size_t{ 3 }, &bitangents }
+		})
+		{
+			if (auto error = ReadNumbers(geometry, name, valuesPerVertex, vertexCount, *values))
+			{
+				return failure(*error);
+			}
+		}
+
+		std::vector<uint32_t> indices(indexValues.size());
+
+		for (size_t index = 0; index < indexValues.size(); ++index)
+		{
+			const float value = indexValues[index];
+			if (value < 0.0f || value != std::floor(value) || value >= static_cast<float>(vertexCount))
+			{
+				return failure(std::format("Indices[{}] is not the index of a vertex (from 0 to {})", index + 1, vertexCount - 1));
+			}
+
+			indices[index] = static_cast<uint32_t>(value);
+		}
+
+		std::vector<Geometry::Vertex> vertices(vertexCount, Geometry::Vertex{});
+
+		for (size_t vertex = 0; vertex < vertexCount; ++vertex)
+		{
+			std::copy_n(&positions[vertex * 3], 3, vertices[vertex].position);
+
+			if (!normals.empty())
+			{
+				std::copy_n(&normals[vertex * 3], 3, vertices[vertex].normals);
+			}
+
+			if (!texCoords.empty())
+			{
+				std::copy_n(&texCoords[vertex * 2], 2, vertices[vertex].texCoords);
+			}
+
+			if (!tangents.empty())
+			{
+				std::copy_n(&tangents[vertex * 3], 3, vertices[vertex].tangent);
+			}
+
+			if (!bitangents.empty())
+			{
+				std::copy_n(&bitangents[vertex * 3], 3, vertices[vertex].bitangent);
+			}
+		}
+
+		// Missing normals are smoothed: each vertex takes the sum of its triangles' normals, weighted by their area
+		if (normals.empty())
+		{
+			std::vector<FVector3> sums(vertexCount, FVector3::Zero);
+
+			for (size_t index = 0; index + 2 < indices.size(); index += 3)
+			{
+				const auto position = [&vertices](uint32_t p_vertex) {
+					const auto& vertex = vertices[p_vertex].position;
+					return FVector3{ vertex[0], vertex[1], vertex[2] };
+				};
+
+				const FVector3 a = position(indices[index]);
+				const FVector3 normal = FVector3::Cross(position(indices[index + 1]) - a, position(indices[index + 2]) - a);
+
+				for (size_t corner = 0; corner < 3; ++corner)
+				{
+					sums[indices[index + corner]] += normal;
+				}
+			}
+
+			for (size_t vertex = 0; vertex < vertexCount; ++vertex)
+			{
+				const float length = FVector3::Length(sums[vertex]);
+				const FVector3 normal = length > 0.0f ? sums[vertex] / length : FVector3::Up;
+				vertices[vertex].normals[0] = normal.x;
+				vertices[vertex].normals[1] = normal.y;
+				vertices[vertex].normals[2] = normal.z;
+			}
+		}
+
+		return registered(new Resources::Mesh(vertices, indices, 0));
+	}
+}
 
 void BindLuaGlobal(sol::state& p_luaState)
 {
@@ -55,37 +295,54 @@ void BindLuaGlobal(sol::state& p_luaState)
 	p_luaState["Sound"]    = []() { return AssetRef{EFT::SOUND,    ""}; };
 	p_luaState["Prefab"]   = []() { return AssetRef{EFT::PREFAB,   ""}; };
 
-	// ActorRef is a C++-only internal sentinel type. It is registered so that sol2 can
-	// identify it via is<ActorRef>() in GetDefaultProperties. The Lua-visible factory is
-	// named "Actor" (overrides the non-callable Actor usertype with a factory lambda) so
-	// scripts can write: actor = Actor()
-	// After the inspector resolves the field, self.actor becomes the real Actor*.
-	p_luaState.new_usertype<ActorRef>("_ActorRef",
-		"guid", &ActorRef::guid
-	);
-
-	// Override "Actor" global with a factory that returns a sentinel ActorRef{0}.
-	// The Actor metatable (registered by LuaActorBindings) remains intact on Actor* values.
-	p_luaState["Actor"] = []() { return ActorRef{0}; };
-
 	p_luaState.new_usertype<Scene>("Scene",
-		"FindActorByName", &Scene::FindActorByName,
-		"FindActorByTag", &Scene::FindActorByTag,
-		"FindActorsByName", &Scene::FindActorsByName,
-		"FindActorsByTag", &Scene::FindActorsByTag,
+		"FindActorByName", [](Scene& s, const std::string& name) -> std::optional<ActorRef> {
+			if (auto* actor = s.FindActorByName(name))
+				return ActorRef{actor->GetGUID()};
+			return std::nullopt;
+		},
+		"FindActorByTag", [](Scene& s, const std::string& tag) -> std::optional<ActorRef> {
+			if (auto* actor = s.FindActorByTag(tag))
+				return ActorRef{actor->GetGUID()};
+			return std::nullopt;
+		},
+		"FindActorsByName", [](Scene& s, const std::string& name) {
+			std::vector<ActorRef> result;
+			for (auto& actor : s.FindActorsByName(name))
+				result.push_back(ActorRef{actor.get().GetGUID()});
+			return sol::as_table(std::move(result));
+		},
+		"FindActorsByTag", [](Scene& s, const std::string& tag) {
+			std::vector<ActorRef> result;
+			for (auto& actor : s.FindActorsByTag(tag))
+				result.push_back(ActorRef{actor.get().GetGUID()});
+			return sol::as_table(std::move(result));
+		},
 		"CreateActor", sol::overload(
-			sol::resolve<Actor&(void)>(&Scene::CreateActor),
-			sol::resolve<Actor&(const std::string&, const std::string&)>(&Scene::CreateActor)),
-		"InstantiatePrefab", sol::overload(
-			[](Scene& p_scene, const AssetRef& p_prefab) -> Actor*
-			{
-				return p_scene.InstantiatePrefab(p_prefab.path);
+			[](Scene& s) -> ActorRef {
+				auto& actor = s.CreateActor();
+				return ActorRef{actor.GetGUID()};
 			},
-			[](Scene& p_scene, const AssetRef& p_prefab, Actor& p_parent) -> Actor*
-			{
-				return p_scene.InstantiatePrefab(p_prefab.path, p_parent);
-			})
+			[](Scene& s, const std::string& name, const std::string& tag) -> ActorRef {
+				auto& actor = s.CreateActor(name, tag);
+				return ActorRef{actor.GetGUID()};
+			}
+		),
+		"InstantiatePrefab", sol::overload(
+			[](Scene& s, const AssetRef& prefab) -> std::optional<ActorRef> {
+				if (auto* actor = s.InstantiatePrefab(prefab.path))
+					return ActorRef{actor->GetGUID()};
+				return std::nullopt;
+			},
+			[](Scene& s, const AssetRef& prefab, ActorRef& parent) -> std::optional<ActorRef> {
+				if (auto* actor = s.InstantiatePrefab(prefab.path, parent.Resolve()))
+					return ActorRef{actor->GetGUID()};
+				return std::nullopt;
+			}
+		)
 	);
+
+	
 
 	p_luaState.new_enum<EKey>("Key", {
 		{"UNKNOWN",			EKey::KEY_UNKNOWN},
@@ -225,6 +482,15 @@ void BindLuaGlobal(sol::state& p_luaState)
 		{"BUTTON_MIDDLE",	EMouseButton::MOUSE_BUTTON_MIDDLE},
 	});
 
+	p_luaState.new_enum<Cursor::ECursorShape>("CursorShape", {
+		{"ARROW",		Cursor::ECursorShape::ARROW},
+		{"IBEAM",		Cursor::ECursorShape::IBEAM},
+		{"CROSSHAIR",	Cursor::ECursorShape::CROSSHAIR},
+		{"HAND",		Cursor::ECursorShape::HAND},
+		{"HRESIZE",		Cursor::ECursorShape::HRESIZE},
+		{"VRESIZE",		Cursor::ECursorShape::VRESIZE}
+	});
+
 	p_luaState.create_named_table("Debug",
 		"Log", [](const std::string& p_message) { OVLOG(p_message); },
 		"LogInfo", [](const std::string& p_message) { OVLOG_INFO(p_message); },
@@ -233,22 +499,19 @@ void BindLuaGlobal(sol::state& p_luaState)
 	);
 
 	p_luaState.create_named_table("Inputs",
-		"GetKeyDown", [](EKey p_key) { return OVSERVICE(InputManager).IsKeyPressed(p_key); },
-		"GetKeyUp", [](EKey p_key) { return OVSERVICE(InputManager).IsKeyReleased(p_key); },
-		"GetKey", [](EKey p_key) { return OVSERVICE(InputManager).GetKeyState(p_key) == EKeyState::KEY_DOWN; },
-		"GetMouseButtonDown", [](EMouseButton p_button) { return OVSERVICE(InputManager).IsMouseButtonPressed(p_button); },
-		"GetMouseButtonUp", [](EMouseButton p_button) { return OVSERVICE(InputManager).IsMouseButtonReleased(p_button); },
-		"GetMouseButton", [](EMouseButton p_button) { return OVSERVICE(InputManager).GetMouseButtonState(p_button) == EMouseButtonState::MOUSE_DOWN; },
-		"GetMousePos", []() {
-			const auto mousePos = OVSERVICE(InputManager).GetMousePosition();
-			return FVector2(static_cast<float>(mousePos.first), static_cast<float>(mousePos.second));
-		},
-		"GetMouseScroll", []() {
-			const auto scroll = OVSERVICE(InputManager).GetMouseScroll();
-			return FVector2(static_cast<float>(scroll.first), static_cast<float>(scroll.second));
-		},
-		"LockMouse", []() { return OVSERVICE(Window).SetCursorMode(Cursor::ECursorMode::DISABLED); },
-		"UnlockMouse", []() { return OVSERVICE(Window).SetCursorMode(Cursor::ECursorMode::NORMAL); }
+		"GetKeyDown", [](EKey p_key) { return OvCore::Helpers::InputHelpers::GetKeyDown(p_key); },
+		"GetKeyUp", [](EKey p_key) { return OvCore::Helpers::InputHelpers::GetKeyUp(p_key); },
+		"GetKey", [](EKey p_key) { return OvCore::Helpers::InputHelpers::GetKey(p_key); },
+		"GetKeyName", [](EKey p_key) { return OVSERVICE(InputManager).GetKeyName(p_key); },
+		"GetMouseButtonDown", [](EMouseButton p_button) { return OvCore::Helpers::InputHelpers::GetMouseButtonDown(p_button); },
+		"GetMouseButtonUp", [](EMouseButton p_button) { return OvCore::Helpers::InputHelpers::GetMouseButtonUp(p_button); },
+		"GetMouseButton", [](EMouseButton p_button) { return OvCore::Helpers::InputHelpers::GetMouseButton(p_button); },
+		"GetMousePos", []() { return OvCore::Helpers::InputHelpers::GetMousePosition(); },
+		"GetViewportSize", []() { return OvCore::Helpers::InputHelpers::GetViewportSize(); },
+		"GetMouseScroll", []() { return OvCore::Helpers::InputHelpers::GetMouseScroll(); },
+		"LockMouse", []() { OvCore::Helpers::InputHelpers::SetMouseLocked(true); },
+		"UnlockMouse", []() { OvCore::Helpers::InputHelpers::SetMouseLocked(false); },
+		"SetCursorShape", [](Cursor::ECursorShape p_shape) { OvCore::Helpers::InputHelpers::SetCursorShape(p_shape); }
 	);
 
 	p_luaState.create_named_table("Scenes",
@@ -261,7 +524,9 @@ void BindLuaGlobal(sol::state& p_luaState)
 		"GetShader", [](const std::string& p_resPath) { return OVSERVICE(ShaderManager).GetResource(p_resPath); },
 		"GetTexture", [](const std::string& p_resPath) { return OVSERVICE(TextureManager).GetResource(p_resPath); },
 		"GetMaterial", [](const std::string& p_resPath) { return OVSERVICE(MaterialManager).GetResource(p_resPath); },
-		"GetSound", [](const std::string& p_resPath) { return OVSERVICE(SoundManager).GetResource(p_resPath); }
+		"GetSound", [](const std::string& p_resPath) { return OVSERVICE(SoundManager).GetResource(p_resPath); },
+		"GetScript", [](const std::string& p_resPath) { return OVSERVICE(ScriptEngine).GetScript(p_resPath); },
+		"CreateModel", &CreateModel
 	);
 
 	p_luaState.create_named_table("Math",
@@ -278,5 +543,16 @@ void BindLuaGlobal(sol::state& p_luaState)
 
 	p_luaState.create_named_table("Physics",
 		"Raycast", [](const OvMaths::FVector3& p_origin, const OvMaths::FVector3& p_direction, float p_distance) { return PhysicsWrapper::Raycast(p_origin, p_direction, p_distance); }
+	);
+
+	p_luaState.create_named_table("Time",
+		"GetScale", []() { return OVSERVICE(OvTools::Time::Clock).GetTimeScale(); },
+		"SetScale", [](float p_scale) { OVSERVICE(OvTools::Time::Clock).SetTimeScale(std::max(p_scale, 0.0f)); },
+		"GetUnscaledDeltaTime", []() { return OVSERVICE(OvTools::Time::Clock).GetDeltaTimeUnscaled(); },
+		"GetGameTime", []() { return OVSERVICE(OvTools::Time::Clock).GetTimeSinceStart(); }
+	);
+
+	p_luaState.create_named_table("Application",
+		"Quit", []() { OvCore::Global::QuitRequest::RequestedEvent.Invoke(); }
 	);
 }

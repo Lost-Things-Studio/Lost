@@ -5,8 +5,10 @@
 */
 
 #include <algorithm>
+#include <functional>
 #include <optional>
 #include <string>
+#include <unordered_set>
 
 #include <tinyxml2.h>
 #include <tracy/Tracy.hpp>
@@ -41,6 +43,8 @@ OvCore::SceneSystem::Scene::~Scene()
 	});
 
 	m_actors.clear();
+	m_actorsByGUID.clear();
+	m_shadowedActorsByGUID.clear();
 }
 
 void OvCore::SceneSystem::Scene::AddDefaultCamera()
@@ -121,9 +125,11 @@ void OvCore::SceneSystem::Scene::Play()
 	/* Wake up actors to allow them to react to OnEnable, OnDisable and OnDestroy, */
 	std::for_each(m_actors.begin(), m_actors.end(), [](ECS::Actor * p_element) { p_element->SetSleeping(false); });
 
-	std::for_each(m_actors.begin(), m_actors.end(), [](ECS::Actor * p_element) { if (p_element->IsActive()) p_element->OnAwake(); });
-	std::for_each(m_actors.begin(), m_actors.end(), [](ECS::Actor * p_element) { if (p_element->IsActive()) p_element->OnEnable(); });
-	std::for_each(m_actors.begin(), m_actors.end(), [](ECS::Actor * p_element) { if (p_element->IsActive()) p_element->OnStart(); });
+	/* Iterate over a copy to prevent iterator invalidation if CreateActor is called during callbacks */
+	auto actors = m_actors;
+	std::for_each(actors.begin(), actors.end(), [](ECS::Actor * p_element) { if (p_element->IsActive()) p_element->OnAwake(); });
+	std::for_each(actors.begin(), actors.end(), [](ECS::Actor * p_element) { if (p_element->IsActive()) p_element->OnEnable(); });
+	std::for_each(actors.begin(), actors.end(), [](ECS::Actor * p_element) { if (p_element->IsActive()) p_element->OnStart(); });
 }
 
 bool OvCore::SceneSystem::Scene::IsPlaying() const
@@ -150,6 +156,39 @@ void OvCore::SceneSystem::Scene::LateUpdate(float p_deltaTime)
 	ZoneScoped;
 	auto actors = m_actors;
 	std::for_each(actors.begin(), actors.end(), std::bind(std::mem_fn(&ECS::Actor::OnLateUpdate), std::placeholders::_1, p_deltaTime));
+
+	UpdateBoneAttachments();
+}
+
+void OvCore::SceneSystem::Scene::UpdateBoneAttachments()
+{
+	ZoneScoped;
+
+	auto& attachments = m_fastAccessComponents.boneAttachments;
+
+	if (attachments.empty())
+	{
+		return;
+	}
+
+	// Parents first: an attachment riding on another's actor, or under it, is placed once that one is
+	const auto depth = [](const ECS::Actor& p_actor) {
+		uint32_t result = 0;
+		for (auto parent = p_actor.GetParent(); parent; parent = parent->GetParent()) ++result;
+		return result;
+	};
+
+	std::stable_sort(attachments.begin(), attachments.end(), [&](const auto* p_left, const auto* p_right) {
+		return depth(p_left->owner) < depth(p_right->owner);
+	});
+
+	for (auto attachment : attachments)
+	{
+		if (attachment->owner.IsActive())
+		{
+			attachment->Apply(*this);
+		}
+	}
 }
 
 OvCore::ECS::Actor& OvCore::SceneSystem::Scene::CreateActor()
@@ -163,6 +202,12 @@ OvCore::ECS::Actor& OvCore::SceneSystem::Scene::CreateActor(const std::string& p
 	ECS::Actor& instance = *m_actors.back();
 	instance.ComponentAddedEvent	+= std::bind(&Scene::OnComponentAdded, this, std::placeholders::_1);
 	instance.ComponentRemovedEvent	+= std::bind(&Scene::OnComponentRemoved, this, std::placeholders::_1);
+	instance.GUIDChangedEvent		+= [this](ECS::Actor& p_actor, uint64_t p_previousGUID)
+	{
+		UnindexActorGUID(&p_actor, p_previousGUID);
+		IndexActorGUID(p_actor, p_actor.GetGUID());
+	};
+	IndexActorGUID(instance, instance.GetGUID());
 	if (m_batchActorCreation)
 	{
 		m_batchCreatedActors.push_back(std::ref(instance));
@@ -201,7 +246,6 @@ void OvCore::SceneSystem::Scene::EndBatchActorCreation(bool p_startCreatedActors
 	OVASSERT(m_batchActorCreation, "No active actor creation batch to end.");
 
 	std::vector<std::reference_wrapper<ECS::Actor>> actors;
-	// Keep callback-created actors out of the batch being started below.
 	actors.swap(m_batchCreatedActors);
 	m_batchActorCreation = false;
 
@@ -314,13 +358,25 @@ bool OvCore::SceneSystem::Scene::DestroyActor(ECS::Actor& p_target)
 
 	if (found != m_actors.end())
 	{
+		const uint64_t guid = p_target.GetGUID();
 		delete *found;
+		UnindexActorGUID(&p_target, guid);
 		m_actors.erase(found);
 		return true;
 	}
 	else
 	{
 		return false;
+	}
+}
+
+void OvCore::SceneSystem::Scene::MoveActorToBack(ECS::Actor& p_actor)
+{
+	auto found = std::find(m_actors.begin(), m_actors.end(), &p_actor);
+
+	if (found != m_actors.end())
+	{
+		std::rotate(found, found + 1, m_actors.end());
 	}
 }
 
@@ -331,7 +387,9 @@ void OvCore::SceneSystem::Scene::CollectGarbages()
 		bool isGarbage = !element->IsAlive();
 		if (isGarbage)
 		{
+			const uint64_t guid = element->GetGUID();
 			delete element;
+			UnindexActorGUID(element, guid);
 		}
 		return isGarbage;
 	}), m_actors.end());
@@ -378,12 +436,43 @@ OvCore::ECS::Actor* OvCore::SceneSystem::Scene::FindActorByID(int64_t p_id) cons
 
 OvCore::ECS::Actor* OvCore::SceneSystem::Scene::FindActorByGUID(uint64_t p_guid) const
 {
-	auto result = std::find_if(m_actors.begin(), m_actors.end(), [p_guid](OvCore::ECS::Actor* element)
-	{
-		return element->GetGUID() == p_guid;
-	});
+	const auto found = m_actorsByGUID.find(p_guid);
+	return found != m_actorsByGUID.end() ? found->second : nullptr;
+}
 
-	return result != m_actors.end() ? *result : nullptr;
+void OvCore::SceneSystem::Scene::IndexActorGUID(ECS::Actor& p_actor, uint64_t p_guid)
+{
+	if (!m_actorsByGUID.try_emplace(p_guid, &p_actor).second)
+	{
+		m_shadowedActorsByGUID.emplace(p_guid, &p_actor);
+	}
+}
+
+void OvCore::SceneSystem::Scene::UnindexActorGUID(const ECS::Actor* p_actor, uint64_t p_guid)
+{
+	// The actor is only compared here, it may already be deleted
+	if (auto found = m_actorsByGUID.find(p_guid); found != m_actorsByGUID.end() && found->second == p_actor)
+	{
+		if (auto shadowed = m_shadowedActorsByGUID.find(p_guid); shadowed != m_shadowedActorsByGUID.end())
+		{
+			found->second = shadowed->second;
+			m_shadowedActorsByGUID.erase(shadowed);
+		}
+		else
+		{
+			m_actorsByGUID.erase(found);
+		}
+
+		return;
+	}
+
+	const auto [first, last] = m_shadowedActorsByGUID.equal_range(p_guid);
+	const auto shadowed = std::find_if(first, last, [p_actor](const auto& p_entry) { return p_entry.second == p_actor; });
+
+	if (shadowed != last)
+	{
+		m_shadowedActorsByGUID.erase(shadowed);
+	}
 }
 
 std::vector<std::reference_wrapper<OvCore::ECS::Actor>> OvCore::SceneSystem::Scene::FindActorsByName(const std::string & p_name) const
@@ -441,6 +530,9 @@ void OvCore::SceneSystem::Scene::OnComponentAdded(ECS::Components::AComponent& p
 
 	if (auto result = dynamic_cast<ECS::Components::CReflectionProbe*>(&p_compononent))
 		m_fastAccessComponents.reflectionProbes.push_back(result);
+
+	if (auto result = dynamic_cast<ECS::Components::CBoneAttachment*>(&p_compononent))
+		m_fastAccessComponents.boneAttachments.push_back(result);
 }
 
 void OvCore::SceneSystem::Scene::OnComponentRemoved(ECS::Components::AComponent& p_compononent)
@@ -459,6 +551,9 @@ void OvCore::SceneSystem::Scene::OnComponentRemoved(ECS::Components::AComponent&
 
 	if (auto result = dynamic_cast<ECS::Components::CReflectionProbe*>(&p_compononent))
 		m_fastAccessComponents.reflectionProbes.erase(std::remove(m_fastAccessComponents.reflectionProbes.begin(), m_fastAccessComponents.reflectionProbes.end(), result), m_fastAccessComponents.reflectionProbes.end());
+
+	if (auto result = dynamic_cast<ECS::Components::CBoneAttachment*>(&p_compononent))
+		m_fastAccessComponents.boneAttachments.erase(std::remove(m_fastAccessComponents.boneAttachments.begin(), m_fastAccessComponents.boneAttachments.end(), result), m_fastAccessComponents.boneAttachments.end());
 }
 
 std::vector<OvCore::ECS::Actor*>& OvCore::SceneSystem::Scene::GetActors()
@@ -479,9 +574,38 @@ void OvCore::SceneSystem::Scene::OnSerialize(tinyxml2::XMLDocument & p_doc, tiny
 	tinyxml2::XMLNode* actorsNode = p_doc.NewElement("actors");
 	sceneNode->InsertEndChild(actorsNode);
 
-	for (auto& actor : m_actors)
+	std::unordered_set<ECS::Actor*> serializedActors;
+	const std::function<void(ECS::Actor&)> serializeHierarchy = [&](ECS::Actor& p_actor)
 	{
-		actor->OnSerialize(p_doc, actorsNode);
+		if (!serializedActors.emplace(&p_actor).second)
+		{
+			return;
+		}
+
+		p_actor.OnSerialize(p_doc, actorsNode);
+		for (auto* child : p_actor.GetChildren())
+		{
+			if (child)
+			{
+				serializeHierarchy(*child);
+			}
+		}
+	};
+
+	for (auto* actor : m_actors)
+	{
+		if (actor && !actor->HasParent())
+		{
+			serializeHierarchy(*actor);
+		}
+	}
+
+	for (auto* actor : m_actors)
+	{
+		if (actor)
+		{
+			serializeHierarchy(*actor);
+		}
 	}
 }
 

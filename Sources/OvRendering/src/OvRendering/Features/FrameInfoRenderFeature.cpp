@@ -4,8 +4,9 @@
 * @licence: MIT
 */
 
-#include "OvRendering/Features/FrameInfoRenderFeature.h"
-#include "OvRendering/Core/CompositeRenderer.h"
+#include <OvRendering/Features/FrameInfoRenderFeature.h>
+#include <OvRendering/Core/CompositeRenderer.h>
+#include <OvTools/Eventing/Event.h>
 
 OvRendering::Features::FrameInfoRenderFeature::FrameInfoRenderFeature(
 	OvRendering::Core::CompositeRenderer& p_renderer,
@@ -48,7 +49,7 @@ void OvRendering::Features::FrameInfoRenderFeature::OnAfterDraw(const OvRenderin
 	// TODO: Calculate vertex count from the primitive mode
 	constexpr uint32_t kVertexCountPerPolygon = 3;
 
-	const int instances = p_drawable.material.value().GetGPUInstances();
+	const int instances = static_cast<int>(p_drawable.gpuInstancesOverride.value_or(p_drawable.material.value().GetGPUInstances()));
 
 	if (instances > 0)
 	{
