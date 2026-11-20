@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <string_view>
 
 #include <tinyxml2.h>
 
@@ -379,6 +380,20 @@ void OvCore::ECS::Components::CTransform::OnDeserialize(tinyxml2::XMLDocument & 
 			EnableUIData();
 		}
 		else
+		{
+			DisableUIData();
+		}
+	}
+	else
+	{
+		// A transform saved without UI data has none, even read into an actor that had some
+		bool hasUIElement = false;
+		for (auto* element = p_node->FirstChildElement(); element && !hasUIElement; element = element->NextSiblingElement())
+		{
+			hasUIElement = std::string_view(element->Name()).starts_with("ui_");
+		}
+
+		if (!hasUIElement)
 		{
 			DisableUIData();
 		}

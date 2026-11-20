@@ -548,6 +548,11 @@ bool OvCore::Rendering::FrameBuilder::IsInFrustum(
 	OvTools::Utils::OptRef<const SkinningDrawableDescriptor> skinningDescriptor;
 	if (p_drawable.TryGetDescriptor<SkinningDrawableDescriptor>(skinningDescriptor))
 	{
+		if (skinningDescriptor->unbounded)
+		{
+			return true;
+		}
+
 		cullingBounds.radius *= skinningDescriptor->boundsScale;
 	}
 

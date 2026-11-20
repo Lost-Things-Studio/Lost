@@ -48,7 +48,8 @@ namespace
 		};
 
 		renderTexture->Allocate(renderTextureDesc);
-		renderTexture->SetBorderColor(baregl::math::Vec4{0.0f, 0.0f, 0.0f});
+		// Past the map, the depth is the farthest: a shadow tap that falls outside counts as lit
+		renderTexture->SetBorderColor(baregl::math::Vec4{1.0f, 1.0f, 1.0f, 1.0f});
 		p_framebuffer.Attach<baregl::Texture>(renderTexture, EFramebufferAttachment::DEPTH);
 		p_framebuffer.Validate();
 		p_framebuffer.SetTargetDrawBuffer(std::nullopt);

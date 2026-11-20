@@ -11,6 +11,8 @@
 #include <cstring>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <span>
@@ -27,6 +29,7 @@
 #include <assimp/scene.h>
 
 #include <OvDebug/Logger.h>
+#include <OvRendering/Data/Image.h>
 #include <OvRendering/Resources/Parsers/AssimpParser.h>
 #include <OvTools/Utils/PathParser.h>
 
@@ -253,6 +256,48 @@ namespace
 		return resolvedPath.string();
 	}
 
+	/**
+	* Copy one channel of RGBA8 texels (1 red, 2 green, 3 blue, 4 alpha) into all four
+	*/
+	void KeepChannel(std::vector<uint8_t>& p_rgba, uint32_t p_channel)
+	{
+		const size_t offset = static_cast<size_t>(p_channel) - 1;
+
+		for (size_t i = 0; i + 3 < p_rgba.size(); i += 4)
+		{
+			const uint8_t value = p_rgba[i + offset];
+			p_rgba[i + 0] = value;
+			p_rgba[i + 1] = value;
+			p_rgba[i + 2] = value;
+			p_rgba[i + 3] = value;
+		}
+	}
+
+	/**
+	* Decode an encoded image to RGBA8 texels, as the texture loader decodes one (same orientation), so that one of
+	* its channels can be kept
+	*/
+	bool DecodeToRawRGBA8(const uint8_t* p_data, size_t p_size, OvRendering::Resources::EmbeddedTextureData& p_texture)
+	{
+		const OvRendering::Data::Image image{ p_data, p_size };
+
+		if (!image || image.isHDR || image.width <= 0 || image.height <= 0)
+		{
+			return false;
+		}
+
+		const auto* texels = static_cast<const uint8_t*>(image.data);
+		const size_t byteCount = static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4;
+
+		p_texture.sourceType = OvRendering::Resources::EmbeddedTextureData::ESourceType::EMBEDDED_RAW_RGBA8;
+		p_texture.extension = "tga";
+		p_texture.width = static_cast<uint32_t>(image.width);
+		p_texture.height = static_cast<uint32_t>(image.height);
+		p_texture.rawRGBAData.assign(texels, texels + byteCount);
+		p_texture.compressedData.clear();
+		return true;
+	}
+
 	std::optional<uint32_t> RegisterEmbeddedTexture(
 		const aiScene& p_scene,
 		const std::string& p_texturePath,
@@ -275,6 +320,14 @@ namespace
 			cacheKey = ResolveExternalTexturePath(normalizedTexturePath, p_modelDirectory);
 		}
 
+		// The metallic and the roughness of a glTF material share a texture, each in its own channel: each gets an
+		// entry of its own
+		const std::string sourceKey = cacheKey;
+		if (p_singleChannelChannelId != 0)
+		{
+			cacheKey += ":channel" + std::to_string(p_singleChannelChannelId);
+		}
+
 		if (const auto found = p_textureIndexByKey.find(cacheKey); found != p_textureIndexByKey.end())
 		{
 			return found->second;
@@ -292,6 +345,12 @@ namespace
 				const auto byteCount = static_cast<size_t>(embeddedTexture->mWidth);
 				textureData.compressedData.resize(byteCount);
 				std::memcpy(textureData.compressedData.data(), embeddedTexture->pcData, byteCount);
+
+				if (p_singleChannelChannelId != 0 &&
+					DecodeToRawRGBA8(textureData.compressedData.data(), textureData.compressedData.size(), textureData))
+				{
+					KeepChannel(textureData.rawRGBAData, p_singleChannelChannelId);
+				}
 			}
 			else
 			{
@@ -341,6 +400,21 @@ namespace
 			textureData.sourceType = OvRendering::Resources::EmbeddedTextureData::ESourceType::EXTERNAL_FILE;
 			textureData.sourcePath = normalizedTexturePath;
 			textureData.extension = GetTextureExtensionFromPath(normalizedTexturePath);
+
+			// One channel of a file next to the model is kept in a copy of its own; the file itself stays shared
+			if (p_singleChannelChannelId != 0)
+			{
+				if (std::ifstream file{ sourceKey, std::ios::binary })
+				{
+					const std::vector<uint8_t> encoded{ std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
+
+					if (DecodeToRawRGBA8(encoded.data(), encoded.size(), textureData))
+					{
+						textureData.sourcePath.clear();
+						KeepChannel(textureData.rawRGBAData, p_singleChannelChannelId);
+					}
+				}
+			}
 		}
 
 		const auto newIndex = static_cast<uint32_t>(p_embeddedTextures.size());

@@ -103,7 +103,22 @@ namespace OvTools::Eventing
 	{
 		// Additions and removals are deferred for the whole dispatch, so the callback map stays
 		// valid for the entire iteration, even on a nested invoke
+		struct DispatchScope
+		{
+			Event& event;
+
+			// Closes the dispatch even when a callback throws, or the event would defer forever
+			~DispatchScope()
+			{
+				if (--event.m_invokeDepth == 0)
+				{
+					event.FlushPendingOperations();
+				}
+			}
+		};
+
 		++m_invokeDepth;
+		const DispatchScope scope{ *this };
 
 		for (const auto& [listenerID, callback] : m_callbacks)
 		{
@@ -111,13 +126,6 @@ namespace OvTools::Eventing
 			{
 				callback(p_args...);
 			}
-		}
-
-		--m_invokeDepth;
-
-		if (m_invokeDepth == 0)
-		{
-			FlushPendingOperations();
 		}
 	}
 

@@ -278,7 +278,7 @@ void OvEditor::Panels::MenuBar::CreateHelpMenu()
 
 	auto& helpMenu = CreateWidget<MenuList>("Help");
 	helpMenu.CreateWidget<MenuItem>("GitHub").ClickedEvent += [repoURL] {OvTools::Utils::SystemCalls::OpenURL(repoURL); };
-	helpMenu.CreateWidget<MenuItem>("Wiki").ClickedEvent += [repoURL] {OvTools::Utils::SystemCalls::OpenURL(repoURL + "/wiki"); };
+	helpMenu.CreateWidget<MenuItem>("Manual").ClickedEvent += [repoURL] {OvTools::Utils::SystemCalls::OpenURL(repoURL + "/tree/main/Docs"); };
 	helpMenu.CreateWidget<MenuItem>("Lua Reference").ClickedEvent += [] {
 		const std::filesystem::path luaDefinitions = EDITOR_CONTEXT(engineAssetsPath) / "Lua";
 		if (!EDITOR_EXEC(OpenInCodeEditor(luaDefinitions, luaDefinitions)))

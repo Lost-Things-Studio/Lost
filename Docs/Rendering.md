@@ -11,8 +11,8 @@
 
 ## Culling
 
-- Frustum culling ignores the sign of the scale: a mirrored model (negative X scale) is culled with its bounding sphere
-  on the wrong side. Give it custom bounds (`frustum_behaviour` 3) centred on its pivot.
+- Frustum culling places a model's bounding sphere through its world matrix, so a mirrored model (a negative scale on
+  any axis) is culled where it is drawn. The sphere's radius grows with the largest scale.
 - A renderer whose vertices are moved far by its shader (particles) also needs custom bounds that hold them all.
 
 ## The post process stack
@@ -36,6 +36,10 @@
 - A lit custom shader that receives shadows declares `#pass SHADOW_PASS` and discards below
   `u_ShadowClippingThreshold` there, and declares `_ShadowMap`, `_LightSpaceMatrix` and `_EnvironmentMap`, which the
   engine binds to a material that receives shadows and reflections.
+- A directional light renders its shadow map only when the light or something drawn into it changes
+  (`ShadowMapUpdateMode.ON_CHANGE`, the default). It sees a change through the resource managers: a caster whose
+  texture or mesh is rewritten in place (a render target, a mesh rebuilt by a script) asks for a new map with
+  `RequestShadowMapUpdate()`, or its light renders one every frame (`ShadowMapUpdateMode.REALTIME`).
 - Identical meshes are drawn as one instanced draw when their shader declares `#engine_capability INSTANCING` and reads
   its matrices through `:Shaders/Common/Instancing.ovfxh` (`InstanceModelMatrix`, `InstanceNormalMatrix`,
   `InstanceUserMatrix(gl_InstanceID)`): the opaque ones of one material and mesh, and blended ones of one material side

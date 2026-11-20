@@ -41,9 +41,11 @@ JPH::Shape* OvPhysics::Entities::PhysicalBox::CreateShape(const OvMaths::FVector
 {
 	const OvMaths::FVector3 halfExtent = m_size * p_scale;
 
+	// A flat box keeps some thickness, as spheres and capsules keep some radius: with none it has no volume, so a
+	// dynamic one would get no inertia
 	return new JPH::BoxShape(OvPhysics::Tools::Conversion::ToJoltVector3({
-		std::max(halfExtent.x, 0.0f),
-		std::max(halfExtent.y, 0.0f),
-		std::max(halfExtent.z, 0.0f)
+		std::max(halfExtent.x, kMinimumShapeRadius),
+		std::max(halfExtent.y, kMinimumShapeRadius),
+		std::max(halfExtent.z, kMinimumShapeRadius)
 	}));
 }

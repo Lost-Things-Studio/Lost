@@ -34,9 +34,9 @@ set platform=windows_x64
 :: Navigate to the release folder
 pushd ..\..\Build\
 
-:: Delete any existing folder with the name Lost-%version%-%platform%
-if exist Lost-%version%-%platform% (
-    rmdir /s /q Lost-%version%-%platform%
+:: Delete any folder left by an earlier run, so that it doesn't end up in the archive
+if exist ..\Releases\Lost-%version%-%platform% (
+    rmdir /s /q ..\Releases\Lost-%version%-%platform%
 )
 
 :: Copy the folder "Publish" to a new folder called "Lost-%version%-%platform%"

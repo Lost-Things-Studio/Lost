@@ -484,7 +484,7 @@ namespace OvCore::ECS::Components
 		AnimationLayer* FindLayer(uint32_t p_layer);
 		const AnimationLayer* FindLayer(uint32_t p_layer) const;
 		void SyncWithModel();
-		void RebuildRuntimeData();
+		void RebuildRuntimeData(bool p_modelChanged = false);
 		void RebuildLayerRuntimeData(AnimationLayer& p_layer, std::vector<int32_t>& p_nodeMapScratch);
 		void ApplyLayerMask(AnimationLayer& p_layer) const;
 		void ResolveLayerAnimation(AnimationLayer& p_layer);

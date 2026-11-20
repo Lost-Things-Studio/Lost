@@ -2,8 +2,9 @@
 
 What Lost changes from [Overload](https://github.com/Overload-Technologies/Overload), version by version, newest
 first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
-[Semantic Versioning](https://semver.org/): a script, a shader or a project made for one version keeps working with any
-later version of the same major version.
+[Semantic Versioning](https://semver.org/): from 1.0, a script, a shader or a project made for one version keeps
+working with any later version of the same major version. Before 1.0, a minor version may break that; its section says
+how under "Changed" and "Removed".
 
 ## [Unreleased]
 
@@ -59,6 +60,10 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Reflection probes**: `ReflectionProbe:SetBrightness` and `GetBrightness`, how bright what a probe captured is for
   the objects it lights.
 - **Profiling**: a Tracy zone per Behaviour callback, named `script:function`.
+- **More Behaviour property types**: vectors (`Vector2`, `Vector3`, `Vector4` defaults), colours (`Color(r, g, b, a)`,
+  a `Vector4` to the script), enumerations (`Enum({ ... }, default)`, the chosen string) and lists
+  (`List("number" | "string" | "bool", { ... })`, a plain table), each with its inspector widget and its type in
+  prefab and scene files.
 
 ### Changed
 
@@ -73,6 +78,8 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Game input in the editor**: the game reads keys, clicks, scroll and the mouse lock only while the Game View has
   the focus; F5 starts and stops play, and Escape belongs to the game.
 - **A minimized window** keeps the game running; only drawing stops.
+- **Unreadable properties are reported**: a property written in a file with an unknown type (`type="boolean"`) is
+  logged as an error, and one whose type the script no longer declares as a warning. Both were ignored silently.
 
 ### Removed
 
@@ -84,3 +91,12 @@ Lost's first version: Overload 1.9 and the changes below.
 - **World space UI behind the scene**: a world space canvas is depth-tested against the scene, as
   `Libraries/UI/Docs/WorldSpace.md` says, so a wall in front of it hides it. The depth test it asked for was lost
   when its drawables were prepared for the UI pass, and it was drawn over everything.
+- **Culling of mirrored models**: a model with a negative scale is culled where it is drawn. Its bounding sphere goes
+  through the world matrix, where the decomposed scale and rotation lost the mirror's sign, and its radius follows
+  the largest scale (a scale of -2 on X counted as 0 before).
+- **Callbacks when a scene goes**: on a scene change, on quitting and when play stops in the editor, every actor
+  receives `OnDisable` and `OnDestroy` while its scene is still the current one, then the actors are deleted. Before,
+  the scene was already gone during these callbacks, and any actor handle used there raised
+  `ActorRef: no active scene`.
+- **Actor references inside a prefab survive instantiation**: an actor property that names another actor of the same
+  prefab now names that actor's instance. Before, every instance got new GUIDs and such a property came out `nil`.
