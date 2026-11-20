@@ -1585,15 +1585,19 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::SyncWithModel()
 	}
 
 	m_model = model;
-	RebuildRuntimeData();
+	RebuildRuntimeData(true);
 }
 
-void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildRuntimeData()
+void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildRuntimeData(bool p_modelChanged)
 {
-	// A ragdoll is made of the previous model's nodes
-	m_ragdoll.reset();
-	m_ragdollPartByNode.clear();
-	m_ragdollPartScales.clear();
+	// A ragdoll is made of the model's nodes: it ends with the model, not when a layer or its clips change
+	if (p_modelChanged)
+	{
+		m_ragdoll.reset();
+		m_ragdollPartByNode.clear();
+		m_ragdollPartScales.clear();
+	}
+
 
 	m_localPose.clear();
 	m_globalPose.clear();
