@@ -20,6 +20,8 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
   is static too. Its triangles are in the actor's space and collide from their front only, the side their
   counter-clockwise winding faces: a ray or a body coming from behind passes through. Build it once; changing its
   triangles rebuilds the whole shape.
+- A height field can also come from a height map image, which a scene saves and loads, and a `Terrain` draws it; it
+  answers `GetHeightAt` and `GetNormalAt` without a ray. See [Terrain](Terrain.md).
 - Static colliders are also what a navigation mesh is built from: see [Navigation](Navigation.md).
 
 ## Collision layers

@@ -170,6 +170,10 @@ function Actor:GetReflectionProbe() end
 ---@return ParticleSystem|nil
 function Actor:GetParticleSystem() end
 
+--- Returns the Terrain attached to this actor (If any)
+---@return Terrain|nil
+function Actor:GetTerrain() end
+
 --- Returns the Animator attached to this actor (If any)
 ---@return Animator|nil
 function Actor:GetAnimator() end
@@ -314,6 +318,10 @@ function Actor:AddReflectionProbe() end
 ---@return ParticleSystem
 function Actor:AddParticleSystem() end
 
+--- Adds a Terrain component to the actor and returns it. It draws the actor's PhysicalHeightField
+---@return Terrain
+function Actor:AddTerrain() end
+
 --- Adds an Animator component to the actor and returns it
 ---@return Animator
 function Actor:AddAnimator() end
@@ -393,6 +401,9 @@ function Actor:RemovePostProcessStack() end
 function Actor:RemoveReflectionProbe() end
 --- Removes the ParticleSystem component from the actor
 function Actor:RemoveParticleSystem() end
+
+--- Removes the Terrain component from the actor
+function Actor:RemoveTerrain() end
 
 --- Removes the Animator component from the actor
 function Actor:RemoveAnimator() end

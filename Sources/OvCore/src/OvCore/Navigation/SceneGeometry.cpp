@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
@@ -16,6 +15,7 @@
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/Navigation/SceneGeometry.h>
 #include <OvCore/SceneSystem/Scene.h>
+#include <OvCore/Terrain/Heightmap.h>
 #include <OvMaths/FMatrix4.h>
 
 namespace
@@ -163,7 +163,7 @@ void OvCore::Navigation::SceneGeometry::AddHeightField(NavGeometry& p_geometry, 
 		for (uint32_t x = 0; x < p_sampleCount; ++x)
 		{
 			const float height = p_heights[z * p_sampleCount + x];
-			if (!std::isfinite(height) || height >= std::numeric_limits<float>::max())
+			if (Terrain::IsHole(height))
 			{
 				continue;
 			}
