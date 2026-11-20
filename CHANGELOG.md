@@ -141,6 +141,11 @@ Lost's first version: Overload 1.9 and the changes below.
   `ui_clip_children` in a file, "Clip Children" in the inspector), on a screen or a world space canvas, turned or not;
   a clip inside another shows what both let through. `DScrollPanel` clips its content. The Lua API is now 1.9. See
   [Docs/Rendering.md](Docs/Rendering.md).
+- **Checked components in Lua**: a component reaches Lua as a handle checked on every use, as actors are. One that was
+  removed, or whose actor was freed, raises a clear error instead of being read through a dangling pointer;
+  `Component:IsAlive()` tests it, and two handles on one component are equal. A component method called on a value
+  that is not that component (`light.SetIntensity(2)`) raises an error instead of reading it as one. The Lua API is
+  now 1.10. See [Docs/Scripting.md](Docs/Scripting.md).
 
 ### Changed
 
@@ -187,3 +192,6 @@ Lost's first version: Overload 1.9 and the changes below.
 - **A destroyed physics engine stops listening for new bodies**: a body made after an engine was destroyed reached it
   in freed memory. The game and the editor keep one engine, so only a program that makes several, such as the tests,
   could meet it.
+- **`Component` methods on lights and bodies**: `GetOwner()` and the other `Component` methods answer on a
+  `PointLight`, a `SpotLight`, a `DirectionalLight`, the ambient lights, a `PhysicalBox`, a `PhysicalSphere` and a
+  `PhysicalCapsule`. Their usertypes named only their direct base, so these methods were `nil` on them.
