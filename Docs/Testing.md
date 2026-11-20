@@ -57,6 +57,7 @@ It covers:
 | Lua API | The bindings and the definitions of `Resources/Engine/Lua` hold the same names, inherited members included |
 | Shader API | `Docs/Shaders.md` lists every name of each public shader include, and the version is defined for every shader |
 | Lua modules | `require` from the project and the engine's resources, its cache shared with `Resources.GetScript`, and the error for each failure; the global frame events (order, removal, a failing callback); the game's end (once, in order, a failure left alone, a removal and an addition while it runs); a Behaviour from the engine's resources |
+| Distance field | Shapes, openings and lights given numbers that are not finite, or too large, left out with a warning |
 
 doctest's options pick what runs: `--test-suite="Physics*"`, `--test-case="*limits*"`, `--success` to list every
 check, `--help` for the rest.

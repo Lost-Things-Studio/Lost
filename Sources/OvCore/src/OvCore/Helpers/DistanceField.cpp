@@ -33,6 +33,32 @@ namespace
 	// not a number, building the grid would hang the engine
 	constexpr double kMaxPrimitiveCells = 1024.0 * 1024.0;
 
+	bool IsFinite(float p_value)
+	{
+		return std::isfinite(p_value);
+	}
+
+	bool IsFinite(const OvMaths::FVector3& p_value)
+	{
+		return std::isfinite(p_value.x) && std::isfinite(p_value.y) && std::isfinite(p_value.z);
+	}
+
+	/**
+	* Whether every number a shape is given is finite: checked before anything clamps them, as std::min and std::max
+	* would turn a NaN into a number
+	*/
+	template<typename... Values>
+	bool AllFinite(const Values&... p_values)
+	{
+		if ((IsFinite(p_values) && ...))
+		{
+			return true;
+		}
+
+		OVLOG_WARNING("DistanceField: a shape that is not finite or too large is left out");
+		return false;
+	}
+
 	uint32_t Hash(int32_t p_x, int32_t p_y, int32_t p_z, uint32_t p_seed)
 	{
 		uint32_t h = p_seed ^ 0x9E3779B9u;
@@ -147,6 +173,11 @@ void OvCore::Helpers::DistanceField::SetRelief(float p_ledgeHeight, float p_ledg
 
 void OvCore::Helpers::DistanceField::AddTube(const FVector3& p_from, const FVector3& p_to, float p_fromRadius, float p_toRadius, float p_floor, float p_squash)
 {
+	if (!AllFinite(p_from, p_to, p_fromRadius, p_toRadius, p_floor, p_squash))
+	{
+		return;
+	}
+
 	Primitive primitive{ Primitive::EKind::TUBE, p_from, p_to };
 	primitive.r0 = std::max(p_fromRadius, 0.0f);
 	primitive.r1 = std::max(p_toRadius, 0.0f);
@@ -162,6 +193,11 @@ void OvCore::Helpers::DistanceField::AddTube(const FVector3& p_from, const FVect
 
 void OvCore::Helpers::DistanceField::AddEllipsoid(const FVector3& p_centre, const FVector3& p_radii, float p_floor)
 {
+	if (!AllFinite(p_centre, p_radii, p_floor))
+	{
+		return;
+	}
+
 	Primitive primitive{ Primitive::EKind::ELLIPSOID, p_centre, { std::max(p_radii.x, 0.01f), std::max(p_radii.y, 0.01f), std::max(p_radii.z, 0.01f) } };
 	primitive.floor = std::clamp(p_floor, 0.0f, 1.0f);
 	primitive.boundsMin = p_centre - primitive.b;
@@ -172,6 +208,11 @@ void OvCore::Helpers::DistanceField::AddEllipsoid(const FVector3& p_centre, cons
 
 void OvCore::Helpers::DistanceField::AddPillar(const FVector3& p_base, float p_height, float p_radius)
 {
+	if (!AllFinite(p_base, p_height, p_radius))
+	{
+		return;
+	}
+
 	Primitive primitive{ Primitive::EKind::PILLAR, p_base, p_base + FVector3{ 0.0f, std::max(p_height, 0.0f), 0.0f } };
 	primitive.r0 = std::max(p_radius, 0.0f);
 	primitive.boundsMin = primitive.a - FVector3{ primitive.r0, primitive.r0, primitive.r0 };
@@ -182,6 +223,11 @@ void OvCore::Helpers::DistanceField::AddPillar(const FVector3& p_base, float p_h
 
 void OvCore::Helpers::DistanceField::AddBox(const FVector3& p_min, const FVector3& p_max, float p_rise, uint32_t p_axis)
 {
+	if (!AllFinite(p_min, p_max, p_rise))
+	{
+		return;
+	}
+
 	Primitive primitive{ Primitive::EKind::BOX, Min(p_min, p_max), Max(p_min, p_max) };
 	primitive.r0 = p_rise;
 	primitive.axis = p_axis == 2 ? 2 : 0;
@@ -212,11 +258,21 @@ bool OvCore::Helpers::DistanceField::SetGround(uint32_t p_count, float p_spacing
 
 void OvCore::Helpers::DistanceField::AddOpening(float p_x, float p_z, float p_radius)
 {
+	if (!AllFinite(p_x, p_z, p_radius))
+	{
+		return;
+	}
+
 	m_openings.push_back({ p_x, p_z, std::max(p_radius, 0.0f) });
 }
 
 void OvCore::Helpers::DistanceField::AddLight(const FVector3& p_position, float p_radius)
 {
+	if (!AllFinite(p_position, p_radius))
+	{
+		return;
+	}
+
 	m_lights.push_back({ p_position, std::max(p_radius, 0.0f) });
 }
 
