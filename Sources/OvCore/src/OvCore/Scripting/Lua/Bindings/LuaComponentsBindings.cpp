@@ -57,6 +57,7 @@
 #include <OvCore/ECS/Components/UI/CVerticalLayout.h>
 #include <OvCore/Scripting/Common/ScriptPropertyValue.h>
 #include <OvPhysics/Settings/PhysicsSettings.h>
+#include <OvDebug/Logger.h>
 
 namespace
 {
@@ -723,6 +724,11 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetCollisionLayer", [](CPhysicalObject& p_this, int p_layer)
 		{
 			constexpr int kLastLayer = OvPhysics::Settings::PhysicsSettings::kLayerCount - 1;
+			if (p_layer < 0 || p_layer > kLastLayer)
+			{
+				OVLOG_WARNING(std::format("PhysicalObject:SetCollisionLayer: no layer {}, {} is used", p_layer, std::clamp(p_layer, 0, kLastLayer)));
+			}
+
 			p_this.SetCollisionLayer(static_cast<uint16_t>(std::clamp(p_layer, 0, kLastLayer)));
 		}
 	);

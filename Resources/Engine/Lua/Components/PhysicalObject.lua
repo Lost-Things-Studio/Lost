@@ -119,7 +119,7 @@ function PhysicalObject:SetInterpolated(interpolated) end
 ---@return integer
 function PhysicalObject:GetCollisionLayer() end
 
---- Puts the physical object on a collision layer (0 to 15, clamped): which layers collide is set by the project
+--- Puts the physical object on a collision layer (0 to 15, clamped with a warning): which layers collide is set by the project
 --- (`physics_ignored_layer_pairs`) and by `Physics.SetLayersCollide`
 ---@param layer integer
 function PhysicalObject:SetCollisionLayer(layer) end

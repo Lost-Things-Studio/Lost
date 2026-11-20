@@ -30,7 +30,7 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
 
 - Every physical object is on one of 16 collision layers, 0 to 15: `SetCollisionLayer(layer)` and
   `GetCollisionLayer()`, `collision_layer` in a file (0 when absent), a list in the inspector. Out of range, a layer is
-  clamped.
+  clamped, with a warning.
 - By default every layer collides with every other. The project names the layers and says which pairs go through each
   other (see [Projects](Projects.md)):
 
