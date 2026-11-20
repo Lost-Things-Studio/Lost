@@ -4,14 +4,19 @@
 * @licence: MIT
 */
 
+#include <algorithm>
 #include <cstdint>
+#include <string>
 
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CPhysicalObject.h>
+#include <OvCore/Global/ServiceLocator.h>
 
 #include <OvDebug/Logger.h>
 
+#include <OvPhysics/Core/PhysicsEngine.h>
 #include <OvPhysics/Entities/PhysicalObject.h>
+#include <OvPhysics/Settings/PhysicsSettings.h>
 
 #include <OvUI/Widgets/Drags/DragFloat.h>
 #include <OvUI/Widgets/Selection/ComboBox.h>
@@ -96,6 +101,21 @@ bool OvCore::ECS::Components::CPhysicalObject::IsStatic() const
 	return m_physicalObject->IsStatic();
 }
 
+uint16_t OvCore::ECS::Components::CPhysicalObject::GetCollisionLayer() const
+{
+	return m_physicalObject->GetLayer();
+}
+
+bool OvCore::ECS::Components::CPhysicalObject::IsInterpolated() const
+{
+	return m_physicalObject->IsInterpolated();
+}
+
+void OvCore::ECS::Components::CPhysicalObject::SetInterpolated(bool p_interpolated)
+{
+	m_physicalObject->SetInterpolated(p_interpolated);
+}
+
 void OvCore::ECS::Components::CPhysicalObject::SetMass(float p_mass)
 {
 	m_physicalObject->SetMass(p_mass);
@@ -146,6 +166,11 @@ void OvCore::ECS::Components::CPhysicalObject::SetStatic(bool p_static)
 	m_physicalObject->SetStatic(p_static);
 }
 
+void OvCore::ECS::Components::CPhysicalObject::SetCollisionLayer(uint16_t p_layer)
+{
+	m_physicalObject->SetLayer(p_layer);
+}
+
 void OvCore::ECS::Components::CPhysicalObject::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
 {
 	Helpers::Serializer::SerializeBoolean(p_doc, p_node, "is_trigger", IsTrigger());
@@ -157,6 +182,8 @@ void OvCore::ECS::Components::CPhysicalObject::OnSerialize(tinyxml2::XMLDocument
 	Helpers::Serializer::SerializeVec3(p_doc, p_node, "linear_factor", GetLinearFactor());
 	Helpers::Serializer::SerializeVec3(p_doc, p_node, "angular_factor", GetAngularFactor());
 	Helpers::Serializer::SerializeInt(p_doc, p_node, "collision_mode", static_cast<int>(GetCollisionDetectionMode()));
+	Helpers::Serializer::SerializeInt(p_doc, p_node, "collision_layer", static_cast<int>(GetCollisionLayer()));
+	Helpers::Serializer::SerializeBoolean(p_doc, p_node, "interpolated", IsInterpolated());
 }
 
 void OvCore::ECS::Components::CPhysicalObject::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
@@ -170,6 +197,15 @@ void OvCore::ECS::Components::CPhysicalObject::OnDeserialize(tinyxml2::XMLDocume
 	SetLinearFactor(Helpers::Serializer::DeserializeVec3(p_doc, p_node, "linear_factor"));
 	SetAngularFactor(Helpers::Serializer::DeserializeVec3(p_doc, p_node, "angular_factor"));
 	SetCollisionDetectionMode(static_cast<OvPhysics::Entities::PhysicalObject::ECollisionDetectionMode>(Helpers::Serializer::DeserializeInt(p_doc, p_node, "collision_mode")));
+
+	// A file written before collision layers puts the object on the default layer
+	const int layer = Helpers::Serializer::DeserializeInt(p_doc, p_node, "collision_layer");
+	SetCollisionLayer(static_cast<uint16_t>(std::clamp(layer, 0, OvPhysics::Settings::PhysicsSettings::kLayerCount - 1)));
+
+	// A file written before interpolation leaves it off
+	bool interpolated = false;
+	Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "interpolated", interpolated);
+	SetInterpolated(interpolated);
 }
 
 void OvCore::ECS::Components::CPhysicalObject::OnInspector(OvUI::Internal::WidgetContainer & p_root)
@@ -177,6 +213,7 @@ void OvCore::ECS::Components::CPhysicalObject::OnInspector(OvUI::Internal::Widge
 	Helpers::GUIDrawer::DrawBoolean(p_root, "Trigger", std::bind(&CPhysicalObject::IsTrigger, this), std::bind(&CPhysicalObject::SetTrigger, this, std::placeholders::_1));
 	Helpers::GUIDrawer::DrawBoolean(p_root, "Kinematic", std::bind(&CPhysicalObject::IsKinematic, this), std::bind(&CPhysicalObject::SetKinematic, this, std::placeholders::_1));
 	Helpers::GUIDrawer::DrawBoolean(p_root, "Static", std::bind(&CPhysicalObject::IsStatic, this), std::bind(&CPhysicalObject::SetStatic, this, std::placeholders::_1));
+	Helpers::GUIDrawer::DrawBoolean(p_root, "Interpolated", std::bind(&CPhysicalObject::IsInterpolated, this), std::bind(&CPhysicalObject::SetInterpolated, this, std::placeholders::_1));
 	Helpers::GUIDrawer::DrawScalar<float>(p_root, "Mass", std::bind(&CPhysicalObject::GetMass, this), std::bind(&CPhysicalObject::SetMass, this, std::placeholders::_1), 0.1f, 0.f, 10000.f);
 	Helpers::GUIDrawer::DrawScalar<float>(p_root, "Bounciness", std::bind(&CPhysicalObject::GetBounciness, this), std::bind(&CPhysicalObject::SetBounciness, this, std::placeholders::_1), 0.1f, 0.f, 1.f);
 	Helpers::GUIDrawer::DrawScalar<float>(p_root, "Friction", std::bind(&CPhysicalObject::GetFriction, this), std::bind(&CPhysicalObject::SetFriction, this, std::placeholders::_1), 0.1f, 0.f, 1.f);
@@ -190,6 +227,26 @@ void OvCore::ECS::Components::CPhysicalObject::OnInspector(OvUI::Internal::Widge
 	collisionMode.ValueChangedEvent += [this](int p_choice)
 	{
 		SetCollisionDetectionMode(static_cast<OvPhysics::Entities::PhysicalObject::ECollisionDetectionMode>(p_choice));
+	};
+
+	DrawCollisionLayer(p_root);
+}
+
+void OvCore::ECS::Components::CPhysicalObject::DrawCollisionLayer(OvUI::Internal::WidgetContainer& p_root)
+{
+	// The layers are listed by index and by the name the project gives them
+	const auto& physicsEngine = OVSERVICE(OvPhysics::Core::PhysicsEngine);
+
+	Helpers::GUIDrawer::CreateTitle(p_root, "Collision Layer");
+	auto& collisionLayer = p_root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(static_cast<int>(GetCollisionLayer()));
+	for (uint16_t layer = 0; layer < OvPhysics::Settings::PhysicsSettings::kLayerCount; ++layer)
+	{
+		const std::string& name = physicsEngine.GetLayerName(layer);
+		collisionLayer.choices.emplace(layer, name.empty() ? std::to_string(layer) : std::to_string(layer) + " - " + name);
+	}
+	collisionLayer.ValueChangedEvent += [this](int p_choice)
+	{
+		SetCollisionLayer(static_cast<uint16_t>(p_choice));
 	};
 }
 

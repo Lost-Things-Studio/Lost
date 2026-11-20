@@ -10,6 +10,8 @@
 #include <string>
 #include <unordered_set>
 
+#include <OvWindowing/Inputs/Gamepads.h>
+#include <OvWindowing/Inputs/TypedInput.h>
 #include <OvWindowing/Inputs/EMouseButton.h>
 #include <OvWindowing/Inputs/EMouseButtonState.h>
 #include <OvWindowing/Inputs/EKey.h>
@@ -19,7 +21,7 @@
 namespace OvWindowing::Inputs
 {
 	/**
-	* Handles inputs (Mouse and keyboard)
+	* Handles inputs (mouse, keyboard and gamepads)
 	*/
 	class InputManager
 	{
@@ -90,10 +92,34 @@ namespace OvWindowing::Inputs
 		std::pair<double, double> GetMouseScroll() const;
 
 		/**
+		* Returns what the keyboard typed during the frame: characters in UTF-8, and the system's repetitions of keys
+		* held down
+		*/
+		const TypedInput& GetTypedInput() const;
+
+		/**
 		* Clear any event occured
 		* @note Should be called at the end of every game tick
 		*/
 		void ClearEvents();
+
+		/**
+		* Reads the gamepads the window system knows, as their state for this frame: the buttons pressed and released
+		* during the frame are those that changed since the last call. Only a device the window system can map to a
+		* gamepad layout is read
+		* @note Should be called once a frame, after the window system's events are polled
+		*/
+		void UpdateGamepads();
+
+		/**
+		* Returns the state of the gamepads
+		*/
+		Gamepads& GetGamepads();
+
+		/**
+		* Returns the state of the gamepads
+		*/
+		const Gamepads& GetGamepads() const;
 
 	private:
 		void OnKeyPressed(int p_key);
@@ -101,6 +127,8 @@ namespace OvWindowing::Inputs
 		void OnMouseButtonPressed(int p_button);
 		void OnMouseButtonReleased(int p_button);
 		void OnMouseScroll(double p_xOffset, double p_yOffset);
+		void OnKeyRepeated(int p_key);
+		void OnCharacter(uint32_t p_codePoint);
 
 	private:
 		Window& m_window;
@@ -110,6 +138,8 @@ namespace OvWindowing::Inputs
 		OvTools::Eventing::ListenerID m_mouseButtonPressedListener;
 		OvTools::Eventing::ListenerID m_mouseButtonReleasedListener;
 		OvTools::Eventing::ListenerID m_mouseScrollListener;
+		OvTools::Eventing::ListenerID m_keyRepeatedListener;
+		OvTools::Eventing::ListenerID m_characterListener;
 
 		std::unordered_set<EKey> m_keyPressed;
 		std::unordered_set<EKey> m_keyReleased;
@@ -118,6 +148,9 @@ namespace OvWindowing::Inputs
 		std::unordered_set<EMouseButton> m_mouseButtonReleased;
 
 		std::pair<double, double> m_scrollData;
+
+		Gamepads m_gamepads;
+		TypedInput m_typedInput;
 
 		mutable std::optional<std::pair<double, double>> m_mousePosition;
 		mutable Cursor::ECursorMode m_mousePositionMode = Cursor::ECursorMode::NORMAL;

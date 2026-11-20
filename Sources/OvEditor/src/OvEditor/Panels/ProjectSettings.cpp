@@ -87,7 +87,18 @@ OvEditor::Panels::ProjectSettings::ProjectSettings(const std::string & p_title, 
 		GUIDrawer::DrawBoolean(columns, "Fullscreen", GenerateGatherer<bool>("fullscreen"), GenerateProvider<bool>("fullscreen"));
 		GUIDrawer::DrawBoolean(columns, "Allow resizing", GenerateGatherer<bool>("resizable"), GenerateProvider<bool>("resizable"));
 		GUIDrawer::DrawString(columns, "Executable name", GenerateGatherer<std::string>("executable_name"), GenerateProvider<std::string>("executable_name"));
+		GUIDrawer::DrawString(columns, "Project ID", GenerateGatherer<std::string>("project_id"), GenerateProvider<std::string>("project_id"));
 		GUIDrawer::DrawAsset(columns, "Window Icon", GenerateGatherer<std::string>("window_icon"), GenerateProvider<std::string>("window_icon"), OvTools::Utils::PathParser::EFileType::TEXTURE);
+
+		// The project's input actions, a JSON file of its assets (see Docs/Input.md)
+		GUIDrawer::DrawString(columns, "Input actions", GenerateGatherer<std::string>("input_actions"), GenerateProvider<std::string>("input_actions"));
+
+		// The project's translations, a folder of "<language>.json" tables in its assets (see Docs/Localization.md)
+		GUIDrawer::DrawString(columns, "Translations", GenerateGatherer<std::string>("translations"), GenerateProvider<std::string>("translations"));
+		GUIDrawer::DrawString(columns, "Default language", GenerateGatherer<std::string>("default_language"), GenerateProvider<std::string>("default_language"));
+
+		// The project's audio buses, comma-separated names (see Docs/Audio.md)
+		GUIDrawer::DrawString(columns, "Audio buses", GenerateGatherer<std::string>("audio_buses"), GenerateProvider<std::string>("audio_buses"));
 	}
 
 	{

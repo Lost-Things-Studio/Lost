@@ -12,7 +12,7 @@
 #include <OvMaths/FMatrix4.h>
 #include <OvMaths/FQuaternion.h>
 
-#include <sol/sol.hpp>
+#include <OvCore/Scripting/Lua/LuaComponentRef.h>
 
 void BindLuaMath(sol::state& p_luaState)
 {
@@ -282,4 +282,7 @@ void BindLuaMath(sol::state& p_luaState)
 		"z", &FQuaternion::z,
 		"w", &FQuaternion::w
 	);
+
+	// The maths arguments are checked by the ids their metatables hold
+	OvCore::Scripting::MarkMathMetatables(p_luaState.lua_state());
 }

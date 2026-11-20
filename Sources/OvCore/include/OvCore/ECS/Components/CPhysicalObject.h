@@ -99,6 +99,16 @@ namespace OvCore::ECS::Components
 		bool IsStatic() const;
 
 		/**
+		* Returns the collision layer of the physical object (0 to OvPhysics::Settings::PhysicsSettings::kLayerCount - 1)
+		*/
+		uint16_t GetCollisionLayer() const;
+
+		/**
+		* Returns true if the actor's transform is interpolated between the last two physics steps
+		*/
+		bool IsInterpolated() const;
+
+		/**
 		* Defines a new mass for the physical object
 		* @param p_mass
 		*/
@@ -165,6 +175,21 @@ namespace OvCore::ECS::Components
 		void SetStatic(bool p_static);
 
 		/**
+		* Puts the physical object on a collision layer: which layers collide is set by the project's physics settings.
+		* Out of range, the layer is clamped
+		* @param p_layer
+		*/
+		void SetCollisionLayer(uint16_t p_layer);
+
+		/**
+		* Defines if the actor's transform is interpolated between the last two physics steps, so that it moves
+		* smoothly at any frame rate. Only a body the physics moves (a dynamic body, a character controller) is
+		* interpolated; during OnFixedUpdate, the transform holds the pose of the physics
+		* @param p_interpolated
+		*/
+		void SetInterpolated(bool p_interpolated);
+
+		/**
 		* Serialize the component
 		* @param p_doc
 		* @param p_node
@@ -188,6 +213,12 @@ namespace OvCore::ECS::Components
 		template <typename T> T& GetPhysicalObjectAs() const { return *static_cast<T*>(m_physicalObject.get()); }
 		void Init();
 		void BindListener();
+
+		/**
+		* Draws the list of collision layers in the inspector
+		* @param p_root
+		*/
+		void DrawCollisionLayer(OvUI::Internal::WidgetContainer& p_root);
 
 	private:
 		virtual void OnEnable() override;

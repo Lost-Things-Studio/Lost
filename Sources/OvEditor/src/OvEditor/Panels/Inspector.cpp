@@ -22,12 +22,19 @@
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
+#include <OvCore/ECS/Components/CCharacterController.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CPhysicalHeightField.h>
 #include <OvCore/ECS/Components/CPhysicalMesh.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/ECS/Components/CPointLight.h>
+#include <OvCore/ECS/Components/CAnimator.h>
+#include <OvCore/ECS/Components/CLookAt.h>
+#include <OvCore/ECS/Components/CParticleSystem.h>
+#include <OvCore/ECS/Components/CTerrain.h>
+#include <OvCore/ECS/Components/CVegetation.h>
+#include <OvCore/ECS/Components/CSpringBones.h>
 #include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
@@ -112,6 +119,7 @@ namespace
 		CreateComponentInfo<CPhysicalSphere>("Physical Sphere"),
 		CreateComponentInfo<CPhysicalCapsule>("Physical Capsule"),
 		CreateComponentInfo<CPhysicalHeightField>("Physical Height Field"),
+		CreateComponentInfo<CCharacterController>("Character Controller"),
 		CreateComponentInfo<CPhysicalMesh>("Physical Mesh"),
 		CreateComponentInfo<CPointLight>("Point Light"),
 		CreateComponentInfo<CDirectionalLight>("Directional Light"),
@@ -121,10 +129,16 @@ namespace
 		CreateComponentInfo<CMaterialRenderer>("Material Renderer"),
 		CreateComponentInfo<CSkinnedMeshRenderer>("Skinned Mesh Renderer"),
 		CreateComponentInfo<CBoneAttachment>("Bone Attachment"),
+		CreateComponentInfo<CAnimator>("Animator"),
+		CreateComponentInfo<CLookAt>("Look At"),
+		CreateComponentInfo<CSpringBones>("Spring Bones"),
 		CreateComponentInfo<CAudioSource>("Audio Source"),
 		CreateComponentInfo<CAudioListener>("Audio Listener"),
 		CreateComponentInfo<CPostProcessStack>("Post Process Stack"),
 		CreateComponentInfo<CReflectionProbe>("Reflection Probe"),
+		CreateComponentInfo<CParticleSystem>("Particle System"),
+		CreateComponentInfo<CTerrain>("Terrain"),
+		CreateComponentInfo<CVegetation>("Vegetation"),
 		CreateComponentInfo<UI::CCanvas>("Canvas"),
 		CreateComponentInfo<UI::CHorizontalLayout>("Horizontal Layout"),
 		CreateComponentInfo<UI::CImage>("Image"),

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <limits>
 #include <numbers>
 
@@ -202,210 +203,6 @@ namespace
 		const OvMaths::FVector4 result = OvMaths::FMatrix4::Multiply(p_matrix, OvMaths::FVector4(p_direction, 0.0f));
 		return { result.x, result.y, result.z };
 	}
-
-	// A node's rest rotation and scale, without its translation: rigs that only differ by their bone lengths match
-	bool AreRestShapesClose(const OvMaths::FMatrix4& p_left, const OvMaths::FMatrix4& p_right)
-	{
-		constexpr float kSkeletonTransformTolerance = 0.0001f;
-
-		for (uint8_t i = 0; i < 16; ++i)
-		{
-			if (i == 3 || i == 7 || i == 11)
-			{
-				continue;
-			}
-
-			if (std::abs(p_left.data[i] - p_right.data[i]) > kSkeletonTransformTolerance)
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	bool CollectRequiredSkinningNodes(
-		const OvRendering::Animation::Skeleton& p_skeleton,
-		std::vector<bool>& p_requiredNodes
-	)
-	{
-		p_requiredNodes.assign(p_skeleton.nodes.size(), false);
-
-		for (const auto& bone : p_skeleton.bones)
-		{
-			if (bone.nodeIndex >= p_skeleton.nodes.size())
-			{
-				return false;
-			}
-
-			int32_t nodeIndex = static_cast<int32_t>(bone.nodeIndex);
-			while (nodeIndex >= 0)
-			{
-				const auto currentNodeIndex = static_cast<size_t>(nodeIndex);
-				if (currentNodeIndex >= p_skeleton.nodes.size())
-				{
-					return false;
-				}
-
-				if (p_requiredNodes[currentNodeIndex])
-				{
-					break;
-				}
-
-				p_requiredNodes[currentNodeIndex] = true;
-				nodeIndex = p_skeleton.nodes[currentNodeIndex].parentIndex;
-			}
-		}
-
-		return true;
-	}
-
-	// Whether a node the source lacks hangs under a bone both skeletons share: the first of its ancestors the source
-	// knows must be a bone on both sides, never the scene root, the armature or a mesh node
-	bool HangsUnderSharedBone(
-		const OvRendering::Animation::Skeleton& p_targetSkeleton,
-		const OvRendering::Animation::Skeleton& p_sourceSkeleton,
-		size_t p_targetNodeIndex
-	)
-	{
-		int32_t nodeIndex = p_targetSkeleton.nodes[p_targetNodeIndex].parentIndex;
-
-		while (nodeIndex >= 0 && static_cast<size_t>(nodeIndex) < p_targetSkeleton.nodes.size())
-		{
-			const auto& node = p_targetSkeleton.nodes[static_cast<size_t>(nodeIndex)];
-
-			if (p_sourceSkeleton.FindNodeIndex(node.name).has_value())
-			{
-				return node.boneIndex >= 0 && p_sourceSkeleton.FindBoneIndex(node.name).has_value();
-			}
-
-			nodeIndex = node.parentIndex;
-		}
-
-		return false;
-	}
-
-	// The source's nodes mapped onto the target's by name. The target may extend the source's skeleton: bones of its
-	// own (hair, cloth) under a bone both share, which no track drives and which keep their bind pose for scripts to
-	// move. Only against a source with bones, so that a misnamed bone is never taken for an extension.
-	bool BuildAnimationNodeMap(
-		const OvRendering::Animation::Skeleton& p_targetSkeleton,
-		const OvRendering::Animation::Skeleton& p_sourceSkeleton,
-		std::vector<int32_t>& p_nodeMap
-	)
-	{
-		p_nodeMap.assign(p_sourceSkeleton.nodes.size(), -1);
-
-		if (p_targetSkeleton.nodes.empty() || p_sourceSkeleton.nodes.empty() || p_targetSkeleton.bones.empty())
-		{
-			return false;
-		}
-
-		std::vector<bool> requiredNodes;
-		if (!CollectRequiredSkinningNodes(p_targetSkeleton, requiredNodes))
-		{
-			return false;
-		}
-
-		std::vector<bool> extensionNodes(p_targetSkeleton.nodes.size(), false);
-
-		for (size_t targetNodeIndex = 0; targetNodeIndex < requiredNodes.size(); ++targetNodeIndex)
-		{
-			if (!requiredNodes[targetNodeIndex])
-			{
-				continue;
-			}
-
-			const auto& targetNode = p_targetSkeleton.nodes[targetNodeIndex];
-			const auto sourceNodeIndex = p_sourceSkeleton.FindNodeIndex(targetNode.name);
-			if (!sourceNodeIndex.has_value() || *sourceNodeIndex >= p_sourceSkeleton.nodes.size())
-			{
-				if (p_sourceSkeleton.bones.empty() || !HangsUnderSharedBone(p_targetSkeleton, p_sourceSkeleton, targetNodeIndex))
-				{
-					return false;
-				}
-
-				extensionNodes[targetNodeIndex] = true;
-				continue;
-			}
-
-			const auto& sourceNode = p_sourceSkeleton.nodes[*sourceNodeIndex];
-			const int32_t targetParentIndex = targetNode.parentIndex;
-			const int32_t sourceParentIndex = sourceNode.parentIndex;
-			const bool hasRequiredTargetParent =
-				targetParentIndex >= 0 &&
-				static_cast<size_t>(targetParentIndex) < requiredNodes.size() &&
-				requiredNodes[static_cast<size_t>(targetParentIndex)];
-
-			if (targetParentIndex >= 0 && static_cast<size_t>(targetParentIndex) >= requiredNodes.size())
-			{
-				return false;
-			}
-
-			if (hasRequiredTargetParent)
-			{
-				if (
-					sourceParentIndex < 0 ||
-					static_cast<size_t>(sourceParentIndex) >= p_sourceSkeleton.nodes.size() ||
-					p_sourceSkeleton.nodes[static_cast<size_t>(sourceParentIndex)].name != p_targetSkeleton.nodes[static_cast<size_t>(targetParentIndex)].name
-				)
-				{
-					return false;
-				}
-			}
-			else if (sourceParentIndex >= 0)
-			{
-				return false;
-			}
-
-			if (!AreRestShapesClose(targetNode.localBindTransform, sourceNode.localBindTransform))
-			{
-				return false;
-			}
-
-			p_nodeMap[*sourceNodeIndex] = static_cast<int32_t>(targetNodeIndex);
-		}
-
-		if (!p_sourceSkeleton.bones.empty())
-		{
-			size_t extensionBones = 0;
-
-			for (const auto& targetBone : p_targetSkeleton.bones)
-			{
-				extensionBones += extensionNodes[targetBone.nodeIndex] ? 1 : 0;
-			}
-
-			if (p_sourceSkeleton.bones.size() + extensionBones != p_targetSkeleton.bones.size())
-			{
-				return false;
-			}
-
-			for (const auto& targetBone : p_targetSkeleton.bones)
-			{
-				if (extensionNodes[targetBone.nodeIndex])
-				{
-					continue;
-				}
-
-				const auto sourceBoneIndex = p_sourceSkeleton.FindBoneIndex(targetBone.name);
-				if (!sourceBoneIndex.has_value() || *sourceBoneIndex >= p_sourceSkeleton.bones.size())
-				{
-					return false;
-				}
-
-				const auto& sourceBone = p_sourceSkeleton.bones[*sourceBoneIndex];
-				if (
-					sourceBone.nodeIndex >= p_nodeMap.size() ||
-					p_nodeMap[sourceBone.nodeIndex] != static_cast<int32_t>(targetBone.nodeIndex)
-				)
-				{
-					return false;
-				}
-			}
-		}
-
-		return true;
-	}
 }
 
 OvCore::ECS::Components::CSkinnedMeshRenderer::CSkinnedMeshRenderer(ECS::Actor& p_owner) :
@@ -443,7 +240,7 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::HasSkinningData() const
 
 	return HasCompatibleModel() &&
 		!m_boneMatrices.empty() &&
-		(hasAnimatedLayer || m_manualPoseOverride || m_ragdoll != nullptr);
+		(hasAnimatedLayer || (m_driven && !m_drivenSamples.empty()) || m_manualPoseOverride || m_ragdoll != nullptr || !m_constrainedList.empty());
 }
 
 uint32_t OvCore::ECS::Components::CSkinnedMeshRenderer::GetLayerCount() const
@@ -506,7 +303,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::Stop(uint32_t p_layer)
 	layer->timeTicks = 0.0f;
 	m_poseEvaluationAccumulator = 0.0f;
 	m_manualPoseOverride = false;
-	EvaluatePose();
+	MarkPoseDirty();
 }
 
 bool OvCore::ECS::Components::CSkinnedMeshRenderer::IsPlaying(uint32_t p_layer) const
@@ -553,7 +350,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::SetLayerWeight(float p_value
 
 	layer->weight = ClampLayerWeight(p_value);
 	m_poseEvaluationAccumulator = 0.0f;
-	EvaluatePose();
+	MarkPoseDirty();
 }
 
 float OvCore::ECS::Components::CSkinnedMeshRenderer::GetLayerWeight(uint32_t p_layer) const
@@ -577,15 +374,13 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::SetLayerMask(const std::stri
 		return;
 	}
 
-	std::vector<int32_t> nodeMapScratch;
 	layer->animationNames.clear();
-	layer->sourceNodeByTargetNode.clear();
-	layer->restOffsetByTargetNode.clear();
-	layer->restScaleByTargetNode.clear();
-	RebuildLayerRuntimeData(*layer, nodeMapScratch);
+	layer->retarget.clear();
+	layer->retargetError.reset();
+	RebuildLayerRuntimeData(*layer);
 
 	m_poseEvaluationAccumulator = 0.0f;
-	EvaluatePose();
+	MarkPoseDirty();
 }
 
 std::string OvCore::ECS::Components::CSkinnedMeshRenderer::GetLayerMask(uint32_t p_layer) const
@@ -626,7 +421,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::SetTime(float p_timeSeconds,
 	}
 
 	m_poseEvaluationAccumulator = 0.0f;
-	EvaluatePose();
+	MarkPoseDirty();
 }
 
 float OvCore::ECS::Components::CSkinnedMeshRenderer::GetTime(uint32_t p_layer) const
@@ -685,6 +480,41 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::IsAnimationSourceCompatible(
 	return layer && IsLayerCompatible(*layer);
 }
 
+void OvCore::ECS::Components::CSkinnedMeshRenderer::SetAnimationBoneMap(const Animation::BoneMap& p_boneMap, uint32_t p_layer)
+{
+	const auto layer = FindLayer(p_layer);
+	if (!layer || layer->boneMap == p_boneMap)
+	{
+		return;
+	}
+
+	layer->boneMap = p_boneMap;
+	RebuildRuntimeData();
+}
+
+OvCore::Animation::BoneMap OvCore::ECS::Components::CSkinnedMeshRenderer::GetAnimationBoneMap(uint32_t p_layer) const
+{
+	const auto layer = FindLayer(p_layer);
+	return layer ? layer->boneMap : Animation::BoneMap{};
+}
+
+std::optional<std::string> OvCore::ECS::Components::CSkinnedMeshRenderer::GetAnimationSourceError(uint32_t p_layer) const
+{
+	const auto layer = FindLayer(p_layer);
+
+	if (!layer)
+	{
+		return std::string{ "no such layer" };
+	}
+
+	if (!HasCompatibleModel())
+	{
+		return std::string{ "no skinned model" };
+	}
+
+	return layer->retargetError;
+}
+
 uint32_t OvCore::ECS::Components::CSkinnedMeshRenderer::GetAnimationCount(uint32_t p_layer) const
 {
 	const auto layer = FindLayer(p_layer);
@@ -719,7 +549,7 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetAnimation(std::optional<u
 	layer->timeTicks = 0.0f;
 	m_poseEvaluationAccumulator = 0.0f;
 	m_manualPoseOverride = false;
-	EvaluatePose();
+	MarkPoseDirty();
 	return true;
 }
 
@@ -803,6 +633,8 @@ std::optional<OvMaths::FVector3> OvCore::ECS::Components::CSkinnedMeshRenderer::
 		return std::nullopt;
 	}
 
+	ResolveLocalPose();
+
 	OvMaths::FVector3 position;
 	OvMaths::FQuaternion rotation;
 	OvMaths::FVector3 scale;
@@ -818,6 +650,8 @@ std::optional<OvMaths::FQuaternion> OvCore::ECS::Components::CSkinnedMeshRendere
 		return std::nullopt;
 	}
 
+	ResolveLocalPose();
+
 	OvMaths::FVector3 position;
 	OvMaths::FQuaternion rotation;
 	OvMaths::FVector3 scale;
@@ -832,6 +666,8 @@ std::optional<OvMaths::FVector3> OvCore::ECS::Components::CSkinnedMeshRenderer::
 	{
 		return std::nullopt;
 	}
+
+	ResolveLocalPose();
 
 	OvMaths::FVector3 position;
 	OvMaths::FQuaternion rotation;
@@ -857,6 +693,9 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::GetNodeGlobalTransform(uint3
 		return false;
 	}
 
+	// As drawn: a model WHEN_VISIBLE that was not drawn keeps the pose its attachments last had
+	ResolvePoseForDrawing();
+
 	DecomposeTransform(m_globalPose[p_nodeIndex], p_position, p_rotation, p_scale);
 	return true;
 }
@@ -868,6 +707,8 @@ std::optional<OvMaths::FVector3> OvCore::ECS::Components::CSkinnedMeshRenderer::
 	{
 		return std::nullopt;
 	}
+
+	ResolvePose();
 
 	OvMaths::FVector3 position;
 	OvMaths::FQuaternion rotation;
@@ -884,6 +725,8 @@ std::optional<OvMaths::FQuaternion> OvCore::ECS::Components::CSkinnedMeshRendere
 		return std::nullopt;
 	}
 
+	ResolvePose();
+
 	OvMaths::FVector3 position;
 	OvMaths::FQuaternion rotation;
 	OvMaths::FVector3 scale;
@@ -898,6 +741,8 @@ std::optional<OvMaths::FVector3> OvCore::ECS::Components::CSkinnedMeshRenderer::
 	{
 		return std::nullopt;
 	}
+
+	ResolvePose();
 
 	OvMaths::FVector3 position;
 	OvMaths::FQuaternion rotation;
@@ -914,6 +759,9 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetBoneLocalPosition(uint32_
 		return false;
 	}
 
+	// A setting changed before this write applies first, so that the write is not undone by it
+	ResolveLocalPose();
+
 	OvMaths::FVector3 currentPosition;
 	OvMaths::FQuaternion currentRotation;
 	OvMaths::FVector3 currentScale;
@@ -922,7 +770,7 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetBoneLocalPosition(uint32_
 	const OvMaths::FTransform transform(p_position, currentRotation, currentScale);
 	m_localPose[*nodeIndex] = transform.GetLocalMatrix();
 	m_manualPoseOverride = true;
-	RecomputeBoneMatricesFromLocalPose();
+	m_skeletonDirty = true;
 	return true;
 }
 
@@ -934,6 +782,9 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetBoneLocalRotation(uint32_
 		return false;
 	}
 
+	// A setting changed before this write applies first, so that the write is not undone by it
+	ResolveLocalPose();
+
 	OvMaths::FVector3 currentPosition;
 	OvMaths::FQuaternion currentRotation;
 	OvMaths::FVector3 currentScale;
@@ -942,7 +793,7 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetBoneLocalRotation(uint32_
 	const OvMaths::FTransform transform(currentPosition, p_rotation, currentScale);
 	m_localPose[*nodeIndex] = transform.GetLocalMatrix();
 	m_manualPoseOverride = true;
-	RecomputeBoneMatricesFromLocalPose();
+	m_skeletonDirty = true;
 	return true;
 }
 
@@ -954,6 +805,9 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetBoneLocalScale(uint32_t p
 		return false;
 	}
 
+	// A setting changed before this write applies first, so that the write is not undone by it
+	ResolveLocalPose();
+
 	OvMaths::FVector3 currentPosition;
 	OvMaths::FQuaternion currentRotation;
 	OvMaths::FVector3 currentScale;
@@ -962,18 +816,145 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetBoneLocalScale(uint32_t p
 	const OvMaths::FTransform transform(currentPosition, currentRotation, p_scale);
 	m_localPose[*nodeIndex] = transform.GetLocalMatrix();
 	m_manualPoseOverride = true;
-	RecomputeBoneMatricesFromLocalPose();
+	m_skeletonDirty = true;
 	return true;
 }
 
 const std::vector<OvMaths::FMatrix4>& OvCore::ECS::Components::CSkinnedMeshRenderer::GetBoneMatricesTransposed() const
 {
+	ResolvePoseForDrawing();
 	return m_boneMatricesTransposed;
 }
 
 uint64_t OvCore::ECS::Components::CSkinnedMeshRenderer::GetPoseVersion() const
 {
 	return m_poseVersion;
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::SetUpdateMode(EUpdateMode p_mode)
+{
+	m_updateMode = p_mode;
+}
+
+OvCore::ECS::Components::CSkinnedMeshRenderer::EUpdateMode OvCore::ECS::Components::CSkinnedMeshRenderer::GetUpdateMode() const
+{
+	return m_updateMode;
+}
+
+bool OvCore::ECS::Components::CSkinnedMeshRenderer::WasVisible() const
+{
+	return m_visibleLastFrame;
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::NotifyDrawn() const
+{
+	m_drawnSinceUpdate = true;
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::UpdatePose()
+{
+	m_visibleLastFrame = m_drawnSinceUpdate;
+	m_drawnSinceUpdate = false;
+
+	ResolvePoseForDrawing();
+}
+
+const OvRendering::Animation::Skeleton* OvCore::ECS::Components::CSkinnedMeshRenderer::GetSkeleton() const
+{
+	return HasCompatibleModel() ? &m_model->GetSkeleton().value() : nullptr;
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::ClearConstraintRotations()
+{
+	if (m_constrainedList.empty())
+	{
+		return;
+	}
+
+	for (const uint32_t node : m_constrainedList)
+	{
+		if (node < m_constrainedNodes.size())
+		{
+			m_constrainedNodes[node] = 0;
+		}
+	}
+
+	m_constrainedList.clear();
+	m_skeletonDirty = true;
+}
+
+bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetConstraintRotation(uint32_t p_boneIndex, const OvMaths::FQuaternion& p_localRotation)
+{
+	const auto nodeIndex = GetNodeIndexFromBoneIndex(p_boneIndex);
+	if (!nodeIndex.has_value())
+	{
+		return false;
+	}
+
+	// The bone keeps the position and scale the pose gives it
+	ResolveLocalPose();
+
+	m_constraintPose.resize(m_localPose.size(), OvMaths::FMatrix4::Identity);
+	m_constrainedNodes.resize(m_localPose.size(), 0);
+
+	OvMaths::FVector3 position;
+	OvMaths::FQuaternion rotation;
+	OvMaths::FVector3 scale;
+	DecomposeTransform(m_localPose[*nodeIndex], position, rotation, scale);
+	m_constraintPose[*nodeIndex] = OvMaths::FTransform(position, OvMaths::FQuaternion::Normalize(p_localRotation), scale).GetLocalMatrix();
+
+	if (!m_constrainedNodes[*nodeIndex])
+	{
+		m_constrainedNodes[*nodeIndex] = 1;
+		m_constrainedList.push_back(*nodeIndex);
+	}
+
+	m_skeletonDirty = true;
+	return true;
+}
+
+uint64_t OvCore::ECS::Components::CSkinnedMeshRenderer::GetPoseEvaluationCount() const
+{
+	return m_poseEvaluationCount;
+}
+
+uint64_t OvCore::ECS::Components::CSkinnedMeshRenderer::GetSkeletonUpdateCount() const
+{
+	return m_skeletonUpdateCount;
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::MarkPoseDirty()
+{
+	m_poseDirty = true;
+}
+
+// The pose is a cache of the layers and the bones written: working it out on a read changes nothing a caller can
+// tell apart, and a component is never a const object, so the casts below are sound
+void OvCore::ECS::Components::CSkinnedMeshRenderer::ResolveLocalPose() const
+{
+	if (m_poseDirty)
+	{
+		const_cast<CSkinnedMeshRenderer*>(this)->EvaluatePose();
+	}
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::ResolvePose() const
+{
+	ResolveLocalPose();
+
+	if (m_skeletonDirty)
+	{
+		const_cast<CSkinnedMeshRenderer*>(this)->RecomputeBoneMatricesFromLocalPose();
+	}
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::ResolvePoseForDrawing() const
+{
+	// A skeleton never worked out yet is, so that a model hidden from the start does not show its bind pose
+	if (m_updateMode == EUpdateMode::ALWAYS || m_visibleLastFrame || m_skeletonUpdateCount == 0)
+	{
+		ResolvePose();
+	}
 }
 
 void OvCore::ECS::Components::CSkinnedMeshRenderer::OnUpdate(float p_deltaTime)
@@ -993,7 +974,13 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnUpdate(float p_deltaTime)
 	// The ragdoll moves on every simulation step, and the animation waits for it to stop
 	if (m_ragdoll)
 	{
-		RecomputeBoneMatricesFromLocalPose();
+		m_skeletonDirty = true;
+		return;
+	}
+
+	// An animator plays its own layers (SetDrivenPose), and the component's wait
+	if (m_driven)
+	{
 		return;
 	}
 
@@ -1015,28 +1002,104 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnUpdate(float p_deltaTime)
 		playbackStateChanged = playbackStateChanged || !layer.playing;
 	}
 
-	if (timeChanged || playbackStateChanged)
+	if ((timeChanged || playbackStateChanged) && ConsumePoseEvaluationTime(p_deltaTime, playbackStateChanged))
 	{
-		const float clampedPoseEvaluationRate = std::max(0.0f, m_poseEvaluationRate);
-		const bool hasRateLimit = clampedPoseEvaluationRate > std::numeric_limits<float>::epsilon();
+		MarkPoseDirty();
+	}
+}
 
-		if (hasRateLimit)
+bool OvCore::ECS::Components::CSkinnedMeshRenderer::ConsumePoseEvaluationTime(float p_deltaTime, bool p_force)
+{
+	const float clampedPoseEvaluationRate = std::max(0.0f, m_poseEvaluationRate);
+	const bool hasRateLimit = clampedPoseEvaluationRate > std::numeric_limits<float>::epsilon();
+
+	if (!hasRateLimit)
+	{
+		m_poseEvaluationAccumulator = 0.0f;
+		return true;
+	}
+
+	m_poseEvaluationAccumulator += p_deltaTime;
+	const float updatePeriod = 1.0f / clampedPoseEvaluationRate;
+	if (m_poseEvaluationAccumulator < updatePeriod && !p_force)
+	{
+		return false;
+	}
+
+	m_poseEvaluationAccumulator = std::fmod(m_poseEvaluationAccumulator, updatePeriod);
+	return true;
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::SetDrivenLayers(const std::vector<DrivenLayer>& p_layers)
+{
+	m_driven = true;
+	m_drivenLayers.clear();
+	m_drivenSamples.clear();
+	m_drivenWeights.clear();
+
+	for (const auto& driven : p_layers)
+	{
+		AnimationLayer layer;
+		layer.animationSourceModel = driven.source;
+		layer.maskRootName = driven.mask;
+		layer.boneMap = driven.boneMap;
+		m_drivenLayers.push_back(std::move(layer));
+	}
+
+	if (HasCompatibleModel())
+	{
+		for (auto& layer : m_drivenLayers)
 		{
-			m_poseEvaluationAccumulator += p_deltaTime;
-			const float updatePeriod = 1.0f / clampedPoseEvaluationRate;
-			if (m_poseEvaluationAccumulator < updatePeriod && !playbackStateChanged)
-			{
-				return;
-			}
-
-			m_poseEvaluationAccumulator = std::fmod(m_poseEvaluationAccumulator, updatePeriod);
+			RebuildLayerRuntimeData(layer);
 		}
-		else
-		{
-			m_poseEvaluationAccumulator = 0.0f;
-		}
+	}
 
-		EvaluatePose();
+	MarkPoseDirty();
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::ClearDrivenLayers()
+{
+	if (!m_driven)
+	{
+		return;
+	}
+
+	m_driven = false;
+	m_drivenLayers.clear();
+	m_drivenSamples.clear();
+	m_drivenWeights.clear();
+	MarkPoseDirty();
+}
+
+bool OvCore::ECS::Components::CSkinnedMeshRenderer::IsDriven() const
+{
+	return m_driven;
+}
+
+std::optional<std::string> OvCore::ECS::Components::CSkinnedMeshRenderer::GetDrivenLayerError(uint32_t p_layer) const
+{
+	if (!HasCompatibleModel())
+	{
+		return std::string{ "no skinned model" };
+	}
+
+	return p_layer < m_drivenLayers.size() ? m_drivenLayers[p_layer].retargetError : std::nullopt;
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::SetDrivenPose(const std::vector<DrivenSample>& p_samples, const std::vector<float>& p_layerWeights, float p_deltaTime, bool p_force)
+{
+	if (!m_driven)
+	{
+		return;
+	}
+
+	m_drivenSamples = p_samples;
+	m_drivenWeights = p_layerWeights;
+
+	// The first pose, and a pose the graph changed, are worked out at once; the next ones at most at the evaluation rate
+	if (ConsumePoseEvaluationTime(p_deltaTime, p_force || m_poseEvaluationCount == 0))
+	{
+		MarkPoseDirty();
 	}
 }
 
@@ -1058,6 +1121,9 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::StartRagdoll(const std::vect
 	{
 		return false;
 	}
+
+	// The ragdoll starts from the pose as it stands now
+	ResolvePose();
 
 	const auto& skeleton = m_model->GetSkeleton().value();
 
@@ -1183,7 +1249,7 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::StartRagdoll(const std::vect
 	m_ragdollPartByNode = std::move(partByNode);
 	m_ragdollPartScales = std::move(scales);
 
-	RecomputeBoneMatricesFromLocalPose();
+	m_skeletonDirty = true;
 	return true;
 }
 
@@ -1198,7 +1264,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::StopRagdoll()
 	m_ragdollPartByNode.clear();
 	m_ragdollPartScales.clear();
 
-	EvaluatePose();
+	MarkPoseDirty();
 }
 
 bool OvCore::ECS::Components::CSkinnedMeshRenderer::IsRagdoll() const
@@ -1244,6 +1310,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnSerialize(tinyxml2::XMLDoc
 {
 	OvCore::Helpers::Serializer::SerializeFloat(p_doc, p_node, "mesh_bounds_scale", m_meshBoundsScale);
 	OvCore::Helpers::Serializer::SerializeFloat(p_doc, p_node, "pose_eval_rate", m_poseEvaluationRate);
+	OvCore::Helpers::Serializer::SerializeInt(p_doc, p_node, "update_mode", static_cast<int>(m_updateMode));
 
 	tinyxml2::XMLNode* layersNode = p_doc.NewElement("layers");
 	p_node->InsertEndChild(layersNode);
@@ -1262,6 +1329,23 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnSerialize(tinyxml2::XMLDoc
 		OvCore::Helpers::Serializer::SerializeFloat(p_doc, layerNode, "playback_speed", layer.speed);
 		OvCore::Helpers::Serializer::SerializeFloat(p_doc, layerNode, "time_ticks", layer.timeTicks);
 		OvCore::Helpers::Serializer::SerializeString(p_doc, layerNode, "mask_root", layer.maskRootName);
+
+		if (!layer.boneMap.empty())
+		{
+			std::vector<std::pair<std::string, std::string>> entries(layer.boneMap.begin(), layer.boneMap.end());
+			std::sort(entries.begin(), entries.end());
+
+			tinyxml2::XMLNode* boneMapNode = p_doc.NewElement("bone_map");
+			layerNode->InsertEndChild(boneMapNode);
+
+			for (const auto& [modelBone, clipBone] : entries)
+			{
+				tinyxml2::XMLElement* entryNode = p_doc.NewElement("bone");
+				entryNode->SetAttribute("model", modelBone.c_str());
+				entryNode->SetAttribute("clip", clipBone.c_str());
+				boneMapNode->InsertEndChild(entryNode);
+			}
+		}
 	}
 }
 
@@ -1269,6 +1353,11 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnDeserialize(tinyxml2::XMLD
 {
 	OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "mesh_bounds_scale", m_meshBoundsScale);
 	OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "pose_eval_rate", m_poseEvaluationRate);
+
+	// A file written before the setting has none, and keeps the former behaviour; an unknown value too
+	int updateMode = static_cast<int>(EUpdateMode::ALWAYS);
+	OvCore::Helpers::Serializer::DeserializeInt(p_doc, p_node, "update_mode", updateMode);
+	m_updateMode = updateMode == static_cast<int>(EUpdateMode::WHEN_VISIBLE) ? EUpdateMode::WHEN_VISIBLE : EUpdateMode::ALWAYS;
 
 	if (tinyxml2::XMLNode* layersRoot = p_node->FirstChildElement("layers"))
 	{
@@ -1289,6 +1378,20 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnDeserialize(tinyxml2::XMLD
 			OvCore::Helpers::Serializer::DeserializeFloat(p_doc, currentLayer, "playback_speed", layer.speed);
 			OvCore::Helpers::Serializer::DeserializeFloat(p_doc, currentLayer, "time_ticks", layer.timeTicks);
 			OvCore::Helpers::Serializer::DeserializeString(p_doc, currentLayer, "mask_root", layer.maskRootName);
+
+			if (tinyxml2::XMLElement* boneMapNode = currentLayer->FirstChildElement("bone_map"))
+			{
+				for (auto entry = boneMapNode->FirstChildElement("bone"); entry; entry = entry->NextSiblingElement("bone"))
+				{
+					const char* modelBone = entry->Attribute("model");
+					const char* clipBone = entry->Attribute("clip");
+
+					if (modelBone && clipBone && *modelBone && *clipBone)
+					{
+						layer.boneMap[modelBone] = clipBone;
+					}
+				}
+			}
 
 			layer.weight = ClampLayerWeight(layer.weight);
 		}
@@ -1328,6 +1431,14 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnInspector(OvUI::Internal::
 	GUIDrawer::DrawScalar<float>(p_root, "Mesh Bounds Scale", m_meshBoundsScale, 0.05f, 1.0f, 10.0f);
 	GUIDrawer::DrawScalar<float>(p_root, "Pose Eval Rate", m_poseEvaluationRate, 1.0f, 0.0f, 240.0f);
 	m_poseEvaluationRate = std::max(0.0f, m_poseEvaluationRate);
+
+	GUIDrawer::CreateTitle(p_root, "Update Mode");
+	auto& updateMode = p_root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(static_cast<int>(m_updateMode));
+	updateMode.choices.emplace(static_cast<int>(EUpdateMode::ALWAYS), "Always");
+	updateMode.choices.emplace(static_cast<int>(EUpdateMode::WHEN_VISIBLE), "When Visible");
+	auto& updateModeDispatcher = updateMode.AddPlugin<OvUI::Plugins::DataDispatcher<int>>();
+	updateModeDispatcher.RegisterGatherer([this] { return static_cast<int>(m_updateMode); });
+	updateModeDispatcher.RegisterProvider([this](int p_value) { SetUpdateMode(static_cast<EUpdateMode>(p_value)); });
 
 	// The inspector lays components out in two columns, so the status lands next to its details,
 	// the way scripts report theirs
@@ -1526,14 +1637,21 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::BuildLayerWidgets(OvUI::Inte
 		});
 
 		auto& layerDiagnostic = columns.CreateWidget<OvUI::Widgets::Texts::TextColored>("", OVUI_STYLE(TextDisabled));
-		layerDiagnostic.AddPlugin<OvUI::Plugins::DataDispatcher<std::string>>().RegisterGatherer([resolveDiagnostic]
+		layerDiagnostic.AddPlugin<OvUI::Plugins::DataDispatcher<std::string>>().RegisterGatherer([this, layerIndex, resolveDiagnostic]
 		{
+			const auto layer = FindLayer(layerIndex);
+			const size_t mappedBones = layer ? layer->boneMap.size() : 0;
+
 			switch (resolveDiagnostic())
 			{
-			case ELayerDiagnostic::INCOMPATIBLE_SOURCE: return std::string{ "Animation source skeleton is not compatible with model" };
+			case ELayerDiagnostic::INCOMPATIBLE_SOURCE:
+				return "Incompatible: " + layer->retargetError.value_or(std::string{ "unknown reason" });
 			case ELayerDiagnostic::SOURCE_WITHOUT_CLIPS: return std::string{ "Animation source has no animation clips" };
 			case ELayerDiagnostic::MODEL_WITHOUT_CLIPS: return std::string{ "Model has no animation clips" };
-			case ELayerDiagnostic::READY: return std::string{ "Compatible animation source found" };
+			case ELayerDiagnostic::READY:
+				return mappedBones > 0 ?
+					std::format("Compatible animation source found ({} bones mapped by name)", mappedBones) :
+					std::string{ "Compatible animation source found" };
 			default: return std::string{};
 			}
 		});
@@ -1564,7 +1682,7 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::HasCompatibleModel() const
 
 bool OvCore::ECS::Components::CSkinnedMeshRenderer::IsLayerCompatible(const AnimationLayer& p_layer) const
 {
-	return HasCompatibleModel() && !p_layer.sourceNodeByTargetNode.empty();
+	return HasCompatibleModel() && !p_layer.retarget.empty();
 }
 
 const OvRendering::Resources::Model* OvCore::ECS::Components::CSkinnedMeshRenderer::GetLayerAnimationModel(const AnimationLayer& p_layer) const
@@ -1610,15 +1728,20 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildRuntimeData(bool p_mo
 	m_globalPose.clear();
 	m_boneMatrices.clear();
 	m_boneMatricesTransposed.clear();
+	m_constraintPose.clear();
+	m_constrainedNodes.clear();
+	m_constrainedList.clear();
 	m_poseEvaluationAccumulator = 0.0f;
 	m_manualPoseOverride = false;
 
-	for (auto& layer : m_layers)
+	for (auto* layers : { &m_layers, &m_drivenLayers })
 	{
-		layer.animationNames.clear();
-		layer.sourceNodeByTargetNode.clear();
-		layer.restOffsetByTargetNode.clear();
-		layer.restScaleByTargetNode.clear();
+		for (auto& layer : *layers)
+		{
+			layer.animationNames.clear();
+			layer.retarget.clear();
+			layer.retargetError.reset();
+		}
 	}
 
 	if (!HasCompatibleModel())
@@ -1639,57 +1762,44 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildRuntimeData(bool p_mo
 	m_boneMatrices.resize(skeleton.bones.size(), OvMaths::FMatrix4::Identity);
 	m_boneMatricesTransposed.resize(skeleton.bones.size(), OvMaths::FMatrix4::Identity);
 
-	std::vector<int32_t> nodeMapScratch;
-
 	for (auto& layer : m_layers)
 	{
-		RebuildLayerRuntimeData(layer, nodeMapScratch);
+		RebuildLayerRuntimeData(layer);
 		ResolveLayerAnimation(layer);
 	}
 
-	EvaluatePose();
+	for (auto& layer : m_drivenLayers)
+	{
+		RebuildLayerRuntimeData(layer);
+	}
+
+	MarkPoseDirty();
 }
 
-void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildLayerRuntimeData(AnimationLayer& p_layer, std::vector<int32_t>& p_nodeMapScratch)
+void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildLayerRuntimeData(AnimationLayer& p_layer)
 {
 	const auto& skeleton = m_model->GetSkeleton().value();
 	const auto animationModel = GetLayerAnimationModel(p_layer);
 
-	if (
-		!animationModel ||
-		!animationModel->GetSkeleton().has_value() ||
-		!BuildAnimationNodeMap(skeleton, animationModel->GetSkeleton().value(), p_nodeMapScratch)
-	)
+	if (!animationModel || !animationModel->GetSkeleton().has_value())
 	{
+		p_layer.retargetError = "the animation source model has no skeleton";
+	}
+	else
+	{
+		p_layer.retargetError = Animation::Retarget::Build(skeleton, animationModel->GetSkeleton().value(), p_layer.boneMap, p_layer.retarget);
+	}
+
+	if (p_layer.retargetError)
+	{
+		p_layer.retarget.clear();
+
 		if (p_layer.animationSourceModel)
 		{
-			OVLOG_WARNING("SkinnedMeshRenderer: Animation source model '" + p_layer.animationSourceModel->path + "' is not compatible with target model '" + m_model->path + "'.");
+			OVLOG_WARNING("SkinnedMeshRenderer: Animation source model '" + p_layer.animationSourceModel->path + "' is not compatible with target model '" + m_model->path + "': " + *p_layer.retargetError + ".");
 		}
 
 		return;
-	}
-
-	const auto& sourceSkeleton = animationModel->GetSkeleton().value();
-
-	p_layer.sourceNodeByTargetNode.assign(skeleton.nodes.size(), -1);
-	p_layer.restOffsetByTargetNode.assign(skeleton.nodes.size(), OvMaths::FVector3::Zero);
-	p_layer.restScaleByTargetNode.assign(skeleton.nodes.size(), 1.0f);
-	for (size_t sourceNodeIndex = 0; sourceNodeIndex < p_nodeMapScratch.size(); ++sourceNodeIndex)
-	{
-		const int32_t targetNodeIndex = p_nodeMapScratch[sourceNodeIndex];
-		if (targetNodeIndex >= 0 && static_cast<size_t>(targetNodeIndex) < p_layer.sourceNodeByTargetNode.size())
-		{
-			p_layer.sourceNodeByTargetNode[targetNodeIndex] = static_cast<int32_t>(sourceNodeIndex);
-			const OvMaths::FVector3& targetRest = skeleton.nodes[targetNodeIndex].bindPosition;
-			const OvMaths::FVector3& sourceRest = sourceSkeleton.nodes[sourceNodeIndex].bindPosition;
-			p_layer.restOffsetByTargetNode[targetNodeIndex] = targetRest - sourceRest;
-
-			const float sourceLength = OvMaths::FVector3::Length(sourceRest);
-			if (sourceLength > 0.0001f)
-			{
-				p_layer.restScaleByTargetNode[targetNodeIndex] = OvMaths::FVector3::Length(targetRest) / sourceLength;
-			}
-		}
 	}
 
 	ApplyLayerMask(p_layer);
@@ -1720,7 +1830,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::ApplyLayerMask(AnimationLaye
 	}
 
 	// Walking up the parents rather than relying on the node order, which no format guarantees
-	for (size_t targetNodeIndex = 0; targetNodeIndex < p_layer.sourceNodeByTargetNode.size(); ++targetNodeIndex)
+	for (size_t targetNodeIndex = 0; targetNodeIndex < p_layer.retarget.size(); ++targetNodeIndex)
 	{
 		int32_t currentNodeIndex = static_cast<int32_t>(targetNodeIndex);
 
@@ -1736,7 +1846,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::ApplyLayerMask(AnimationLaye
 
 		if (currentNodeIndex < 0 || static_cast<uint32_t>(currentNodeIndex) != *maskRoot)
 		{
-			p_layer.sourceNodeByTargetNode[targetNodeIndex] = -1;
+			p_layer.retarget[targetNodeIndex].source = -1;
 		}
 	}
 }
@@ -1784,15 +1894,27 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::ResolveLayerAnimation(Animat
 
 void OvCore::ECS::Components::CSkinnedMeshRenderer::EvaluatePose()
 {
+	// A model that shows up later marks the pose again
+	m_poseDirty = false;
+
 	if (!HasCompatibleModel())
 	{
 		return;
 	}
 
+	m_skeletonDirty = true;
+
 	// The nodes the ragdoll does not move keep the pose they had when it started
 	if (m_ragdoll)
 	{
-		RecomputeBoneMatricesFromLocalPose();
+		return;
+	}
+
+	++m_poseEvaluationCount;
+
+	if (m_driven)
+	{
+		EvaluateDrivenPose();
 		return;
 	}
 
@@ -1802,7 +1924,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::EvaluatePose()
 
 	for (const auto& layer : m_layers)
 	{
-		if (layer.sourceNodeByTargetNode.size() != skeleton.nodes.size())
+		if (layer.retarget.size() != skeleton.nodes.size())
 		{
 			continue;
 		}
@@ -1825,7 +1947,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::EvaluatePose()
 			(layer.looping ? WrapTime(layer.timeTicks, duration) : std::clamp(layer.timeTicks, 0.0f, duration)) :
 			0.0f;
 
-		m_activeLayerSamples.push_back({ &animation, sampleTime, duration, layer.weight, layer.looping, &layer.sourceNodeByTargetNode, &layer.restOffsetByTargetNode, &layer.restScaleByTargetNode });
+		m_activeLayerSamples.push_back({ &animation, sampleTime, duration, layer.weight, layer.looping, &layer.retarget });
 	}
 
 	for (size_t targetNodeIndex = 0; targetNodeIndex < skeleton.nodes.size(); ++targetNodeIndex)
@@ -1839,52 +1961,13 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::EvaluatePose()
 
 		for (const auto& activeLayer : m_activeLayerSamples)
 		{
-			const int32_t sourceNodeIndex = (*activeLayer.sourceNodeByTargetNode)[targetNodeIndex];
-			if (sourceNodeIndex < 0)
+			OvMaths::FVector3 sampledPosition;
+			OvMaths::FQuaternion sampledRotation;
+			OvMaths::FVector3 sampledScale;
+			if (!SampleNode(activeLayer, targetNodeIndex, sampledPosition, sampledRotation, sampledScale))
 			{
 				continue;
 			}
-
-			const auto track = activeLayer.animation->FindTrack(static_cast<uint32_t>(sourceNodeIndex));
-			if (!track)
-			{
-				continue;
-			}
-
-			// The clip moves the bone from its own rig's rest; the same motion, scaled to this bone's rest length,
-			// starts from this model's rest (no change at all for the same rig: offset zero, scale one)
-			const OvMaths::FVector3& restOffset = (*activeLayer.restOffsetByTargetNode)[targetNodeIndex];
-			const float restScale = (*activeLayer.restScaleByTargetNode)[targetNodeIndex];
-			const OvMaths::FVector3 sourceRest = node.bindPosition - restOffset;
-			const OvMaths::FVector3 clipPosition = SampleKeys(
-				track->positionKeys,
-				activeLayer.sampleTime,
-				activeLayer.duration,
-				sourceRest,
-				activeLayer.looping,
-				[](const auto& p_a, const auto& p_b, float p_alpha) { return OvMaths::FVector3::Lerp(p_a, p_b, p_alpha); }
-			);
-			const OvMaths::FVector3 sampledPosition = restScale == 1.0f ?
-				clipPosition + restOffset :
-				clipPosition + restOffset + (clipPosition - sourceRest) * (restScale - 1.0f);
-
-			const OvMaths::FQuaternion sampledRotation = SampleKeys(
-				track->rotationKeys,
-				activeLayer.sampleTime,
-				activeLayer.duration,
-				node.bindRotation,
-				activeLayer.looping,
-				[](const auto& p_a, const auto& p_b, float p_alpha) { return OvMaths::FQuaternion::Slerp(p_a, p_b, p_alpha); }
-			);
-
-			const OvMaths::FVector3 sampledScale = SampleKeys(
-				track->scaleKeys,
-				activeLayer.sampleTime,
-				activeLayer.duration,
-				node.bindScale,
-				activeLayer.looping,
-				[](const auto& p_a, const auto& p_b, float p_alpha) { return OvMaths::FVector3::Lerp(p_a, p_b, p_alpha); }
-			);
 
 			if (accumulatedWeight <= 0.0f)
 			{
@@ -1915,7 +1998,180 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::EvaluatePose()
 	}
 
 	m_manualPoseOverride = false;
-	RecomputeBoneMatricesFromLocalPose();
+}
+
+bool OvCore::ECS::Components::CSkinnedMeshRenderer::SampleNode(const ActiveLayerSample& p_sample, size_t p_nodeIndex, OvMaths::FVector3& p_position, OvMaths::FQuaternion& p_rotation, OvMaths::FVector3& p_scale) const
+{
+	const auto& node = m_model->GetSkeleton()->nodes[p_nodeIndex];
+	const auto& retarget = (*p_sample.retarget)[p_nodeIndex];
+	if (retarget.source < 0)
+	{
+	return false;
+	}
+
+	const auto track = p_sample.animation->FindTrack(static_cast<uint32_t>(retarget.source));
+	if (!track)
+	{
+	return false;
+	}
+
+	// The clip moves the bone from its own rig's rest; the same motion, turned into this model's rest and
+	// scaled to this bone's rest length, starts from this model's rest (nothing changes for the same rig)
+	const OvMaths::FVector3 clipPosition = SampleKeys(
+		track->positionKeys,
+		p_sample.sampleTime,
+		p_sample.duration,
+		Animation::Retarget::ClipRest(retarget, node.bindPosition),
+		p_sample.looping,
+		[](const auto& p_a, const auto& p_b, float p_alpha) { return OvMaths::FVector3::Lerp(p_a, p_b, p_alpha); }
+	);
+	p_position = Animation::Retarget::Position(retarget, node.bindPosition, clipPosition);
+
+	// A track without rotation keys leaves the bone at this model's rest
+	p_rotation = track->rotationKeys.empty() ? node.bindRotation : Animation::Retarget::Rotation(retarget, SampleKeys(
+		track->rotationKeys,
+		p_sample.sampleTime,
+		p_sample.duration,
+		node.bindRotation,
+		p_sample.looping,
+		[](const auto& p_a, const auto& p_b, float p_alpha) { return OvMaths::FQuaternion::Slerp(p_a, p_b, p_alpha); }
+	));
+
+	p_scale = SampleKeys(
+		track->scaleKeys,
+		p_sample.sampleTime,
+		p_sample.duration,
+		node.bindScale,
+		p_sample.looping,
+		[](const auto& p_a, const auto& p_b, float p_alpha) { return OvMaths::FVector3::Lerp(p_a, p_b, p_alpha); }
+	);
+
+	return true;
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::EvaluateDrivenPose()
+{
+	const auto& skeleton = m_model->GetSkeleton().value();
+	const size_t nodeCount = skeleton.nodes.size();
+
+	// Every node starts at its rest; each layer covers what the layers before it left, by its weight, on the nodes its
+	// clips drive (the nodes under its mask)
+	m_drivenPositions.resize(nodeCount);
+	m_drivenRotations.resize(nodeCount);
+	m_drivenScales.resize(nodeCount);
+	m_drivenTouched.assign(nodeCount, 0);
+
+	for (size_t nodeIndex = 0; nodeIndex < nodeCount; ++nodeIndex)
+	{
+		m_drivenPositions[nodeIndex] = skeleton.nodes[nodeIndex].bindPosition;
+		m_drivenRotations[nodeIndex] = skeleton.nodes[nodeIndex].bindRotation;
+		m_drivenScales[nodeIndex] = skeleton.nodes[nodeIndex].bindScale;
+	}
+
+	for (uint32_t layerIndex = 0; layerIndex < m_drivenLayers.size(); ++layerIndex)
+	{
+		const auto& layer = m_drivenLayers[layerIndex];
+		const float layerWeight = layerIndex < m_drivenWeights.size() ? std::clamp(m_drivenWeights[layerIndex], 0.0f, 1.0f) : 1.0f;
+
+		if (layer.retarget.size() != nodeCount || !(layerWeight > kMinimumLayerWeight))
+		{
+			continue;
+		}
+
+		const auto& animations = GetLayerAnimationModel(layer)->GetAnimations();
+
+		m_activeLayerSamples.clear();
+		for (const auto& sample : m_drivenSamples)
+		{
+			if (sample.layer != layerIndex || sample.clip >= animations.size() || !(sample.weight > kMinimumLayerWeight))
+			{
+				continue;
+			}
+
+			const auto& animation = animations[sample.clip];
+			const float duration = std::max(animation.duration, 0.0f);
+			const float ticks = sample.time * animation.GetEffectiveTicksPerSecond();
+			const float sampleTime =
+				duration > 0.0f ?
+				(sample.looping ? WrapTime(ticks, duration) : std::clamp(ticks, 0.0f, duration)) :
+				0.0f;
+
+			m_activeLayerSamples.push_back({ &animation, sampleTime, duration, sample.weight, sample.looping, &layer.retarget });
+		}
+
+		if (m_activeLayerSamples.empty())
+		{
+			continue;
+		}
+
+		for (size_t nodeIndex = 0; nodeIndex < nodeCount; ++nodeIndex)
+		{
+			OvMaths::FVector3 blendedPosition;
+			OvMaths::FQuaternion blendedRotation;
+			OvMaths::FVector3 blendedScale;
+			float accumulatedWeight = 0.0f;
+
+			for (const auto& activeLayer : m_activeLayerSamples)
+			{
+				OvMaths::FVector3 sampledPosition;
+				OvMaths::FQuaternion sampledRotation;
+				OvMaths::FVector3 sampledScale;
+				if (!SampleNode(activeLayer, nodeIndex, sampledPosition, sampledRotation, sampledScale))
+				{
+					continue;
+				}
+
+				if (accumulatedWeight <= 0.0f)
+				{
+					blendedPosition = sampledPosition;
+					blendedRotation = sampledRotation;
+					blendedScale = sampledScale;
+				}
+				else
+				{
+					const float alpha = activeLayer.weight / (accumulatedWeight + activeLayer.weight);
+					blendedPosition = OvMaths::FVector3::Lerp(blendedPosition, sampledPosition, alpha);
+					blendedRotation = OvMaths::FQuaternion::Slerp(blendedRotation, sampledRotation, alpha);
+					blendedScale = OvMaths::FVector3::Lerp(blendedScale, sampledScale, alpha);
+				}
+
+				accumulatedWeight += activeLayer.weight;
+			}
+
+			if (accumulatedWeight <= 0.0f)
+			{
+				continue;
+			}
+
+			// A layer at its full weight replaces what is below; a lighter one blends with it (the rest, for the first).
+			// Its clips cover the node as much as they weigh: a layer fading to an empty state lets what is below
+			// show through
+			const float alpha = layerWeight * std::min(accumulatedWeight, 1.0f);
+			if (alpha >= 1.0f)
+			{
+				m_drivenPositions[nodeIndex] = blendedPosition;
+				m_drivenRotations[nodeIndex] = blendedRotation;
+				m_drivenScales[nodeIndex] = blendedScale;
+			}
+			else
+			{
+				m_drivenPositions[nodeIndex] = OvMaths::FVector3::Lerp(m_drivenPositions[nodeIndex], blendedPosition, alpha);
+				m_drivenRotations[nodeIndex] = OvMaths::FQuaternion::Slerp(m_drivenRotations[nodeIndex], blendedRotation, alpha);
+				m_drivenScales[nodeIndex] = OvMaths::FVector3::Lerp(m_drivenScales[nodeIndex], blendedScale, alpha);
+			}
+
+			m_drivenTouched[nodeIndex] = 1;
+		}
+	}
+
+	for (size_t nodeIndex = 0; nodeIndex < nodeCount; ++nodeIndex)
+	{
+		m_localPose[nodeIndex] = m_drivenTouched[nodeIndex] ?
+			OvMaths::FTransform(m_drivenPositions[nodeIndex], m_drivenRotations[nodeIndex], m_drivenScales[nodeIndex]).GetLocalMatrix() :
+			skeleton.nodes[nodeIndex].localBindTransform;
+	}
+
+	m_manualPoseOverride = false;
 }
 
 std::optional<uint32_t> OvCore::ECS::Components::CSkinnedMeshRenderer::GetNodeIndexFromBoneIndex(uint32_t p_boneIndex) const
@@ -1942,6 +2198,8 @@ std::optional<uint32_t> OvCore::ECS::Components::CSkinnedMeshRenderer::GetNodeIn
 
 void OvCore::ECS::Components::CSkinnedMeshRenderer::RecomputeBoneMatricesFromLocalPose()
 {
+	m_skeletonDirty = false;
+
 	if (!HasCompatibleModel())
 	{
 		return;
@@ -1979,11 +2237,17 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::RecomputeBoneMatricesFromLoc
 			continue;
 		}
 
+		// A constraint's rotation stands in for the pose's
+		const auto& local =
+			nodeIndex < m_constrainedNodes.size() && m_constrainedNodes[nodeIndex] ?
+			m_constraintPose[nodeIndex] :
+			m_localPose[nodeIndex];
+
 		const auto parentIndex = skeleton.nodes[nodeIndex].parentIndex;
 		m_globalPose[nodeIndex] =
 			parentIndex >= 0 ?
-			m_globalPose[static_cast<size_t>(parentIndex)] * m_localPose[nodeIndex] :
-			m_localPose[nodeIndex];
+			m_globalPose[static_cast<size_t>(parentIndex)] * local :
+			local;
 	}
 
 	for (size_t boneIndex = 0; boneIndex < skeleton.bones.size(); ++boneIndex)
@@ -1998,6 +2262,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::RecomputeBoneMatricesFromLoc
 	}
 
 	++m_poseVersion;
+	++m_skeletonUpdateCount;
 }
 
 float OvCore::ECS::Components::CSkinnedMeshRenderer::GetAnimationDurationSeconds(uint32_t p_layer) const

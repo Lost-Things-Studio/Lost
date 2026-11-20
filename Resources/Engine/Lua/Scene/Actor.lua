@@ -98,6 +98,10 @@ function Actor:GetPhysicalCapsule() end
 ---@return PhysicalHeightField|nil
 function Actor:GetPhysicalHeightField() end
 
+--- Returns the CharacterController attached to this actor (If any)
+---@return CharacterController|nil
+function Actor:GetCharacterController() end
+
 --- Returns the PhysicalMesh attached to this actor (If any)
 ---@return PhysicalMesh|nil
 function Actor:GetPhysicalMesh() end
@@ -161,6 +165,30 @@ function Actor:GetPostProcessStack() end
 --- Returns the ReflectionProbe attached to this actor (If any)
 ---@return ReflectionProbe|nil
 function Actor:GetReflectionProbe() end
+
+--- Returns the ParticleSystem attached to this actor (If any)
+---@return ParticleSystem|nil
+function Actor:GetParticleSystem() end
+
+--- Returns the Terrain attached to this actor (If any)
+---@return Terrain|nil
+function Actor:GetTerrain() end
+
+--- Returns the Vegetation attached to this actor (If any)
+---@return Vegetation|nil
+function Actor:GetVegetation() end
+
+--- Returns the Animator attached to this actor (If any)
+---@return Animator|nil
+function Actor:GetAnimator() end
+
+--- Returns the LookAt attached to this actor (If any)
+---@return LookAt|nil
+function Actor:GetLookAt() end
+
+--- Returns the SpringBones attached to this actor (If any)
+---@return SpringBones|nil
+function Actor:GetSpringBones() end
 
 --- Returns the Canvas attached to this actor (If any)
 ---@return Canvas|nil
@@ -229,6 +257,10 @@ function Actor:AddPhysicalCapsule() end
 ---@return PhysicalHeightField
 function Actor:AddPhysicalHeightField() end
 
+--- Adds a CharacterController component to the actor and returns it
+---@return CharacterController
+function Actor:AddCharacterController() end
+
 --- Adds a PhysicalMesh component to the actor and returns it
 ---@return PhysicalMesh
 function Actor:AddPhysicalMesh() end
@@ -285,6 +317,31 @@ function Actor:AddPostProcessStack() end
 ---@return ReflectionProbe
 function Actor:AddReflectionProbe() end
 
+--- Adds a ParticleSystem component to the actor and returns it. Added while the scene plays, it plays at once unless
+--- its settings say otherwise (SetPlayOnStart(false) comes too late for that: call Stop)
+---@return ParticleSystem
+function Actor:AddParticleSystem() end
+
+--- Adds a Terrain component to the actor and returns it. It draws the actor's PhysicalHeightField
+---@return Terrain
+function Actor:AddTerrain() end
+
+--- Adds a Vegetation component to the actor and returns it. It covers the actor's PhysicalHeightField with models
+---@return Vegetation
+function Actor:AddVegetation() end
+
+--- Adds an Animator component to the actor and returns it
+---@return Animator
+function Actor:AddAnimator() end
+
+--- Adds a LookAt component to the actor and returns it
+---@return LookAt
+function Actor:AddLookAt() end
+
+--- Adds a SpringBones component to the actor and returns it
+---@return SpringBones
+function Actor:AddSpringBones() end
+
 --- Adds a Canvas component to the actor and returns it
 ---@return Canvas
 function Actor:AddCanvas() end
@@ -319,6 +376,8 @@ function Actor:RemovePhysicalSphere() end
 function Actor:RemovePhysicalCapsule() end
 --- Removes the PhysicalHeightField component from the actor
 function Actor:RemovePhysicalHeightField() end
+--- Removes the CharacterController component from the actor
+function Actor:RemoveCharacterController() end
 
 --- Removes the PhysicalMesh component from the actor
 function Actor:RemovePhysicalMesh() end
@@ -348,6 +407,23 @@ function Actor:RemoveAudioListener() end
 function Actor:RemovePostProcessStack() end
 --- Removes the ReflectionProbe component from the actor
 function Actor:RemoveReflectionProbe() end
+--- Removes the ParticleSystem component from the actor
+function Actor:RemoveParticleSystem() end
+
+--- Removes the Terrain component from the actor
+function Actor:RemoveTerrain() end
+
+--- Removes the Vegetation component from the actor
+function Actor:RemoveVegetation() end
+
+--- Removes the Animator component from the actor
+function Actor:RemoveAnimator() end
+
+--- Removes the LookAt component from the actor
+function Actor:RemoveLookAt() end
+
+--- Removes the SpringBones component from the actor
+function Actor:RemoveSpringBones() end
 --- Removes the Canvas component from the actor
 function Actor:RemoveCanvas() end
 --- Removes the Image component from the actor

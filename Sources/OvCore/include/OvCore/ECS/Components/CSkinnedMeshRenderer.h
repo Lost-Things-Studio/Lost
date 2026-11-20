@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include <OvCore/Animation/Retarget.h>
 #include <OvCore/ECS/Components/AComponent.h>
 #include <OvMaths/FMatrix4.h>
 #include <OvMaths/FQuaternion.h>
@@ -19,7 +20,7 @@
 
 namespace OvCore::ECS { class Actor; }
 namespace OvPhysics::Entities { class Ragdoll; }
-namespace OvRendering::Animation { struct SkeletalAnimation; }
+namespace OvRendering::Animation { struct SkeletalAnimation; struct Skeleton; }
 namespace OvRendering::Resources { class Model; }
 
 namespace OvCore::ECS::Components
@@ -30,6 +31,8 @@ namespace OvCore::ECS::Components
 	* model, animation, playback time, speed, loop mode and weight.
 	* Bones are blended per node, and only layers holding a track for a given node contribute to it,
 	* their weights being normalized against each other. Nodes no layer animates keep their bind pose.
+	* The pose is worked out when something needs it, at most once per change: a setting marks it, and a read, the
+	* scene once its scripts have run, or the drawing works it out.
 	*/
 	class CSkinnedMeshRenderer : public AComponent
 	{
@@ -38,6 +41,15 @@ namespace OvCore::ECS::Components
 		* One part of a ragdoll, named after the bone it moves: a capsule from that bone to the bone named `to`, or, when
 		* `to` is empty, running `length` metres on from the bone's parent (the head carries on from the neck)
 		*/
+		/**
+		* When the pose is worked out during play
+		*/
+		enum class EUpdateMode : uint8_t
+		{
+			ALWAYS,			// Every frame, seen or not
+			WHEN_VISIBLE	// Only while a render pass (a view, a shadow, a reflection) drew it the frame before
+		};
+
 		struct RagdollPart
 		{
 			std::string bone;
@@ -235,6 +247,27 @@ namespace OvCore::ECS::Components
 		bool IsAnimationSourceCompatible(uint32_t p_layer = 0) const;
 
 		/**
+		* Sets which of the layer's clip bones drives each named bone of the model, for a clip made on a rig whose bones
+		* have other names. A bone the map does not name is driven by the clip's bone of its own name; an empty map
+		* matches every bone by its name
+		* @param p_boneMap (model bone name to clip bone name)
+		* @param p_layer
+		*/
+		void SetAnimationBoneMap(const Animation::BoneMap& p_boneMap, uint32_t p_layer = 0);
+
+		/**
+		* Returns the layer's bone map (model bone name to clip bone name)
+		* @param p_layer
+		*/
+		Animation::BoneMap GetAnimationBoneMap(uint32_t p_layer = 0) const;
+
+		/**
+		* Returns why the layer's clips cannot play on the model, naming the bone, or nothing when they can
+		* @param p_layer
+		*/
+		std::optional<std::string> GetAnimationSourceError(uint32_t p_layer = 0) const;
+
+		/**
 		* Returns the number of animations available to a layer
 		* @param p_layer
 		*/
@@ -377,6 +410,122 @@ namespace OvCore::ECS::Components
 		uint64_t GetPoseVersion() const;
 
 		/**
+		* Sets when the pose is worked out during play
+		* @param p_mode
+		*/
+		void SetUpdateMode(EUpdateMode p_mode);
+
+		/**
+		* Returns when the pose is worked out during play
+		*/
+		EUpdateMode GetUpdateMode() const;
+
+		/**
+		* Returns true when a render pass drew the model the frame before (true until the scene first updates it)
+		*/
+		bool WasVisible() const;
+
+		/**
+		* Notes that a render pass draws the model in this frame: called by the frame builder
+		*/
+		void NotifyDrawn() const;
+
+		/**
+		* Works out what is marked, once the frame's scripts have run: called by the scene. Also notes whether the
+		* model was drawn since the last call; in WHEN_VISIBLE, a model that was not keeps its pose for drawing
+		*/
+		void UpdatePose();
+
+		/**
+		* Returns the skeleton of the model, or nothing without a skinned model
+		*/
+		const OvRendering::Animation::Skeleton* GetSkeleton() const;
+
+		/**
+		* Lets go of every rotation the animation constraints set: called by the scene before they run, each frame
+		*/
+		void ClearConstraintRotations();
+
+		/**
+		* Turns a bone by an animation constraint (a look at, a spring), over the pose and until the next clear: the pose
+		* stays as the clips and the scripts left it, and GetBoneLocal* still read it, while the skeleton, the drawing
+		* and the attachments take the constraint's rotation. Returns false when the bone is unknown
+		* @param p_boneIndex
+		* @param p_localRotation
+		*/
+		bool SetConstraintRotation(uint32_t p_boneIndex, const OvMaths::FQuaternion& p_localRotation);
+
+		/**
+		* A layer an animator plays on the model (see CAnimator): where its clips come from (nothing: the rendered
+		* model), the bone it plays under (empty: every bone), and how the clips' bones match the model's
+		*/
+		struct DrivenLayer
+		{
+			OvRendering::Resources::Model* source = nullptr;
+			std::string mask;
+			Animation::BoneMap boneMap;
+		};
+
+		/**
+		* A clip an animator has sampled: its driven layer, its index among the source's clips, its time (seconds), and
+		* its weight within the layer
+		*/
+		struct DrivenSample
+		{
+			uint32_t layer = 0;
+			uint32_t clip = 0;
+			float time = 0.0f;
+			float weight = 1.0f;
+			bool looping = true;
+		};
+
+		/**
+		* Plays an animator's layers instead of the component's own, which are left as they are until
+		* ClearDrivenLayers. Each driven layer covers the layers before it, on the bones under its mask, by its weight
+		* (SetDrivenPose); within a layer, the clips blend by their weights
+		* @param p_layers
+		*/
+		void SetDrivenLayers(const std::vector<DrivenLayer>& p_layers);
+
+		/**
+		* Gives the pose back to the component's own layers
+		*/
+		void ClearDrivenLayers();
+
+		/**
+		* Returns true while an animator plays its layers on the model
+		*/
+		bool IsDriven() const;
+
+		/**
+		* Returns why a driven layer's source cannot play on the model, or nothing
+		* @param p_layer
+		*/
+		std::optional<std::string> GetDrivenLayerError(uint32_t p_layer) const;
+
+		/**
+		* Sets the clips the driven layers sample and each layer's weight over the layers before it. The pose is worked
+		* out from them at most at the pose evaluation rate, as for the component's own layers, or at once when forced
+		* (a state changed, a script set a parameter)
+		* @param p_samples
+		* @param p_layerWeights
+		* @param p_deltaTime
+		* @param p_force
+		*/
+		void SetDrivenPose(const std::vector<DrivenSample>& p_samples, const std::vector<float>& p_layerWeights, float p_deltaTime, bool p_force = false);
+
+		/**
+		* Returns how many times the clips were sampled into a pose, since the component was made
+		*/
+		uint64_t GetPoseEvaluationCount() const;
+
+		/**
+		* Returns how many times the skeleton (its global transforms and skinning matrices) was worked out from a pose,
+		* since the component was made
+		*/
+		uint64_t GetSkeletonUpdateCount() const;
+
+		/**
 		* Hands the skeleton over to physics from the current pose: every part becomes a capsule joined to the nearest
 		* part above it, and its bone follows the capsule while the others keep their pose relative to their parent.
 		* The animation stops driving the skeleton until StopRagdoll. Returns false when a bone is unknown or the
@@ -451,18 +600,15 @@ namespace OvCore::ECS::Components
 			bool playing = true;
 			bool looping = true;
 			std::string maskRootName;
+			Animation::BoneMap boneMap;
 
-			// Runtime data, rebuilt whenever the model or the layer animation source changes.
-			// sourceNodeByTargetNode maps a rendered skeleton node to the source node driving it
-			// (-1 when unanimated), and is empty when the source is incompatible.
-			// restOffsetByTargetNode is the rendered node's rest position minus its source node's: added to the
-			// clip's positions, it plays the clip on a rig whose bones have other lengths (zero for the same rig).
-			// restScaleByTargetNode is the ratio of their rest lengths: the clip's move away from its own rest is
-			// scaled by it, so a longer leg dips its hips further (one for the same rig).
+			// Runtime data, rebuilt whenever the model, the layer's animation source or its bone map changes.
+			// retarget says, for each node of the rendered skeleton, which source node drives it (-1 when none, or
+			// out of the mask) and how its keys are carried over (see Animation::Retarget); it is empty when the
+			// source cannot play on the model, and retargetError says why.
 			std::vector<std::string> animationNames;
-			std::vector<int32_t> sourceNodeByTargetNode;
-			std::vector<OvMaths::FVector3> restOffsetByTargetNode;
-			std::vector<float> restScaleByTargetNode;
+			std::vector<Animation::RetargetNode> retarget;
+			std::optional<std::string> retargetError;
 		};
 
 		// Per-layer data sampled once per pose evaluation, before blending the skeleton node by node
@@ -473,9 +619,7 @@ namespace OvCore::ECS::Components
 			float duration = 0.0f;
 			float weight = 1.0f;
 			bool looping = true;
-			const std::vector<int32_t>* sourceNodeByTargetNode = nullptr;
-			const std::vector<OvMaths::FVector3>* restOffsetByTargetNode = nullptr;
-			const std::vector<float>* restScaleByTargetNode = nullptr;
+			const std::vector<Animation::RetargetNode>* retarget = nullptr;
 		};
 
 		bool HasCompatibleModel() const;
@@ -485,10 +629,17 @@ namespace OvCore::ECS::Components
 		const AnimationLayer* FindLayer(uint32_t p_layer) const;
 		void SyncWithModel();
 		void RebuildRuntimeData(bool p_modelChanged = false);
-		void RebuildLayerRuntimeData(AnimationLayer& p_layer, std::vector<int32_t>& p_nodeMapScratch);
+		void RebuildLayerRuntimeData(AnimationLayer& p_layer);
 		void ApplyLayerMask(AnimationLayer& p_layer) const;
 		void ResolveLayerAnimation(AnimationLayer& p_layer);
+		void MarkPoseDirty();
+		void ResolveLocalPose() const;
+		void ResolvePose() const;
+		void ResolvePoseForDrawing() const;
 		void EvaluatePose();
+		void EvaluateDrivenPose();
+		bool SampleNode(const ActiveLayerSample& p_sample, size_t p_nodeIndex, OvMaths::FVector3& p_position, OvMaths::FQuaternion& p_rotation, OvMaths::FVector3& p_scale) const;
+		bool ConsumePoseEvaluationTime(float p_deltaTime, bool p_force);
 		std::optional<uint32_t> GetNodeIndexFromBoneIndex(uint32_t p_boneIndex) const;
 		int32_t FindRagdollPart(uint32_t p_nodeIndex) const;
 		void RecomputeBoneMatricesFromLocalPose();
@@ -505,11 +656,36 @@ namespace OvCore::ECS::Components
 
 		std::vector<AnimationLayer> m_layers;
 
+		// An animator's layers, while it plays them in place of m_layers, and its last samples and layer weights
+		bool m_driven = false;
+		std::vector<AnimationLayer> m_drivenLayers;
+		std::vector<DrivenSample> m_drivenSamples;
+		std::vector<float> m_drivenWeights;
+
 		// Reused across pose evaluations to keep them free of per-frame allocations
 		std::vector<ActiveLayerSample> m_activeLayerSamples;
+		std::vector<OvMaths::FVector3> m_drivenPositions;
+		std::vector<OvMaths::FQuaternion> m_drivenRotations;
+		std::vector<OvMaths::FVector3> m_drivenScales;
+		std::vector<uint8_t> m_drivenTouched;
 
 		uint64_t m_poseVersion = 0;
 		bool m_manualPoseOverride = false;
+
+		// The local pose is to be sampled again from the layers, and the skeleton to be worked out again from it
+		bool m_poseDirty = false;
+		bool m_skeletonDirty = false;
+		uint64_t m_poseEvaluationCount = 0;
+		uint64_t m_skeletonUpdateCount = 0;
+
+		EUpdateMode m_updateMode = EUpdateMode::ALWAYS;
+
+		// The local matrices the animation constraints set, over the pose, and the nodes that have one
+		std::vector<OvMaths::FMatrix4> m_constraintPose;
+		std::vector<uint8_t> m_constrainedNodes;
+		std::vector<uint32_t> m_constrainedList;
+		mutable bool m_drawnSinceUpdate = false;
+		bool m_visibleLastFrame = true;
 
 		std::vector<OvMaths::FMatrix4> m_localPose;
 		std::vector<OvMaths::FMatrix4> m_globalPose;

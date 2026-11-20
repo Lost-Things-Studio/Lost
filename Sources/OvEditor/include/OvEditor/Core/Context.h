@@ -26,6 +26,8 @@
 #include <OvPhysics/Core/PhysicsEngine.h>
 #include <OvTools/Filesystem/IniFile.h>
 #include <OvTools/Filesystem/SaveStorage.h>
+#include <OvCore/Input/InputActions.h>
+#include <OvCore/Localization/Localization.h>
 #include <OvTools/Time/Clock.h>
 #include <OvWindowing/Window.h>
 #include <OvUI/Core/UIManager.h>
@@ -64,13 +66,13 @@ namespace OvEditor::Core
 		void ResetProjectSettings();
 
 		/**
-		* Verify that project settings are complete (No missing key).
-		* Returns true if the integrity is verified
+		* Adds every project setting the file lacks, with its default value, and leaves the others as they are.
+		* Returns true if a setting was added
 		*/
-		bool IsProjectSettingsIntegrityVerified();
+		bool CompleteProjectSettings();
 
 		/**
-		* Apply project settings to the ini file
+		* Applies the project settings to the engine: the gravity, the collision layers and the ragdoll rules
 		*/
 		void ApplyProjectSettings();
 
@@ -92,6 +94,8 @@ namespace OvEditor::Core
 
 		std::unique_ptr<OvCore::Scripting::ScriptEngine> scriptEngine;
 		std::unique_ptr<OvTools::Filesystem::SaveStorage> saveStorage;
+		std::unique_ptr<OvCore::Input::InputActions> inputActions;
+		std::unique_ptr<OvCore::Localization::Localization> localization;
 
 		OvCore::SceneSystem::SceneManager sceneManager;
 		OvTools::Time::Clock clock;
