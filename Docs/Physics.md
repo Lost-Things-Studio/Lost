@@ -125,7 +125,8 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
   overlap the shape, each once, in no particular order.
 - A query sees every layer unless given a mask: `Physics.GetLayerMask("Default", "Enemy")` builds one from names or
   indices. The collision matrix plays no part in queries. Triggers are left out unless `includeTriggers` is `true`.
-  A query given a point that is not finite returns an empty table.
+  A mask that is not an integer, or an `includeTriggers` that is not a boolean, is logged and the default used. A query
+  given a point that is not finite returns an empty table.
 - Queries never return a ragdoll's bodies.
 - `Physics.Raycast(origin, direction, distance)`, the older query, returns `nil` or a `RaycastHit` with
   `FirstResultObject` and `ResultObjects`: every object crossed, triggers included, in no particular order and without

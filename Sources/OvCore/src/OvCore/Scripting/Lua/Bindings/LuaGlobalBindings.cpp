@@ -800,13 +800,48 @@ void BindLuaGlobal(sol::state& p_luaState)
 		return p_layer >= 0 && p_layer < OvPhysics::Settings::PhysicsSettings::kLayerCount;
 	};
 
-	// A query's optional arguments: the layers it sees (a mask, every layer when nil) and whether it reports triggers
-	const auto querySettings = [](sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+	// A whole number, as Lua holds it in an integer or in a float
+	const auto asInteger = [](const sol::object& p_value) -> std::optional<lua_Integer>
 	{
-		return OvPhysics::Settings::QuerySettings{
-			static_cast<uint16_t>(p_layerMask.value_or(0xFFFF) & 0xFFFF),
-			p_includeTriggers.value_or(false)
-		};
+		if (p_value.get_type() != sol::type::number)
+		{
+			return std::nullopt;
+		}
+
+		const lua_Number value = p_value.as<lua_Number>();
+		if (value != std::floor(value) || !(std::abs(value) < 1.0e15))
+		{
+			return std::nullopt;
+		}
+
+		return static_cast<lua_Integer>(value);
+	};
+
+	// A query's optional arguments: the layers it sees (a mask, every layer when nil) and whether it reports triggers.
+	// An argument of another type is said, and the default is used
+	const auto querySettings = [asInteger](std::string_view p_query, const sol::object& p_layerMask, const sol::object& p_includeTriggers)
+	{
+		OvPhysics::Settings::QuerySettings settings{ 0xFFFF, false };
+
+		if (const auto mask = asInteger(p_layerMask))
+		{
+			settings.layerMask = static_cast<uint16_t>(*mask & 0xFFFF);
+		}
+		else if (p_layerMask.get_type() != sol::type::lua_nil && p_layerMask.get_type() != sol::type::none)
+		{
+			OVLOG_WARNING(std::format("Physics.{}: the layer mask is an integer (Physics.GetLayerMask), every layer is seen", p_query));
+		}
+
+		if (p_includeTriggers.is<bool>())
+		{
+			settings.includeTriggers = p_includeTriggers.as<bool>();
+		}
+		else if (p_includeTriggers.get_type() != sol::type::lua_nil && p_includeTriggers.get_type() != sol::type::none)
+		{
+			OVLOG_WARNING(std::format("Physics.{}: includeTriggers is a boolean, triggers are left out", p_query));
+		}
+
+		return settings;
 	};
 
 	p_luaState.new_usertype<PhysicsWrapper::Hit>("PhysicsHit",
@@ -847,15 +882,15 @@ void BindLuaGlobal(sol::state& p_luaState)
 
 			OVSERVICE(OvPhysics::Core::PhysicsEngine).SetLayersCollide(static_cast<uint16_t>(p_layer1), static_cast<uint16_t>(p_layer2), p_collide);
 		},
-		"GetLayerMask", [isLayer](sol::variadic_args p_layers)
+		"GetLayerMask", [isLayer, asInteger](sol::variadic_args p_layers)
 		{
 			int mask = 0;
 
 			for (const auto layer : p_layers)
 			{
-				if (layer.get_type() == sol::type::number && isLayer(layer.as<int>()))
+				if (const auto index = asInteger(layer); index && isLayer(static_cast<int>(std::clamp<lua_Integer>(*index, -1, 16))))
 				{
-					mask |= 1 << layer.as<int>();
+					mask |= 1 << *index;
 				}
 				else if (layer.get_type() == sol::type::string)
 				{
@@ -876,21 +911,21 @@ void BindLuaGlobal(sol::state& p_luaState)
 
 			return mask;
 		},
-		"CastRay", [querySettings](const OvMaths::FVector3& p_origin, const OvMaths::FVector3& p_direction, float p_distance, sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+		"CastRay", [querySettings](const OvMaths::FVector3& p_origin, const OvMaths::FVector3& p_direction, float p_distance, const sol::object& p_layerMask, const sol::object& p_includeTriggers)
 		{
-			return sol::as_table(PhysicsWrapper::CastRay(p_origin, p_direction, p_distance, querySettings(p_layerMask, p_includeTriggers)));
+			return sol::as_table(PhysicsWrapper::CastRay(p_origin, p_direction, p_distance, querySettings("CastRay", p_layerMask, p_includeTriggers)));
 		},
-		"CastSphere", [querySettings](const OvMaths::FVector3& p_origin, float p_radius, const OvMaths::FVector3& p_direction, float p_distance, sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+		"CastSphere", [querySettings](const OvMaths::FVector3& p_origin, float p_radius, const OvMaths::FVector3& p_direction, float p_distance, const sol::object& p_layerMask, const sol::object& p_includeTriggers)
 		{
-			return sol::as_table(PhysicsWrapper::CastSphere(p_origin, p_radius, p_direction, p_distance, querySettings(p_layerMask, p_includeTriggers)));
+			return sol::as_table(PhysicsWrapper::CastSphere(p_origin, p_radius, p_direction, p_distance, querySettings("CastSphere", p_layerMask, p_includeTriggers)));
 		},
-		"OverlapSphere", [querySettings](const OvMaths::FVector3& p_center, float p_radius, sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+		"OverlapSphere", [querySettings](const OvMaths::FVector3& p_center, float p_radius, const sol::object& p_layerMask, const sol::object& p_includeTriggers)
 		{
-			return sol::as_table(PhysicsWrapper::OverlapSphere(p_center, p_radius, querySettings(p_layerMask, p_includeTriggers)));
+			return sol::as_table(PhysicsWrapper::OverlapSphere(p_center, p_radius, querySettings("OverlapSphere", p_layerMask, p_includeTriggers)));
 		},
-		"OverlapBox", [querySettings](const OvMaths::FVector3& p_center, const OvMaths::FVector3& p_halfExtents, sol::optional<OvMaths::FQuaternion> p_rotation, sol::optional<int> p_layerMask, sol::optional<bool> p_includeTriggers)
+		"OverlapBox", [querySettings](const OvMaths::FVector3& p_center, const OvMaths::FVector3& p_halfExtents, sol::optional<OvMaths::FQuaternion> p_rotation, const sol::object& p_layerMask, const sol::object& p_includeTriggers)
 		{
-			return sol::as_table(PhysicsWrapper::OverlapBox(p_center, p_halfExtents, p_rotation.value_or(OvMaths::FQuaternion::Identity), querySettings(p_layerMask, p_includeTriggers)));
+			return sol::as_table(PhysicsWrapper::OverlapBox(p_center, p_halfExtents, p_rotation.value_or(OvMaths::FQuaternion::Identity), querySettings("OverlapBox", p_layerMask, p_includeTriggers)));
 		}
 	);
 
