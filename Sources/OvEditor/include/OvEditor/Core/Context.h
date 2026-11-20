@@ -72,7 +72,8 @@ namespace OvEditor::Core
 		bool CompleteProjectSettings();
 
 		/**
-		* Applies the project settings to the engine: the gravity, the collision layers and the ragdoll rules
+		* Applies the project settings to the engine: the gravity, the collision layers, the ragdoll rules and the save
+		* folder
 		*/
 		void ApplyProjectSettings();
 

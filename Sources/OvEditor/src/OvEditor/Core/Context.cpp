@@ -269,11 +269,12 @@ OvEditor::Core::Context::~Context()
 void OvEditor::Core::Context::ResetProjectSettings()
 {
 	// The settings the editor manages go back to their defaults; the file's other keys (the project's collision
-	// layers, say) are the project's own and stay
+	// layers, say) are the project's own and stay, and so does its ID, which its saves are named after
 	const OvTools::Filesystem::IniFile previous = projectSettings;
 
 	projectSettings.RemoveAll();
 	CompleteProjectSettings();
+	projectSettings.Set<std::string>("project_id", previous.GetOrDefault<std::string>("project_id", ""));
 
 	for (const auto& key : previous.GetKeys())
 	{
@@ -313,4 +314,10 @@ void OvEditor::Core::Context::ApplyProjectSettings()
 	physicsEngine->SetGravity(physicsSettings.gravity);
 	physicsEngine->ApplyLayerSettings(physicsSettings);
 	audioEngine->SetBuses(OvCore::Helpers::ProjectSettings::ReadAudioBuses(projectSettings));
+
+	// The save folder follows the project's ID, or its executable's name
+	if (auto root = OvTools::Filesystem::SaveStorage::GetDefaultRoot(OvCore::Helpers::ProjectSettings::GetSaveName(projectSettings)); root != saveStorage->GetRoot())
+	{
+		*saveStorage = OvTools::Filesystem::SaveStorage(std::move(root));
+	}
 }

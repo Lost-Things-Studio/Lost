@@ -10,7 +10,7 @@
   becomes `Game`.
 - Changing the name moves the folder: the saves of the old name stay behind. A project sets `project_id` once, so
   that renaming the game keeps its saves. To keep the saves of a project that had none, set it to the current
-  `executable_name`.
+  `executable_name`. In the editor, a new name takes effect with Apply.
 
 ## `Storage`
 
