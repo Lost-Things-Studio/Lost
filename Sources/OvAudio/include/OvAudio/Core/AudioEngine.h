@@ -120,6 +120,14 @@ namespace OvAudio::Core
 		bool IsSuspended() const;
 
 		/**
+		* Hands a suspension over from a voice to the one that replaces it (a source played again with another mode or
+		* bus): if Suspend paused the first, Unsuspend resumes the second
+		* @param p_from
+		* @param p_to
+		*/
+		void TransferSuspension(Data::SoundHandle p_from, Data::SoundHandle p_to);
+
+		/**
 		* Play a 2D sound in and return a SoundInstance if successful
 		* @param p_sound
 		* @param p_pan

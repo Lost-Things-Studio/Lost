@@ -396,3 +396,5 @@ Lost's first version: Overload 1.9 and the changes below.
   the emitter's space has no inverse.
 - **A change of a particle system's space clears its particles**, whose places were in the other space and would have
   jumped.
+- **A source changed while the editor pauses the game** (its bus, or spatial or flat) plays again on resuming. It
+  started again paused, as a new voice the suspension did not know, and stayed silent.

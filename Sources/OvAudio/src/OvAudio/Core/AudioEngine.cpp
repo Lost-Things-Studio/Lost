@@ -217,6 +217,11 @@ bool OvAudio::Core::AudioEngine::IsSuspended() const
 	return m_suspended;
 }
 
+void OvAudio::Core::AudioEngine::TransferSuspension(Data::SoundHandle p_from, Data::SoundHandle p_to)
+{
+	std::replace(m_suspendedSounds.begin(), m_suspendedSounds.end(), p_from, p_to);
+}
+
 std::shared_ptr<OvAudio::Data::SoundInstance> OvAudio::Core::AudioEngine::Play2D(const Resources::Sound& p_sound, float p_pan, std::optional<float> p_volume, bool p_startPaused, std::string_view p_bus)
 {
 	if (!IsValid())

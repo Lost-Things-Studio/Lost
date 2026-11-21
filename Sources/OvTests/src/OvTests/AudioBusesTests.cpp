@@ -254,6 +254,27 @@ TEST_SUITE("Audio buses")
 		CHECK(engine.GetVoiceCount() == 0);
 	}
 
+	TEST_CASE("a source moved to another bus during a suspension resumes with the other sounds")
+	{
+		BusEngine null;
+		auto& engine = null.engine;
+		TestSound tone(Sine(440.0f, 1.0f, 0.2f));
+
+		AudioSource source(engine);
+		source.SetLooped(true);
+		source.Play(*tone.sound);
+		MixFor(engine, 0.05f);
+
+		// The inspector changes its bus while the editor pauses the game: the source plays again, paused
+		engine.Suspend();
+		source.SetBus("Music");
+		CHECK(Loudness(MixFor(engine, 0.1f)) < 1e-4f);
+
+		engine.Unsuspend();
+		CHECK(source.IsPlaying());
+		CHECK(Loudness(MixFor(engine, 0.05f)) > 0.03f);
+	}
+
 	TEST_CASE("a sound played once in the world: from its place, following its source, ended if too far to be heard")
 	{
 		BusEngine null;
