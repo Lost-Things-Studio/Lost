@@ -277,6 +277,11 @@ TEST_SUITE("Lua modules")
 
 			local ok, message = pcall(Events.AddUpdate, 42)
 			Frames.badArgument = ok and "accepted" or tostring(message)
+
+			-- An owner is an actor or a Behaviour's table; anything else would be dropped without a word, and is refused
+			ok, message = pcall(Events.AddUpdate, function() end, "player")
+			Frames.badOwner = ok and "accepted" or tostring(message)
+			Frames.tableOwner = pcall(Events.AddLateUpdate, function() end, {})
 			return Frames
 		)");
 
@@ -292,6 +297,8 @@ TEST_SUITE("Lua modules")
 			CHECK(frames.get<bool>("removedOnce"));
 			CHECK_FALSE(frames.get<bool>("removedTwice"));
 			CHECK(frames.get<std::string>("badArgument").find("Events.AddUpdate: a function is expected") != std::string::npos);
+			CHECK(frames.get<std::string>("badOwner").find("Events.AddUpdate: the owner is an actor, or a Behaviour's table") != std::string::npos);
+			CHECK_FALSE(frames.get<bool>("tableOwner"));
 
 			// Two frames, as a scene runs them
 			OvCore::SceneSystem::Scene::UpdateEvent.Invoke(0.5f);

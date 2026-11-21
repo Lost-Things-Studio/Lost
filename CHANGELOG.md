@@ -380,3 +380,6 @@ Lost's first version: Overload 1.9 and the changes below.
   as its `onUpdate` did. Before, such an error stopped the whole advance, and the tweens after it that frame.
 - **`Std.Timers.Clear()` and `Std.Tween.Clear()` from a callback** stop every timer and tween, those being advanced
   included. Before, the ones still to be advanced that frame went on.
+- **An event's owner**: `Events.AddUpdate`, `AddLateUpdate` and `AddQuit` take an actor or a Behaviour's table (its
+  actor), and raise an error for any other owner. Before, a Behaviour's table, or a mistake, was taken for no owner,
+  and the callback outlived its actor.

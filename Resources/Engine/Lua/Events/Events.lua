@@ -8,15 +8,16 @@
 Events = {}
 
 --- Calls the function every frame before every Behaviour's OnUpdate, from the next frame on, until Events.Remove, an
---- error (logged, then the callback is removed) or the end of its owner, an actor, when one is given
+--- error (logged, then the callback is removed) or the end of its owner, when one is given: an actor, or a Behaviour's
+--- table (its actor is taken). Any other owner raises an error
 ---@param callback fun(deltaTime: number)
----@param owner? Actor
+---@param owner? Actor|table
 ---@return integer id
 function Events.AddUpdate(callback, owner) end
 
 --- Calls the function every frame after every Behaviour's OnLateUpdate, as Events.AddUpdate does otherwise
 ---@param callback fun(deltaTime: number)
----@param owner? Actor
+---@param owner? Actor|table
 ---@return integer id
 function Events.AddLateUpdate(callback, owner) end
 
@@ -25,7 +26,7 @@ function Events.AddLateUpdate(callback, owner) end
 --- what was kept for later. An error is logged and the other callbacks still run; one whose owner, an actor, is no
 --- longer alive is skipped; one added while the game ends is not called. Since API 1.24
 ---@param callback fun()
----@param owner? Actor
+---@param owner? Actor|table
 ---@return integer id
 function Events.AddQuit(callback, owner) end
 

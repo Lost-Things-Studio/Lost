@@ -763,14 +763,29 @@ void BindLuaGlobal(sol::state& p_luaState)
 	using EFrameEvent = OvCore::Scripting::LuaScriptEngine::EFrameEvent;
 	const auto addFrameCallback = [](EFrameEvent p_event, std::string_view p_name)
 	{
-		return [p_event, p_name](const sol::object& p_callback, sol::optional<ActorRef> p_owner) -> uint64_t
+		return [p_event, p_name](const sol::object& p_callback, const sol::object& p_owner) -> uint64_t
 		{
 			if (p_callback.get_type() != sol::type::function)
 			{
 				throw std::runtime_error(std::format("Events.{}: a function is expected", p_name));
 			}
 
-			return OVSERVICE(ScriptEngine).AddFrameCallback(p_event, p_callback, p_owner ? std::optional<ActorRef>(*p_owner) : std::nullopt);
+			// The owner is an actor, or a Behaviour's table, whose actor is taken, as in the standard library
+			std::optional<ActorRef> owner;
+			if (p_owner.is<ActorRef>())
+			{
+				owner = p_owner.as<ActorRef>();
+			}
+			else if (p_owner.get_type() == sol::type::table && p_owner.as<sol::table>()["owner"].is<ActorRef>())
+			{
+				owner = p_owner.as<sol::table>()["owner"].get<ActorRef>();
+			}
+			else if (p_owner.get_type() != sol::type::lua_nil && p_owner.get_type() != sol::type::none)
+			{
+				throw std::runtime_error(std::format("Events.{}: the owner is an actor, or a Behaviour's table", p_name));
+			}
+
+			return OVSERVICE(ScriptEngine).AddFrameCallback(p_event, p_callback, owner);
 		};
 	};
 

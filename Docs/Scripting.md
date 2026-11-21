@@ -138,8 +138,8 @@ binding.
   - `Events.AddUpdate(callback[, owner])` and `Events.AddLateUpdate(callback[, owner])` return an id;
     `Events.Remove(id)` removes the callback at once, even while its event runs;
   - the callback receives the same step as `OnUpdate`, and runs from the next frame on;
-  - one that raises an error is logged and removed; one given an owner, an actor, is removed once that actor is no
-    longer alive;
+  - one that raises an error is logged and removed; one given an owner, an actor or a Behaviour's table (its actor is
+    taken), is removed once that actor is no longer alive. Any other owner raises an error;
   - the callbacks live with the Lua state, like the modules: they outlive a scene change, and the editor drops them
     when play starts and stops. They run only while the scene plays.
   - The standard library's timers and tweens run this way, in `LateUpdate` (see [Standard library](StandardLibrary.md)).
