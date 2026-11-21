@@ -818,7 +818,8 @@ bool OvCore::Animation::AnimationGraph::ExitTimeReached(const GraphTransition& p
 		return std::floor(current.time - exitTime) > std::floor(p_previousTime - exitTime);
 	}
 
-	return current.time >= exitTime;
+	// A state that does not loop holds at its end, so an exit time past it is reached there
+	return current.time >= (state.loop ? exitTime : std::min(exitTime, 1.0f));
 }
 
 void OvCore::Animation::AnimationGraph::StartTransition(size_t p_layer, size_t p_state, float p_duration)

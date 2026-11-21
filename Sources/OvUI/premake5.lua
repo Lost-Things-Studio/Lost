@@ -18,7 +18,7 @@ project "OvUI"
 		-- Dependencies
 		dependdir .. "ImGui/include",
 
-		-- Overload SDK
+		-- Lost SDK
 		"%{wks.location}/Sources/OvMaths/include",
 		"%{wks.location}/Sources/OvTools/include",
 		"%{wks.location}/Sources/OvDebug/include",

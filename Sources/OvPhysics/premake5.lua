@@ -18,7 +18,7 @@ project "OvPhysics"
 		-- Dependencies
 		dependdir .. "jolt",
 
-		-- Overload SDK
+		-- Lost SDK
 		"%{wks.location}/Sources/OvDebug/include",
 		"%{wks.location}/Sources/OvMaths/include",
 		"%{wks.location}/Sources/OvTools/include",

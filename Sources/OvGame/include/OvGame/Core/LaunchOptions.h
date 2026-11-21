@@ -26,7 +26,7 @@ namespace OvGame::Core
 		std::optional<std::filesystem::path> projectFile;
 
 		/**
-		* The engine's resources (an Overload checkout's Resources/Engine)
+		* The engine's resources (a Lost checkout's Resources/Engine)
 		*/
 		std::optional<std::filesystem::path> engineAssets;
 
@@ -84,5 +84,11 @@ namespace OvGame::Core
 		std::optional<LaunchOptions> options;
 		std::string error;
 		bool help = false;
+
+		/**
+		* The arguments that are no options (they do not start with --), left aside: a file dropped on the game, or
+		* what a launcher adds
+		*/
+		std::vector<std::string> ignored;
 	};
 }

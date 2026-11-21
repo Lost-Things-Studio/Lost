@@ -60,6 +60,11 @@ namespace OvGame::Core
 		*/
 		bool HasStartSceneLoaded() const;
 
+		/**
+		* Returns true if the last Update drew the scene into the framebuffer (a minimized window draws nothing)
+		*/
+		bool IsFrameDrawn() const;
+
 	private:
 		OvGame::Core::Context& m_context;
 		OvUI::Modules::Canvas m_canvas;
@@ -75,6 +80,7 @@ namespace OvGame::Core
 		#endif
 
 		bool m_startSceneLoaded = true;
+		bool m_frameDrawn = false;
 
 		#ifdef _DEBUG
 		bool m_showDebugInformation = true;

@@ -128,7 +128,8 @@ void OvCore::Particles::ParticleEmitter::SetSettings(const ParticleSettings& p_s
 	settings.spinMax = FiniteOr(settings.spinMax, 0.0f);
 	OrderPair(settings.spinMin, settings.spinMax);
 
-	const bool resize = settings.maxParticles != m_settings.maxParticles || m_records.empty();
+	// Particles alive keep their places in the space they were born in: in the other space, those places mean nothing
+	const bool resize = settings.maxParticles != m_settings.maxParticles || m_records.empty() || settings.space != m_settings.space;
 	const bool reseed = settings.seed != m_settings.seed;
 
 	m_settings = std::move(settings);
@@ -513,9 +514,10 @@ void OvCore::Particles::ParticleEmitter::Spawn(float p_birth, const OvMaths::FMa
 		direction = NormalizeOr(TransformDirection(p_emitterWorld, direction), direction);
 	}
 
-	if (p_overrides.position || p_overrides.direction)
+	// Overrides are in the world: a local system takes them into the emitter's space. An emitter scaled to nothing has no
+	// space to take them into, and its particles keep where its shape puts them
+	if ((p_overrides.position || p_overrides.direction) && (!local || FMatrix4::Determinant(p_emitterWorld) != 0.0f))
 	{
-		// Overrides are in the world: a local system takes them into the emitter's space
 		const FMatrix4 worldToLocal = local ? FMatrix4::Inverse(p_emitterWorld) : FMatrix4::Identity;
 
 		if (p_overrides.position)
@@ -590,10 +592,13 @@ void OvCore::Particles::ParticleEmitter::EmitOverStep(double p_stepStart, double
 		m_rateCarry = total - static_cast<double>(births);
 	}
 
-	// A burst is due once in each cycle, when the cycle's time reaches it
+	// A burst is due once in each cycle, when the cycle's time reaches it; one at the cycle's very end, with the step that
+	// ends the cycle
+	const bool endsCycle = m_cycleTime + p_step >= m_settings.duration;
+
 	for (const auto& burst : m_settings.bursts)
 	{
-		if (burst.time >= m_cycleTime && burst.time < m_cycleTime + p_step)
+		if (burst.time >= m_cycleTime && (burst.time < m_cycleTime + p_step || (endsCycle && burst.time <= m_settings.duration)))
 		{
 			const double birth = p_stepStart + (burst.time - m_cycleTime);
 			const auto matrix = emitterAt(birth);

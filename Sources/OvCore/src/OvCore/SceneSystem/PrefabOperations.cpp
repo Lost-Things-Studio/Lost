@@ -56,8 +56,13 @@ namespace
 
 			if (type && text && std::string_view(type) == "actor")
 			{
+				// The GUID may stand among blank characters, as the Behaviour that reads it allows
+				std::string_view value{ text };
+				const size_t first = value.find_first_not_of(" \t\r\n");
+				value = first == std::string_view::npos ? std::string_view{} : value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
+
 				uint64_t guid = 0;
-				const auto [end, error] = std::from_chars(text, text + std::strlen(text), guid);
+				const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), guid);
 
 				if (error == std::errc{})
 				{

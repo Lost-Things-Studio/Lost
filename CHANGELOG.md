@@ -313,6 +313,8 @@ Lost's first version: Overload 1.9 and the changes below.
 ### Fixed
 
 - **Destroyed actors are freed in a built game**: `OvGame` collects them at the end of each frame, as the editor did.
+- **A game window larger than the screen is reduced**: halved until it fits the work area, as the warning says.
+  Before, the warning gave the project's size and the window kept it.
 - **`ReflectionProbe:RequestCapture()` without its argument**: the argument `forceImmediate` is optional, as its
   definition and the C++ say. The binding required it, so a call without it raised an error in a Debug build and read
   an undefined value in a Release build.
@@ -327,10 +329,14 @@ Lost's first version: Overload 1.9 and the changes below.
   the scene was already gone during these callbacks, and any actor handle used there raised
   `ActorRef: no active scene`.
 - **Actor references inside a prefab survive instantiation**: an actor property that names another actor of the same
-  prefab now names that actor's instance. Before, every instance got new GUIDs and such a property came out `nil`.
+  prefab now names that actor's instance, after Revert to Prefab in the editor too. Before, every instance got new GUIDs
+  and such a property came out `nil`.
+- **An actor property's GUID may have blanks around it**: a scene or a prefab edited by hand reads it. A text that is
+  no GUID references no actor.
 - **The editor completes a project file instead of resetting it**: a project file lacking a setting gets that setting's
   default and keeps all its other values. Before, one missing key reset every setting (`start_scene` emptied,
-  `executable_name` back to `Game`, which also moved the save folder).
+  `executable_name` back to `Game`, which also moved the save folder). The Reset button of Project Settings sets the
+  editor's settings back to their defaults and keeps the file's other keys.
 - **The save folder's entry limit counts new folders**: a write that makes folders on the way to its file counts them
   against `storage_max_entries`. Before, it counted the file only, so the folder could hold up to three entries too
   many.
@@ -361,3 +367,47 @@ Lost's first version: Overload 1.9 and the changes below.
   The self of an operator or a field is checked to be a userdata, so that `nil + v` and a table given a vector's
   metatable are refused too. A maths argument costs a read of its metatable, about 30 ns; a field, next to nothing.
   See [Docs/Scripting.md](Docs/Scripting.md).
+- **A transform read without UI data stays without**: reading its clip setting gave UI data to every transform read
+  from a file, so that a scene saved again wrote UI fields for each of its actors, and an actor read anew by Revert to
+  Prefab kept the UI data it had.
+- **The UI library's buttons answer a click**: the controller consumes the click it gives a panel, and `DButton` read
+  the mouse as gameplay does, so it saw the button up at once and never clicked. Every input read of the library now
+  takes what the UI consumed, and a test holds it to that.
+- **A UI controller updated by hand is updated once a frame**: in the frame after its creation, a Behaviour's
+  `controller:Update` and the controller's own update both ran, so its panels thought twice and a key typed then was
+  typed twice.
+- **A tween whose curve or values fail stops alone**: its ease and its interpolation run inside the protected call,
+  as its `onUpdate` did. Before, such an error stopped the whole advance, and the tweens after it that frame.
+- **`Std.Timers.Clear()` and `Std.Tween.Clear()` from a callback** stop every timer and tween, those being advanced
+  included. Before, the ones still to be advanced that frame went on.
+- **An event's owner**: `Events.AddUpdate`, `AddLateUpdate` and `AddQuit` take an actor or a Behaviour's table (its
+  actor), and raise an error for any other owner. Before, a Behaviour's table, or a mistake, was taken for no owner,
+  and the callback outlived its actor.
+- **An animator plays again once its renderer is back**: its skinned mesh renderer removed then added, it never read
+  its graph again.
+- **An exit time past 1 on a state that does not loop** is reached as the state ends. Such a state holds at its end, so
+  the transition never left.
+- **An animator's layer index** that is not a whole number, or endless, raises an error; a whole one past the layers
+  names none. Before, it was cut to a whole number, and an endless one was undefined.
+- **The bones a look at or spring bones turned go back to the animation** once the scene's last of them is removed.
+  They stayed turned, as the step that lets them go was skipped without any.
+- **A burst at the cycle's duration** comes as the cycle ends. Its time was never reached.
+- **`Emit` with a position or a direction on a local system scaled to nothing** leaves them out. It raised an error, as
+  the emitter's space has no inverse.
+- **A change of a particle system's space clears its particles**, whose places were in the other space and would have
+  jumped.
+- **A source changed while the editor pauses the game** (its bus, or spatial or flat) plays again on resuming. It
+  started again paused, as a new voice the suspension did not know, and stayed silent.
+- **Interpolation over a frame of several steps** moves a body between the last two. It moved from the pose before
+  the first, so that at a low frame rate a body was drawn up to several steps behind, by a share that changed with
+  each frame.
+- **An interpolated body made again** (its scale changed) goes on from where the physics has it. It started again from
+  where it was drawn, a share of a step behind.
+- **Reset keeps the project's content**: `input_actions`, `translations`, `default_language` and `audio_buses` stay,
+  as `project_id` does. Reset emptied them, which left the game without its actions, its texts and its buses.
+- **A translations folder that cannot be read through** is read as far as it goes, with a warning. The walk could raise
+  an exception the engine did not catch.
+- **A save file whose size cannot be read** counts as an entry and adds nothing to the folder's total. Its size read
+  as the largest number, so every write was refused as "storage full".
+- **A vegetation layer's seed** is read exactly, up to 4294967295, and a larger one raises an error. It was read as a
+  float, which rounds every seed past 16777216, and 4294967296 passed.

@@ -76,16 +76,16 @@ echo msbuild.exe found at: "!MSBUILD_PATH!"
 echo.
 
 :: Build the solution
-echo Building Overload in !CONFIGURATION! mode...
+echo Building Lost in !CONFIGURATION! mode...
 echo.
 
 pushd "%~dp0..\..\"
 if "%CONFIGURATION%"=="" (
     echo Building with default configuration configuration...
-    "!MSBUILD_PATH!" Overload.sln -m -verbosity:minimal /p:PreferredToolArchitecture=x64
+    "!MSBUILD_PATH!" Lost.sln -m -verbosity:minimal /p:PreferredToolArchitecture=x64
 ) else (
     echo Building with configuration: %CONFIGURATION%...
-    "!MSBUILD_PATH!" Overload.sln -m -verbosity:minimal /p:Configuration=%CONFIGURATION% /p:PreferredToolArchitecture=x64
+    "!MSBUILD_PATH!" Lost.sln -m -verbosity:minimal /p:Configuration=%CONFIGURATION% /p:PreferredToolArchitecture=x64
 )
 popd
 

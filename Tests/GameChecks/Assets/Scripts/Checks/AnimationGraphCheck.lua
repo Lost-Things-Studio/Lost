@@ -3,7 +3,8 @@
 -- graph's pose is checked bone by bone against twins playing the same clips on their own layers: the idle at rest, the
 -- walk and the run in equal parts halfway between them, the punch on the arms over the legs' blend. With time running:
 -- the jump taken on its trigger and left at its exit time, the punch, the layer weight, the parameters refused by name
--- and kind, files that cannot play named, and the renderer's own layers back once the animator is removed
+-- and kind, files that cannot play named, a graph read again when its renderer comes back, and the renderer's own
+-- layers back once the animator is removed
 local Check = require("Scripts/Checks/Check")
 
 local AnimationGraphCheck = {}
@@ -90,6 +91,10 @@ function AnimationGraphCheck:OnStart()
 	local oMissingActor = Mannequin("Missing", Vector3.new(-2.4, 0, 0))
 	t.oMissing = oMissingActor:AddAnimator()
 	t.oMissing:SetGraphPath("Animations/Nowhere.ovanim")
+
+	t.oLateActor = Mannequin("Late", Vector3.new(-3.6, 0, 0))
+	t.oLate = t.oLateActor:AddAnimator()
+	t.oLate:SetGraphPath("Animations/Mannequin.ovanim")
 end
 
 function AnimationGraphCheck:OnUpdate()
@@ -115,6 +120,9 @@ function AnimationGraphCheck:OnUpdate()
 		oCheck:Equal(oAnimator:GetState(1), "Rest", "or by index, from 0")
 		oCheck:Equal(oAnimator:GetState("Legs"), nil, "an unknown layer has no state")
 		oCheck:Expect(Fails(function() oAnimator:GetState({}) end), "a layer that is neither an index nor a name is refused")
+		oCheck:Expect(Fails(function() oAnimator:GetState(0.5) end), "a layer index that is not whole is refused")
+		oCheck:Expect(Fails(function() oAnimator:GetState(math.huge) end), "and so is an endless one")
+		oCheck:Equal(oAnimator:GetState(1e12), nil, "a whole index past the layers names none")
 
 		oCheck:Expect(not oAnimator:SetFloat("Nope", 1), "an unknown parameter is refused")
 		oCheck:Expect(not oAnimator:SetBool("Speed", true), "a parameter of another kind is refused")
@@ -126,11 +134,18 @@ function AnimationGraphCheck:OnUpdate()
 		oCheck:Expect(Mentions(t.oBroken:GetError(), "layers[0].states[0].clip: no clip 'root|moonwalk'"), "and says where: " .. tostring(t.oBroken:GetError()))
 		oCheck:Expect(Mentions(t.oMissing:GetError(), "cannot read 'Animations/Nowhere.ovanim'"), "a missing file is named: " .. tostring(t.oMissing:GetError()))
 
+		-- Its renderer taken away, an animator stops; it plays again once one is back
+		oCheck:Expect(t.oLate:IsLoaded(), "a second animator plays the same graph")
+		t.oLateActor:RemoveSkinnedMeshRenderer()
+
 		-- At rest, from the start of the idle
 		oAnimator:Reset()
 		Hold(t.oTwin, "root|idle")
 		nPhase = 1
 	elseif nPhase == 1 then
+		oCheck:Expect(Mentions(t.oLate:GetError(), "no skinned mesh renderer"), "an animator without its renderer says so: " .. tostring(t.oLate:GetError()))
+		t.oLateActor:AddSkinnedMeshRenderer()
+
 		local bSame, sBone = EveryBone(t.oDriven, t.oTwin)
 		oCheck:Expect(bSame, "at rest, the graph's pose is the idle clip's, bone for bone" .. (sBone and (": not " .. sBone) or ""))
 
@@ -143,6 +158,8 @@ function AnimationGraphCheck:OnUpdate()
 		Hold(t.oTwin, "root|run", 1)
 		nPhase = 2
 	elseif nPhase == 2 then
+		oCheck:Expect(t.oLate:IsLoaded() and t.oLate:GetError() == nil, "with its renderer back, it reads its graph again: " .. tostring(t.oLate:GetError()))
+
 		local bSame, sBone = EveryBone(t.oDriven, t.oTwin)
 		oCheck:Expect(bSame, "halfway between them, the blend is the walk's and the run's in equal parts" .. (sBone and (": not " .. sBone) or ""))
 

@@ -443,7 +443,8 @@ void OvCore::ECS::Components::CTransform::OnDeserialize(tinyxml2::XMLDocument & 
 		SetUIAnchorPreset(ToUIAnchorPreset(anchorPreset));
 	}
 
-	if (uiEnabled)
+	// Only a transform with UI data has a clip setting: setting it on one without would give it UI data
+	if (HasUIData())
 	{
 		bool clipChildren = false;
 

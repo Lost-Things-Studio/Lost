@@ -647,10 +647,18 @@ function Controller.New(canvasActor)
 
 	-- What the UI takes is consumed before gameplay reads it; the panels are updated after every
 	-- OnLateUpdate, once the camera has moved
-	self.m_ConsumeCallback = Events.AddUpdate(function() ConsumeInput(self) end)
+	self.m_ConsumeCallback = Events.AddUpdate(function()
+		self.m_UpdatedByHand = false
+		ConsumeInput(self)
+	end)
 	self.m_UpdateCallback = Events.AddLateUpdate(function(deltaTime)
+		-- The first frame it updates itself, a Behaviour may already have updated it by hand: once is enough
+		local updatedByHand = not self.m_UpdatesItself and self.m_UpdatedByHand
 		self.m_UpdatesItself = true
-		UpdateFrame(self, deltaTime)
+
+		if not updatedByHand then
+			UpdateFrame(self, deltaTime)
+		end
 	end)
 
 	return self
@@ -670,6 +678,7 @@ end
 ---@param deltaTime number
 function Controller:Update(deltaTime)
 	if not self.m_UpdatesItself then
+		self.m_UpdatedByHand = true
 		UpdateFrame(self, deltaTime)
 	end
 end

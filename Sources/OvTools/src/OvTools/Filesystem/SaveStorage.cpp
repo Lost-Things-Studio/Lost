@@ -285,7 +285,12 @@ bool OvTools::Filesystem::SaveStorage::HasRoomFor(const std::filesystem::path& p
 				continue;
 			}
 
-			total += static_cast<size_t>(it->file_size(entryError));
+			// A size that cannot be read is -1: such a file counts as an entry but adds nothing to the total
+			const auto size = it->file_size(entryError);
+			if (!entryError)
+			{
+				total += static_cast<size_t>(size);
+			}
 		}
 	}
 

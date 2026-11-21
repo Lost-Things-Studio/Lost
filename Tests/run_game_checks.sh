@@ -2,9 +2,20 @@
 # Runs the in-game checks of Tests/GameChecks with a built OvGame. Each scene of the project is a check, run through the
 # game's command line: it passes when the game ends with exit code 0 and logs "CHECK PASSED <name>".
 # Usage: Tests/run_game_checks.sh <OvGame binary> [check name...]
-# The game needs a display: a desktop session, or xvfb-run on a headless Linux machine. The saves of the checks go to a
-# temporary folder, never to the user's own, and the system's language is set aside.
+# The game needs a display: a desktop session, or xvfb-run on a headless Linux machine. On Linux, the saves of the
+# checks go to a temporary folder, never to the user's own; elsewhere, they go to the save folder of the project's own
+# ID (GameChecks.ovproject's project_id), apart from any game's. The system's language is set aside.
 set -u
+
+if [ $# -lt 1 ]; then
+	echo "Usage: $0 <OvGame binary> [check name...]" >&2
+	exit 2
+fi
+
+if [ ! -x "$1" ]; then
+	echo "No game to run at '$1': build OvGame first" >&2
+	exit 2
+fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GAME="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
@@ -40,8 +51,14 @@ for NAME in "${CHECKS[@]}"; do
 	if [ $CODE -eq 0 ] && [ -n "$VERDICT" ]; then
 		echo "PASS $NAME: ${VERDICT#CHECK PASSED $NAME }"
 	else
-		echo "FAIL $NAME: exit code $CODE${VERDICT:+, though it logged its pass}"
-		sed 's/\x1b\[[0-9;]*m//g' "$LOG" | grep -E "\[ERROR\]|CHECK" | head -20 | sed 's/^/    /'
+		REASON="exit code $CODE"
+		[ $CODE -eq 124 ] && REASON="stopped after 300 s (timeout)"
+		echo "FAIL $NAME: $REASON${VERDICT:+, though it logged its pass}"
+
+		# The errors and the checks' lines, or else the end of the log
+		LINES="$(sed 's/\x1b\[[0-9;]*m//g' "$LOG" | grep -E "\[ERROR\]|CHECK" | head -20)"
+		[ -n "$LINES" ] || LINES="$(sed 's/\x1b\[[0-9;]*m//g' "$LOG" | tail -20)"
+		printf '%s\n' "$LINES" | sed 's/^/    /'
 		FAILED=1
 	fi
 done

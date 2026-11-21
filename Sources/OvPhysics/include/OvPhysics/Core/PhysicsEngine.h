@@ -79,7 +79,8 @@ namespace OvPhysics::Core
 
 		/**
 		* Casts a ray and returns the objects it meets, nearest first, each once, with the point, the normal and the
-		* distance where the ray meets it. A ray that starts inside an object meets it at distance 0
+		* distance where the ray meets it. A ray that starts inside a convex object meets it at distance 0; a mesh or a
+		* height field is met only from the side its faces look to. An infinite distance reaches 100 km
 		* @param p_origin
 		* @param p_direction (need not be normalized)
 		* @param p_distance
@@ -88,8 +89,9 @@ namespace OvPhysics::Core
 		std::vector<Entities::PhysicsHit> CastRay(const OvMaths::FVector3& p_origin, const OvMaths::FVector3& p_direction, float p_distance, const Settings::QuerySettings& p_settings = {}) const;
 
 		/**
-		* Sweeps a sphere and returns the objects it meets, nearest first, each once. An object the sphere overlaps at
-		* its origin is met at distance 0
+		* Sweeps a sphere and returns the objects it meets, nearest first, each once. A convex object the sphere
+		* overlaps at its origin is met at distance 0; a mesh or a height field is met only from the side its faces look
+		* to. An infinite distance reaches 100 km
 		* @param p_origin
 		* @param p_radius
 		* @param p_direction (need not be normalized)

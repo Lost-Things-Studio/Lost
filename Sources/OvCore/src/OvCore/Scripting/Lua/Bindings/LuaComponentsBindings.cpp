@@ -57,6 +57,7 @@
 #include <OvCore/ECS/Components/UI/CVerticalLayout.h>
 #include <OvCore/Scripting/Common/ScriptPropertyValue.h>
 #include <OvPhysics/Settings/PhysicsSettings.h>
+#include <OvDebug/Logger.h>
 
 namespace
 {
@@ -278,9 +279,13 @@ namespace
 			else if (name == "maxHeight") scatter.maxHeight = number(name, value, -10000.0f, 10000.0f);
 			else if (name == "seed")
 			{
-				const float seed = number(name, value, 0.0f, 4294967295.0f);
-				if (seed != std::floor(seed)) fail("'seed' must be a whole number");
-				scatter.seed = static_cast<uint32_t>(seed);
+				// Read as a double: a float holds whole numbers exactly only up to 2^24, and rounds 4294967295 up past the range
+				const auto seed = value.as<sol::optional<double>>();
+				if (!seed || !std::isfinite(*seed) || *seed < 0.0 || *seed > 4294967295.0 || *seed != std::floor(*seed))
+				{
+					fail("'seed' must be a whole number from 0 to 4294967295");
+				}
+				scatter.seed = static_cast<uint32_t>(*seed);
 			}
 			else if (name == "drawDistance") p_layer.drawDistance = number(name, value, 0.0f, 100000.0f);
 			else if (name == "castShadows") p_layer.castShadows = boolean(name, value);
@@ -723,6 +728,11 @@ void BindLuaComponents(sol::state& p_luaState)
 		"SetCollisionLayer", [](CPhysicalObject& p_this, int p_layer)
 		{
 			constexpr int kLastLayer = OvPhysics::Settings::PhysicsSettings::kLayerCount - 1;
+			if (p_layer < 0 || p_layer > kLastLayer)
+			{
+				OVLOG_WARNING(std::format("PhysicalObject:SetCollisionLayer: no layer {}, {} is used", p_layer, std::clamp(p_layer, 0, kLastLayer)));
+			}
+
 			p_this.SetCollisionLayer(static_cast<uint16_t>(std::clamp(p_layer, 0, kLastLayer)));
 		}
 	);
@@ -1760,7 +1770,13 @@ void BindLuaComponents(sol::state& p_luaState)
 		if (p_layer->get_type() == sol::type::number)
 		{
 			const double index = p_layer->as<double>();
-			return index >= 0.0 ? std::optional<size_t>{ static_cast<size_t>(index) } : std::nullopt;
+			if (!std::isfinite(index) || index != std::floor(index))
+			{
+				throw sol::error("Animator: a layer index is a whole number, from 0");
+			}
+
+			// Past the layers, a whole number names none
+			return index >= 0.0 && index < 1e9 ? std::optional<size_t>{ static_cast<size_t>(index) } : std::nullopt;
 		}
 
 		if (p_layer->get_type() == sol::type::string)

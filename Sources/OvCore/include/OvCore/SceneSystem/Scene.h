@@ -330,6 +330,7 @@ namespace OvCore::SceneSystem
 		std::unordered_multimap<uint64_t, ECS::Actor*> m_shadowedActorsByGUID;
 
 		FastAccessComponents m_fastAccessComponents;
+		bool m_constraintsApplied = false;
 		std::filesystem::path m_projectAssetsPath;
 		std::filesystem::path m_engineAssetsPath;
 		std::unique_ptr<Navigation::NavMesh> m_navigation;

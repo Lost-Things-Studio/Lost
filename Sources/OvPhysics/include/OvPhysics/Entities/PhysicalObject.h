@@ -235,6 +235,11 @@ namespace OvPhysics::Entities
 		uint16_t GetLayer() const;
 
 		/**
+		* Wakes the body up if it sleeps, so that it sees a change of what it collides with
+		*/
+		void WakeUp();
+
+		/**
 		* Defines if the physical object should be enabled or not
 		* @param p_enabled
 		*/
@@ -292,6 +297,13 @@ namespace OvPhysics::Entities
 		* @param p_rotation
 		*/
 		void RecordPhysicsPose(const OvMaths::FVector3& p_position, const OvMaths::FQuaternion& p_rotation);
+
+		/**
+		* After an update of several steps, brings the previous pose kept to the step before the last, along the way the
+		* update went: the interpolation then moves between the last two steps, as after an update of one
+		* @param p_stepCount
+		*/
+		void KeepLastStepOf(int p_stepCount);
 
 		/**
 		* Forgets the poses kept: the object starts again from where it is, without moving between two poses

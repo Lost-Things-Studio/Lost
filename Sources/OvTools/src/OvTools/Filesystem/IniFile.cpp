@@ -77,6 +77,19 @@ bool OvTools::Filesystem::IniFile::IsKeyExisting(const std::string& p_key) const
 	return m_data.find(p_key) != m_data.end();
 }
 
+std::vector<std::string> OvTools::Filesystem::IniFile::GetKeys() const
+{
+	std::vector<std::string> keys;
+	keys.reserve(m_data.size());
+
+	for (const auto& [key, value] : m_data)
+	{
+		keys.push_back(key);
+	}
+
+	return keys;
+}
+
 void OvTools::Filesystem::IniFile::RegisterPair(const std::string& p_key, const std::string& p_value)
 {
 	RegisterPair(std::make_pair(p_key, p_value));

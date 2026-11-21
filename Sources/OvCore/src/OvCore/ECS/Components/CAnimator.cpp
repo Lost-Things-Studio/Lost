@@ -457,6 +457,11 @@ void OvCore::ECS::Components::CAnimator::Apply(const SceneSystem::Scene& p_scene
 		{
 			Fail("no skinned mesh renderer on the actor");
 		}
+
+		// Fail dropped the graph: it is read again once the actor has a renderer
+		m_dirty = true;
+		m_driving = false;
+		m_layersSent = false;
 		return;
 	}
 

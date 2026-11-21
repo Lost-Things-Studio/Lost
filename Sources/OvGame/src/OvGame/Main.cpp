@@ -31,6 +31,9 @@ namespace
 
 		const auto result = OvGame::Core::LaunchOptions::Parse(arguments);
 
+		for (const std::string& ignored : result.ignored)
+			std::cerr << "OvGame: " << ignored << " is no option, it is left aside\n";
+
 		if (result.help)
 		{
 			std::cout << OvGame::Core::LaunchOptions::GetUsage();

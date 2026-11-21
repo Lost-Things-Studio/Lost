@@ -62,8 +62,9 @@ void OvAudio::Entities::AudioSource::Replay()
 	{
 		auto& backend = m_engine.GetBackend();
 		const bool paused = IsPaused();
-		const double position = backend.getStreamPosition(m_instance->GetHandle());
-		const float speed = backend.getRelativePlaySpeed(m_instance->GetHandle());
+		const auto handle = m_instance->GetHandle();
+		const double position = backend.getStreamPosition(handle);
+		const float speed = backend.getRelativePlaySpeed(handle);
 
 		Play(*m_sound);
 
@@ -74,7 +75,9 @@ void OvAudio::Entities::AudioSource::Replay()
 
 			if (paused)
 			{
+				// Paused by a suspension (the editor's pause), it resumes with the other sounds
 				m_instance->Pause();
+				m_engine.TransferSuspension(handle, m_instance->GetHandle());
 			}
 		}
 	}

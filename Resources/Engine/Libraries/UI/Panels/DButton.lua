@@ -55,7 +55,8 @@ end
 function DButton:Think(deltaTime)
 	DLabel.Think(self, deltaTime)
 
-	if self.m_Depressed and not Inputs.GetMouseButton(MouseButton.BUTTON_LEFT) then
+	-- The controller consumes the click it gives a panel: reading it as gameplay does would see the button up at once
+	if self.m_Depressed and not Inputs.GetMouseButton(MouseButton.BUTTON_LEFT, true) then
 		self.m_Depressed = false
 		self:InvalidatePaint()
 	end

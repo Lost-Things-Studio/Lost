@@ -96,6 +96,18 @@ TEST_SUITE("Project settings")
 		CHECK(Collide(settings, 1, 2));
 	}
 
+	TEST_CASE("a trailing comma in the layer names names no layer")
+	{
+		OvTests::LogCapture logs;
+		ProjectFile file("physics_layer_names=L0,L1,L2,L3,L4,L5,L6,L7,L8,L9,L10,L11,L12,L13,L14,L15,\n");
+
+		const auto settings = ProjectSettings::ReadPhysicsSettings(file.ini);
+
+		CHECK(logs.Count(ELogLevel::LOG_WARNING) == 0);
+		CHECK(settings.layerNames[0] == "L0");
+		CHECK(settings.layerNames[15] == "L15");
+	}
+
 	TEST_CASE("the save folder follows project_id, then executable_name")
 	{
 		CHECK(ProjectSettings::GetSaveName(ProjectFile("project_id=Quest\nexecutable_name=Quest 2\n").ini) == "Quest");

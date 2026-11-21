@@ -426,6 +426,69 @@ TEST_SUITE("Standard library")
 		CHECK(r.get<int>("count") == 2);
 	}
 
+	TEST_CASE_FIXTURE(StdFixture, "Timers: Clear from a callback stops every timer, the one calling it included")
+	{
+		const sol::table r = Load(R"(
+			local Timers = require(":Libraries/Std/Timers")
+			local r = { calls = 0 }
+			r.first = Timers.Every(0.25, function() r.calls = r.calls + 1 end)
+			r.clearing = Timers.Every(0.25, function() r.calls = r.calls + 1; Timers.Clear() end)
+			r.last = Timers.Every(0.25, function() r.calls = r.calls + 1 end)
+			return r
+		)");
+
+		Frame(0.25f);
+		CHECK(r.get<int>("calls") == 2); // the last one is cleared before its turn
+		CHECK_FALSE(Call<bool>(r, "first", "IsPending"));
+		CHECK_FALSE(Call<bool>(r, "clearing", "IsPending"));
+		CHECK_FALSE(Call<bool>(r, "last", "IsPending"));
+
+		Frame(0.25f);
+		Frame(0.25f);
+		CHECK(r.get<int>("calls") == 2);
+	}
+
+	TEST_CASE_FIXTURE(StdFixture, "Tween: a tween whose values or curve fail stops alone, and Clear works from its update")
+	{
+		OvTests::LogCapture logs;
+
+		const sol::table r = Load(R"(
+			local Tween = require(":Libraries/Std/Tween")
+			local r = { values = {} }
+			r.before = Tween.Run({ duration = 1, onUpdate = function(v) r.values.before = v end })
+			r.broken = Tween.Run({ duration = 1, from = Vector3.new(0, 0, 0), onUpdate = function() end })
+			r.badCurve = Tween.Run({ duration = 1, ease = function(t) if t > 0 then error("curve") end return t end })
+			r.after = Tween.Run({ duration = 1, onUpdate = function(v) r.values.after = v end })
+			return r
+		)");
+
+		Frame(0.25f);
+		Frame(0.25f);
+
+		// A Vector3 from with a number to does not add up, and the curve raises past 0: both stop, the others go on
+		CHECK_FALSE(Call<bool>(r, "broken", "IsRunning"));
+		CHECK_FALSE(Call<bool>(r, "badCurve", "IsRunning"));
+		CHECK(Call<bool>(r, "before", "IsRunning"));
+		CHECK(Call<bool>(r, "after", "IsRunning"));
+		CHECK(r["values"]["before"].get<double>() == doctest::Approx(0.5));
+		CHECK(r["values"]["after"].get<double>() == doctest::Approx(0.5));
+		CHECK(logs.Count(OvDebug::ELogLevel::LOG_ERROR) == 2);
+
+		const sol::table c = Load(R"(
+			local Tween = require(":Libraries/Std/Tween")
+			local c = {}
+			c.first = Tween.Run({ duration = 1 })
+			c.clearing = Tween.Run({ duration = 1, onUpdate = function(v) if v > 0 then Tween.Clear() end end })
+			c.last = Tween.Run({ duration = 1 })
+			return c
+		)");
+
+		Frame(0.25f);
+		CHECK_FALSE(Call<bool>(c, "first", "IsRunning"));
+		CHECK_FALSE(Call<bool>(c, "clearing", "IsRunning"));
+		CHECK_FALSE(Call<bool>(c, "last", "IsRunning"));
+	}
+
 	TEST_CASE_FIXTURE(StdFixture, "Tween: values over time, eased, delayed, looped, chained, cancelled and finished")
 	{
 		OvTests::LogCapture logs;

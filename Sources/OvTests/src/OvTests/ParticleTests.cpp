@@ -137,6 +137,37 @@ TEST_SUITE("Particles")
 		late.Play();
 		late.Advance(3.0f, FMatrix4::Identity);
 		CHECK(late.GetAliveCount() == 45);
+
+		// A burst at the cycle's very end comes with the step that ends the cycle
+		auto atEnd = Quiet();
+		atEnd.duration = 1.0f;
+		atEnd.looping = false;
+		atEnd.bursts = { { 1.0f, 3 } };
+		ParticleEmitter end(atEnd);
+		end.Play();
+
+		for (int i = 0; i < 4; ++i)
+		{
+			end.Advance(0.25f, FMatrix4::Identity);
+		}
+
+		CHECK(end.GetAliveCount() == 3);
+		CHECK_FALSE(end.IsPlaying());
+	}
+
+	TEST_CASE("a change of space clears the particles, whose places were in the other space")
+	{
+		auto settings = Quiet();
+		ParticleEmitter emitter(settings);
+		CHECK(emitter.Emit(5, FMatrix4::Identity) == 5);
+
+		settings.lifetimeMin = settings.lifetimeMax = 50.0f;
+		emitter.SetSettings(settings);
+		CHECK(emitter.GetAliveCount() == 5);
+
+		settings.space = EParticleSpace::LOCAL;
+		emitter.SetSettings(settings);
+		CHECK(emitter.GetAliveCount() == 0);
 	}
 
 	TEST_CASE("a full ring gives the oldest particle's slot to a new one")
@@ -458,6 +489,10 @@ TEST_SUITE("Particles")
 
 		emitter.Advance(0.6f, FMatrix4::Identity);
 		CHECK(emitter.GetAliveCount() == 0);
+
+		// A local system scaled to nothing has no space to take them into: they are left out, and nothing raises
+		ParticleEmitter flat(settings);
+		CHECK(flat.Emit(2, FMatrix4::Scaling({ 0.0f, 0.0f, 0.0f }), overrides) == 2);
 	}
 
 	TEST_CASE("only what changed goes to the GPU, and the clock moves back without moving a particle")

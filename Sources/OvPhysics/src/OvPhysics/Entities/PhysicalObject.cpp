@@ -225,6 +225,17 @@ void OvPhysics::Entities::PhysicalObject::RecordPhysicsPose(const OvMaths::FVect
 	m_hasPhysicsPose = true;
 }
 
+void OvPhysics::Entities::PhysicalObject::KeepLastStepOf(int p_stepCount)
+{
+	if (m_interpolated && m_hasPhysicsPose && p_stepCount > 1)
+	{
+		// The steps are taken as even over the update: exact at a steady speed, within a hair of it otherwise
+		const float share = static_cast<float>(p_stepCount - 1) / static_cast<float>(p_stepCount);
+		m_previousPhysicsPosition = OvMaths::FVector3::Lerp(m_previousPhysicsPosition, m_physicsPosition, share);
+		m_previousPhysicsRotation = OvMaths::FQuaternion::Normalize(OvMaths::FQuaternion::Slerp(m_previousPhysicsRotation, m_physicsRotation, share));
+	}
+}
+
 void OvPhysics::Entities::PhysicalObject::ResetPhysicsPose(const OvMaths::FVector3& p_position, const OvMaths::FQuaternion& p_rotation)
 {
 	m_previousPhysicsPosition = m_physicsPosition = p_position;
@@ -335,12 +346,23 @@ void OvPhysics::Entities::PhysicalObject::SetLayer(uint16_t p_layer)
 	if (m_body)
 	{
 		m_bodyInterface->SetObjectLayer(m_body->GetID(), m_layer);
+
+		// A sleeping body would keep resting on what it now goes through
+		WakeUp();
 	}
 }
 
 uint16_t OvPhysics::Entities::PhysicalObject::GetLayer() const
 {
 	return m_layer;
+}
+
+void OvPhysics::Entities::PhysicalObject::WakeUp()
+{
+	if (m_body && !m_body->IsStatic() && m_bodyInterface->IsAdded(m_body->GetID()))
+	{
+		m_bodyInterface->ActivateBody(m_body->GetID());
+	}
 }
 
 void OvPhysics::Entities::PhysicalObject::SetEnabled(bool p_enabled)
@@ -450,7 +472,22 @@ void OvPhysics::Entities::PhysicalObject::ApplyInterpolation(float p_alpha)
 
 void OvPhysics::Entities::PhysicalObject::RecreateBody()
 {
+	// Drawn between its last two steps, an interpolated body is made again where the physics has it, not where it is
+	// drawn: it goes on from there, rather than back by a share of a step
+	const bool drawnInterpolated = m_interpolated && m_hasPhysicsPose && m_body->IsDynamic() &&
+		IsSamePose(m_transform->GetWorldPosition(), m_transform->GetWorldRotation(), m_bodyPosition, m_bodyRotation);
+
 	CreateBody(DestroyBody());
+
+	if (drawnInterpolated && m_body->IsDynamic())
+	{
+		m_bodyInterface->SetPositionAndRotation(
+			m_body->GetID(),
+			Conversion::ToJoltVector3(m_physicsPosition),
+			Conversion::ToJoltQuaternion(m_physicsRotation),
+			JPH::EActivation::DontActivate
+		);
+	}
 }
 
 void OvPhysics::Entities::PhysicalObject::Consider()

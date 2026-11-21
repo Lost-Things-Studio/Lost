@@ -224,6 +224,23 @@ namespace
 		const float lengthSquared = p_direction.LengthSq();
 		return std::isfinite(lengthSquared) && lengthSquared > 1e-12f;
 	}
+
+	/**
+	* A point made of finite numbers
+	*/
+	bool IsFinite(const OvMaths::FVector3& p_point)
+	{
+		return std::isfinite(p_point.x) && std::isfinite(p_point.y) && std::isfinite(p_point.z);
+	}
+
+	/**
+	* How far a cast reaches: an infinite distance reaches as far as kUnlimitedDistance
+	*/
+	float CastDistance(float p_distance)
+	{
+		constexpr float kUnlimitedDistance = 100000.0f;
+		return std::isinf(p_distance) && p_distance > 0.0f ? kUnlimitedDistance : p_distance;
+	}
 }
 
 /**
@@ -426,6 +443,13 @@ bool OvPhysics::Core::PhysicsEngine::Update(float p_deltaTime)
 	m_physicsSystem->Update(simulatedStepCount * kFixedTimeStep, simulatedStepCount, m_tempAllocator.get(), m_jobSystem.get());
 
 	PostUpdate();
+
+	// The interpolation moves between the last two steps, however many this update took
+	for (PhysicalObject& physicalObject : m_physicalObjects)
+	{
+		physicalObject.KeepLastStepOf(simulatedStepCount);
+	}
+
 	return true;
 }
 
@@ -479,15 +503,17 @@ std::optional<RaycastHit> OvPhysics::Core::PhysicsEngine::Raycast(OvMaths::FVect
 std::vector<OvPhysics::Entities::PhysicsHit> OvPhysics::Core::PhysicsEngine::CastRay(const OvMaths::FVector3& p_origin, const OvMaths::FVector3& p_direction, float p_distance, const Settings::QuerySettings& p_settings) const
 {
 	const JPH::Vec3 direction = Conversion::ToJoltVector3(p_direction);
+	const float distance = CastDistance(p_distance);
 
-	if (!(p_distance > 0.0f) || !std::isfinite(p_distance) || !IsUsableDirection(direction))
+	if (!(distance > 0.0f) || !std::isfinite(distance) || !IsFinite(p_origin) || !IsUsableDirection(direction))
 	{
 		return {};
 	}
 
-	const JPH::RRayCast ray(Conversion::ToJoltVector3(p_origin), direction.Normalized() * p_distance);
+	const JPH::RRayCast ray(Conversion::ToJoltVector3(p_origin), direction.Normalized() * distance);
 
-	// A convex body is solid: a ray that starts inside it meets it at once
+	// A convex body is solid: a ray that starts inside it meets it at once. A mesh or a height field is met only by a
+	// ray that goes into the side its faces look to
 	JPH::AllHitCollisionCollector<JPH::CastRayCollector> collector;
 	m_physicsSystem->GetNarrowPhaseQuery().CastRay(
 		ray,
@@ -514,7 +540,7 @@ std::vector<OvPhysics::Entities::PhysicsHit> OvPhysics::Core::PhysicsEngine::Cas
 				ToPhysicalObject(body.GetUserData()),
 				Conversion::ToOvVector3(point),
 				Conversion::ToOvVector3(body.GetWorldSpaceSurfaceNormal(hit.mSubShapeID2, point)),
-				hit.mFraction * p_distance
+				hit.mFraction * distance
 			});
 		}
 	}
@@ -525,8 +551,9 @@ std::vector<OvPhysics::Entities::PhysicsHit> OvPhysics::Core::PhysicsEngine::Cas
 std::vector<OvPhysics::Entities::PhysicsHit> OvPhysics::Core::PhysicsEngine::CastSphere(const OvMaths::FVector3& p_origin, float p_radius, const OvMaths::FVector3& p_direction, float p_distance, const Settings::QuerySettings& p_settings) const
 {
 	const JPH::Vec3 direction = Conversion::ToJoltVector3(p_direction);
+	const float distance = CastDistance(p_distance);
 
-	if (!(p_radius > 0.0f) || !std::isfinite(p_radius) || !(p_distance > 0.0f) || !std::isfinite(p_distance) || !IsUsableDirection(direction))
+	if (!(p_radius > 0.0f) || !std::isfinite(p_radius) || !(distance > 0.0f) || !std::isfinite(distance) || !IsFinite(p_origin) || !IsUsableDirection(direction))
 	{
 		return {};
 	}
@@ -540,12 +567,14 @@ std::vector<OvPhysics::Entities::PhysicsHit> OvPhysics::Core::PhysicsEngine::Cas
 		&sphere,
 		JPH::Vec3::sOne(),
 		JPH::RMat44::sTranslation(Conversion::ToJoltVector3(p_origin)),
-		unitDirection * p_distance
+		unitDirection * distance
 	);
 
-	// An object the sphere starts in is met at once, at its deepest point
+	// A convex object the sphere starts in is met at once, at its deepest point, whichever way the sphere goes. A mesh
+	// or a height field is met only by a sphere that goes into the side its faces look to
 	JPH::ShapeCastSettings castSettings;
 	castSettings.mReturnDeepestPoint = true;
+	castSettings.mBackFaceModeConvex = JPH::EBackFaceMode::CollideWithBackFaces;
 
 	JPH::AllHitCollisionCollector<JPH::CastShapeCollector> collector;
 	m_physicsSystem->GetNarrowPhaseQuery().CastShape(
@@ -572,7 +601,7 @@ std::vector<OvPhysics::Entities::PhysicsHit> OvPhysics::Core::PhysicsEngine::Cas
 			ToPhysicalObject(bodyInterface.GetUserData(hit.mBodyID2)),
 			Conversion::ToOvVector3(hit.mContactPointOn2),
 			Conversion::ToOvVector3(normal),
-			hit.mFraction * p_distance
+			hit.mFraction * distance
 		});
 	}
 
@@ -581,7 +610,7 @@ std::vector<OvPhysics::Entities::PhysicsHit> OvPhysics::Core::PhysicsEngine::Cas
 
 std::vector<OvPhysics::Entities::PhysicalObject*> OvPhysics::Core::PhysicsEngine::OverlapSphere(const OvMaths::FVector3& p_center, float p_radius, const Settings::QuerySettings& p_settings) const
 {
-	if (!(p_radius > 0.0f) || !std::isfinite(p_radius))
+	if (!(p_radius > 0.0f) || !std::isfinite(p_radius) || !IsFinite(p_center))
 	{
 		return {};
 	}
@@ -596,11 +625,12 @@ std::vector<OvPhysics::Entities::PhysicalObject*> OvPhysics::Core::PhysicsEngine
 {
 	constexpr float kMinHalfExtent = 1e-4f;
 
-	const JPH::Vec3 halfExtents = Conversion::ToJoltVector3(p_halfExtents).Abs();
-	if (!std::isfinite(halfExtents.ReduceMax()))
+	if (!IsFinite(p_halfExtents) || !IsFinite(p_center))
 	{
 		return {};
 	}
+
+	const JPH::Vec3 halfExtents = Conversion::ToJoltVector3(p_halfExtents).Abs();
 
 	JPH::BoxShape box(JPH::Vec3::sMax(halfExtents, JPH::Vec3::sReplicate(kMinHalfExtent)));
 	box.SetEmbedded();
@@ -662,6 +692,11 @@ void OvPhysics::Core::PhysicsEngine::SetLayersCollide(uint16_t p_layer1, uint16_
 		return;
 	}
 
+	if (m_objectLayerPairFilter->ShouldCollide(p_layer1, p_layer2) == p_collide)
+	{
+		return;
+	}
+
 	if (p_collide)
 	{
 		m_objectLayerPairFilter->EnableCollision(p_layer1, p_layer2);
@@ -669,6 +704,15 @@ void OvPhysics::Core::PhysicsEngine::SetLayersCollide(uint16_t p_layer1, uint16_
 	else
 	{
 		m_objectLayerPairFilter->DisableCollision(p_layer1, p_layer2);
+	}
+
+	// The bodies resting on one another would sleep on through the change
+	for (Entities::PhysicalObject& physicalObject : m_physicalObjects)
+	{
+		if (const uint16_t layer = physicalObject.GetLayer(); layer == p_layer1 || layer == p_layer2)
+		{
+			physicalObject.WakeUp();
+		}
 	}
 }
 

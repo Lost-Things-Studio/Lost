@@ -51,7 +51,7 @@ namespace
 		const auto errorEvent = [](OvWindowing::Context::EDeviceError, std::string errMsg) {
 			errMsg = "Overload requires OpenGL 4.5 or newer.\r\n" + errMsg;
 #ifdef _WIN32
-			MessageBox(0, errMsg.c_str(), "Overload", MB_OK | MB_ICONSTOP);
+			MessageBox(0, errMsg.c_str(), "Lost", MB_OK | MB_ICONSTOP);
 #else
 			// Use zenity for error message on Linux
 			std::string command = "zenity --error --title=\"Overload\" --text=\"" + errMsg + "\" 2>/dev/null";

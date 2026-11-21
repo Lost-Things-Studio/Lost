@@ -147,7 +147,7 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	device = std::make_unique<OvWindowing::Context::Device>(deviceSettings);
 	const auto workAreaSize = device->GetWorkAreaSize();
 	const auto bestFitWindowSizeAndPosition = FindBestFitWindowSizeAndPosition(workAreaSize);
-	windowSettings.title = "Overload";
+	windowSettings.title = "Lost";
 	windowSettings.x = bestFitWindowSizeAndPosition[0];
 	windowSettings.y = bestFitWindowSizeAndPosition[1];
 	windowSettings.width = bestFitWindowSizeAndPosition[2];
@@ -207,10 +207,10 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 		engineAssetsPath
 	);
 
-	// Play mode keeps its saves where the built game will: they are the same game's
 	/* What the scripts may do: their saves, their Json and the longest frame step */
 	const auto runtimeLimits = OvCore::Helpers::ProjectSettings::ReadRuntimeLimits(projectSettings);
 
+	// Play mode keeps its saves where the built game will: they are the same game's
 	saveStorage = std::make_unique<OvTools::Filesystem::SaveStorage>(
 		OvTools::Filesystem::SaveStorage::GetDefaultRoot(OvCore::Helpers::ProjectSettings::GetSaveName(projectSettings)),
 		runtimeLimits.storage
@@ -268,8 +268,29 @@ OvEditor::Core::Context::~Context()
 
 void OvEditor::Core::Context::ResetProjectSettings()
 {
+	// The settings the editor manages go back to their defaults; the file's other keys (the project's collision
+	// layers, say) are the project's own and stay. So do the keys that name the project's own content: its ID, which its
+	// saves are named after, and its input actions, translations and audio buses, which its scripts rely on
+	const OvTools::Filesystem::IniFile previous = projectSettings;
+
 	projectSettings.RemoveAll();
 	CompleteProjectSettings();
+
+	for (const char* key : { "project_id", "input_actions", "translations", "default_language", "audio_buses" })
+	{
+		if (previous.IsKeyExisting(key))
+		{
+			projectSettings.Set<std::string>(key, previous.Get<std::string>(key));
+		}
+	}
+
+	for (const auto& key : previous.GetKeys())
+	{
+		if (!projectSettings.IsKeyExisting(key))
+		{
+			projectSettings.Add<std::string>(key, previous.Get<std::string>(key));
+		}
+	}
 }
 
 bool OvEditor::Core::Context::CompleteProjectSettings()
@@ -301,4 +322,10 @@ void OvEditor::Core::Context::ApplyProjectSettings()
 	physicsEngine->SetGravity(physicsSettings.gravity);
 	physicsEngine->ApplyLayerSettings(physicsSettings);
 	audioEngine->SetBuses(OvCore::Helpers::ProjectSettings::ReadAudioBuses(projectSettings));
+
+	// The save folder follows the project's ID, or its executable's name
+	if (auto root = OvTools::Filesystem::SaveStorage::GetDefaultRoot(OvCore::Helpers::ProjectSettings::GetSaveName(projectSettings)); root != saveStorage->GetRoot())
+	{
+		*saveStorage = OvTools::Filesystem::SaveStorage(std::move(root), saveStorage->GetLimits());
+	}
 }

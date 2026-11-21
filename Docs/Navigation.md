@@ -23,7 +23,8 @@ end
   - Height fields, mesh colliders, boxes, spheres and capsules. A height field's holes are left out, as the physics
     leaves them out, and so a mesh collider laid over a hole (a cave, a tunnel) is walked in.
   - Each shape is the one the physics makes, the actor's scale included. Spheres and capsules are a mesh slightly
-    larger than the shape.
+    larger than the shape. A mirrored actor (a negative scale) is the exception: the mesh follows the mirror, where the
+    physics collides with the unmirrored shape (see [Physics](Physics.md)).
   - Triggers are left out, and so are dynamic and kinematic bodies, which move.
   - Models without a collider are not seen: the mesh follows what characters collide with, not what is drawn.
 - **The settings**, each brought into its range:

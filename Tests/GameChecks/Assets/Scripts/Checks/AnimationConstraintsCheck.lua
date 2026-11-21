@@ -3,7 +3,8 @@
 -- turns; faded out by its weight. A rope hanging beside a post (Models/Rigs/Post.gltf, from make_rigs.py) swings back
 -- as the post starts off, stays out of the post where a twin without the collider goes through it, comes back under
 -- once the post stops, starts again from rest after a jump, stays above a ground, and rests out of sight. Wrong bones
--- and settings are named. It also draws them from the front, for a screenshot (--frames 30 --screenshot)
+-- and settings are named. Once the scene's last look at and spring bones are removed, the bones they turned are the
+-- animation's again. It also draws them from the front, for a screenshot (--frames 30 --screenshot)
 local Check = require("Scripts/Checks/Check")
 
 local AnimationConstraintsCheck = {}
@@ -192,7 +193,14 @@ local function StepLook(nDt)
 		tLook.nPhase = 9
 	elseif tLook.nPhase == 9 then
 		oCheck:Expect(Mentions(oLook:GetError(), "chain"), "bones that make no chain are refused: " .. tostring(oLook:GetError()))
-		tLook.nPhase = 10
+
+		-- Turned once more, to the side, for the removal below
+		oLook:SetBones({ { "head", 1 } })
+		oLook:SetTargetPosition(BaseHead() + Vector3.new(3, 0, 3))
+		tLook.nPhase, tLook.nWaited = 10, 0
+	elseif tLook.nPhase == 10 and tLook.nWaited >= 1.5 then
+		oCheck:Expect(TurnedFront("head"):Dot(Vector3.new(0, 0, 1)) < 0.99, "the head turns to the side again")
+		tLook.nPhase = 11
 	end
 end
 
@@ -313,7 +321,14 @@ function AnimationConstraintsCheck:OnUpdate(nDt)
 	StepLook(nDt)
 	StepSpring(nDt)
 
-	if tLook.nPhase == 10 and tSpring.nPhase == 8 then
+	if tLook.nPhase == 11 and tSpring.nPhase == 8 then
+		-- The scene's last look at and spring bones removed: the bones they turned go back to the animation
+		tLook.oLookerActor:RemoveLookAt()
+		tSpring.oActor:RemoveSpringBones()
+		tSpring.oLooseActor:RemoveSpringBones()
+		tLook.nPhase = 12
+	elseif tLook.nPhase == 12 then
+		oCheck:Expect(TurnedFront("head"):Dot(Vector3.new(0, 0, 1)) > 1 - 1e-5, "with the last constraint removed, the head is the animation's again")
 		bDone = true
 		oCheck:Finish()
 	end

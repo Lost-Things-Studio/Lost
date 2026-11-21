@@ -31,7 +31,7 @@ project "OvCore"
 		dependdir .. "tinyxml2/include",
 		dependdir .. "tracy",
 
-		-- Overload SDK
+		-- Lost SDK
 		"%{wks.location}/Sources/OvAudio/include",
 		"%{wks.location}/Sources/OvDebug/include",
 		"%{wks.location}/Sources/OvMaths/include",

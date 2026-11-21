@@ -31,6 +31,7 @@ local kEpsilon = 1e-6
 
 local running = {}
 local added = {}
+local advancing = nil -- the tweens Advance walks, while it runs, so that Clear reaches them too
 local driven = false
 local Advance
 
@@ -42,16 +43,18 @@ local function Fail(message)
 	Debug.LogError("Std.Tween: a function failed and its tween is stopped: " .. tostring(message))
 end
 
---- Calls onUpdate with the value at a share of a run; false if it failed
+--- Calls onUpdate with the value at a share of a run; false if it failed. The curve and the value are worked out
+--- inside the protected call too: a curve that raises, or values that do not add up, stop this tween only
 local function Apply(tween, share)
-	local eased = tween.m_ease ~= nil and tween.m_ease(share) or share
 	tween.m_progress = share
 
-	if tween.m_onUpdate == nil then
-		return true
-	end
+	local ok, message = pcall(function()
+		local eased = tween.m_ease ~= nil and tween.m_ease(share) or share
 
-	local ok, message = pcall(tween.m_onUpdate, tween.m_from + (tween.m_to - tween.m_from) * eased, eased)
+		if tween.m_onUpdate ~= nil then
+			tween.m_onUpdate(tween.m_from + (tween.m_to - tween.m_from) * eased, eased)
+		end
+	end)
 
 	if not ok then
 		Fail(message)
@@ -238,34 +241,34 @@ end
 
 --- Advances every tween, once a frame
 Advance = function(gameStep, realStep)
-	local current = added
-	added = {}
+	local list = running
 
-	for i = 1, #current do
-		running[#running + 1] = current[i]
+	for i = 1, #added do
+		list[#list + 1] = added[i]
 	end
 
-	local kept = 0
+	-- A function may start tweens (to added) or clear them all: the list walked stays the same meanwhile
+	added = {}
+	running = {}
+	advancing = list
 
-	for i = 1, #running do
-		local tween = running[i]
-		running[i] = nil
+	for i = 1, #list do
+		local tween = list[i]
 
 		if Step(tween, gameStep, realStep) then
-			kept = kept + 1
-			running[kept] = tween
+			running[#running + 1] = tween
 		end
 	end
+
+	advancing = nil
 end
 
 --- Stops every tween, without onDone
 function Tween.Clear()
-	for _, tween in ipairs(running) do
-		tween:Cancel()
-	end
-
-	for _, tween in ipairs(added) do
-		tween:Cancel()
+	for _, list in ipairs({ running, added, advancing or {} }) do
+		for i = 1, #list do
+			list[i]:Cancel()
+		end
 	end
 
 	running = {}

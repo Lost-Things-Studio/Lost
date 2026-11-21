@@ -27,7 +27,7 @@ if [ "$SKIP_PROJECT_GENERATION" != "true" ]; then
 fi
 
 # Build the solution
-echo "Building Overload in $CONFIGURATION mode..."
+echo "Building Lost in $CONFIGURATION mode..."
 
 pushd "$(dirname "$0")/../.." > /dev/null
 make config=${CONFIG_LOWER}_x64 -j$(nproc)
