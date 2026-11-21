@@ -403,3 +403,5 @@ Lost's first version: Overload 1.9 and the changes below.
   each frame.
 - **An interpolated body made again** (its scale changed) goes on from where the physics has it. It started again from
   where it was drawn, a share of a step behind.
+- **Reset keeps the project's content**: `input_actions`, `translations`, `default_language` and `audio_buses` stay,
+  as `project_id` does. Reset emptied them, which left the game without its actions, its texts and its buses.

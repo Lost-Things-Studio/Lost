@@ -47,5 +47,6 @@ it.
   adds the key with its default and keeps every other value. The file is written back, its lines possibly in another
   order, without its comments and the lines it cannot read (a line needs one `=`). It leaves the optional keys out.
 - The editor's Project Settings panel edits these values; its Reset button sets them all back to their defaults but
-  `project_id`, and keeps the file's other keys, which other parts of the engine read (the optional keys among them).
+  those that name the project's own content (`project_id`, `input_actions`, `translations`, `default_language` and
+  `audio_buses`), and keeps the file's other keys, which other parts of the engine read (the optional keys among them).
   Reset, like any change in the panel, takes effect with Apply.

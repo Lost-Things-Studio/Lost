@@ -269,12 +269,20 @@ OvEditor::Core::Context::~Context()
 void OvEditor::Core::Context::ResetProjectSettings()
 {
 	// The settings the editor manages go back to their defaults; the file's other keys (the project's collision
-	// layers, say) are the project's own and stay, and so does its ID, which its saves are named after
+	// layers, say) are the project's own and stay. So do the keys that name the project's own content: its ID, which its
+	// saves are named after, and its input actions, translations and audio buses, which its scripts rely on
 	const OvTools::Filesystem::IniFile previous = projectSettings;
 
 	projectSettings.RemoveAll();
 	CompleteProjectSettings();
-	projectSettings.Set<std::string>("project_id", previous.GetOrDefault<std::string>("project_id", ""));
+
+	for (const char* key : { "project_id", "input_actions", "translations", "default_language", "audio_buses" })
+	{
+		if (previous.IsKeyExisting(key))
+		{
+			projectSettings.Set<std::string>(key, previous.Get<std::string>(key));
+		}
+	}
 
 	for (const auto& key : previous.GetKeys())
 	{
