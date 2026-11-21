@@ -367,3 +367,6 @@ Lost's first version: Overload 1.9 and the changes below.
   The self of an operator or a field is checked to be a userdata, so that `nil + v` and a table given a vector's
   metatable are refused too. A maths argument costs a read of its metatable, about 30 ns; a field, next to nothing.
   See [Docs/Scripting.md](Docs/Scripting.md).
+- **A transform read without UI data stays without**: reading its clip setting gave UI data to every transform read
+  from a file, so that a scene saved again wrote UI fields for each of its actors, and an actor read anew by Revert to
+  Prefab kept the UI data it had.
