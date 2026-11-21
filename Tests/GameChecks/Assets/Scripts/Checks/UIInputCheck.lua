@@ -32,6 +32,7 @@ function UIInputCheck:OnUpdate(nDelta)
 		nThinksAtFrame3 = nThinks
 	elseif nFrame == 6 then
 		oCheck:Equal(nThinks - nThinksAtFrame3, 3, "one update a frame, the manual calls ignored")
+		oCheck:Equal(nThinks, 5, "one update a frame from the first, when the controller starts updating itself too")
 
 		-- What the engine gives, with no keyboard
 		oCheck:Equal(Inputs.GetTypedText(), "", "no text typed")

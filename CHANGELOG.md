@@ -373,3 +373,6 @@ Lost's first version: Overload 1.9 and the changes below.
 - **The UI library's buttons answer a click**: the controller consumes the click it gives a panel, and `DButton` read
   the mouse as gameplay does, so it saw the button up at once and never clicked. Every input read of the library now
   takes what the UI consumed, and a test holds it to that.
+- **A UI controller updated by hand is updated once a frame**: in the frame after its creation, a Behaviour's
+  `controller:Update` and the controller's own update both ran, so its panels thought twice and a key typed then was
+  typed twice.
