@@ -128,7 +128,8 @@ sets.
     state that does not loop holds its last frame).
 - **Transitions**: `from` (a state, or `"*"` for any state but the target), `to`, `conditions`, `duration` (the fade,
   in seconds, 0.25 by default) and `exitTime` (in the state's normalized time: within a loop, it comes back every
-  loop; past 1, it counts loops). A transition needs conditions, an exit time, or both.
+  loop; past 1, it counts loops, and a state that does not loop reaches it as it ends). A transition needs conditions,
+  an exit time, or both.
   - A **condition** names its `parameter`: a number takes an `op` (`">"`, `">="`, `"<"`, `"<="`, `"=="`, `"!="`) and a
     `value`; a boolean a `value` (true by default) and `"=="` (by default) or `"!="`; a trigger nothing else, and the
     transition uses it up.

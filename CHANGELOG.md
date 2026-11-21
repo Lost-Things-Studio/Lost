@@ -383,3 +383,9 @@ Lost's first version: Overload 1.9 and the changes below.
 - **An event's owner**: `Events.AddUpdate`, `AddLateUpdate` and `AddQuit` take an actor or a Behaviour's table (its
   actor), and raise an error for any other owner. Before, a Behaviour's table, or a mistake, was taken for no owner,
   and the callback outlived its actor.
+- **An animator plays again once its renderer is back**: its skinned mesh renderer removed then added, it never read
+  its graph again.
+- **An exit time past 1 on a state that does not loop** is reached as the state ends. Such a state holds at its end, so
+  the transition never left.
+- **An animator's layer index** that is not a whole number, or endless, raises an error; a whole one past the layers
+  names none. Before, it was cut to a whole number, and an endless one was undefined.

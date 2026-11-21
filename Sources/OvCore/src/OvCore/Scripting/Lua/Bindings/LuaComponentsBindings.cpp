@@ -1766,7 +1766,13 @@ void BindLuaComponents(sol::state& p_luaState)
 		if (p_layer->get_type() == sol::type::number)
 		{
 			const double index = p_layer->as<double>();
-			return index >= 0.0 ? std::optional<size_t>{ static_cast<size_t>(index) } : std::nullopt;
+			if (!std::isfinite(index) || index != std::floor(index))
+			{
+				throw sol::error("Animator: a layer index is a whole number, from 0");
+			}
+
+			// Past the layers, a whole number names none
+			return index >= 0.0 && index < 1e9 ? std::optional<size_t>{ static_cast<size_t>(index) } : std::nullopt;
 		}
 
 		if (p_layer->get_type() == sol::type::string)

@@ -232,6 +232,22 @@ TEST_SUITE("Animation graph")
 		CHECK(StateName(graph, 0) == "Move");
 	}
 
+	TEST_CASE("a state that does not loop reaches an exit time past its end as it ends")
+	{
+		GraphDefinition definition;
+		const auto error = GraphDefinition::Parse(Layer(R"([ { "name": "Wave", "clip": "Wave", "loop": false }, { "name": "Rest" } ])",
+			R"([ { "from": "Wave", "to": "Rest", "exitTime": 2.5, "duration": 0 } ])"), definition);
+		REQUIRE_MESSAGE(!error, error.value_or(""));
+
+		AnimationGraph graph(std::move(definition), { 1.0f });
+		Run(graph, 0.9f);
+		CHECK(StateName(graph, 0) == "Wave");
+
+		// It holds its last frame from 1 s: there, the exit time is reached
+		Run(graph, 0.2f);
+		CHECK(StateName(graph, 0) == "Rest");
+	}
+
 	TEST_CASE("a trigger is used up by the transition it starts; any state goes to its target, not to itself")
 	{
 		auto graph = Graph();
