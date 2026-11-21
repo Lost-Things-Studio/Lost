@@ -71,6 +71,11 @@ function VegetationCheck:OnUpdate()
 		oCheck:Expect(t.nStones > 0 and t.nStones < t.nGrass, "fewer stones: " .. t.nStones)
 		oCheck:Equal(oVegetation:GetInstanceCount(), t.nGrass + t.nStones, "the count of every layer is the sum")
 
+		-- A seed is a whole number up to 4294967295, read exactly
+		oVegetation:SetLayer(0, { seed = 16777217 })
+		oCheck:Equal(oVegetation:GetLayer(0).seed, 16777217, "a seed past 2^24 reads back as it was given")
+		oCheck:Expect(Fails(function() oVegetation:SetLayer(0, { seed = 4294967296 }) end), "a seed past 4294967295 is refused")
+
 		-- The same seed scatters the same
 		oVegetation:SetLayer(0, { seed = 7 })
 	elseif nFrame == 27 then

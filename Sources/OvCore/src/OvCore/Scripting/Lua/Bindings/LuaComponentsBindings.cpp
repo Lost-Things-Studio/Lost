@@ -279,9 +279,13 @@ namespace
 			else if (name == "maxHeight") scatter.maxHeight = number(name, value, -10000.0f, 10000.0f);
 			else if (name == "seed")
 			{
-				const float seed = number(name, value, 0.0f, 4294967295.0f);
-				if (seed != std::floor(seed)) fail("'seed' must be a whole number");
-				scatter.seed = static_cast<uint32_t>(seed);
+				// Read as a double: a float holds whole numbers exactly only up to 2^24, and rounds 4294967295 up past the range
+				const auto seed = value.as<sol::optional<double>>();
+				if (!seed || !std::isfinite(*seed) || *seed < 0.0 || *seed > 4294967295.0 || *seed != std::floor(*seed))
+				{
+					fail("'seed' must be a whole number from 0 to 4294967295");
+				}
+				scatter.seed = static_cast<uint32_t>(*seed);
 			}
 			else if (name == "drawDistance") p_layer.drawDistance = number(name, value, 0.0f, 100000.0f);
 			else if (name == "castShadows") p_layer.castShadows = boolean(name, value);

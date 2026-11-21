@@ -409,3 +409,5 @@ Lost's first version: Overload 1.9 and the changes below.
   an exception the engine did not catch.
 - **A save file whose size cannot be read** counts as an entry and adds nothing to the folder's total. Its size read
   as the largest number, so every write was refused as "storage full".
+- **A vegetation layer's seed** is read exactly, up to 4294967295, and a larger one raises an error. It was read as a
+  float, which rounds every seed past 16777216, and 4294967296 passed.
