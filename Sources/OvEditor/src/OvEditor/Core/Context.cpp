@@ -147,7 +147,7 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	device = std::make_unique<OvWindowing::Context::Device>(deviceSettings);
 	const auto workAreaSize = device->GetWorkAreaSize();
 	const auto bestFitWindowSizeAndPosition = FindBestFitWindowSizeAndPosition(workAreaSize);
-	windowSettings.title = "Overload";
+	windowSettings.title = "Lost";
 	windowSettings.x = bestFitWindowSizeAndPosition[0];
 	windowSettings.y = bestFitWindowSizeAndPosition[1];
 	windowSettings.width = bestFitWindowSizeAndPosition[2];

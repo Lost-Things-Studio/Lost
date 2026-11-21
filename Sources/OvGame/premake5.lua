@@ -20,7 +20,7 @@ project "OvGame"
 		dependdir .. "ImGui/include",
 		dependdir .. "tracy",
 
-		-- Overload SDK
+		-- Lost SDK
 		"%{wks.location}/Sources/OvAudio/include",
 		"%{wks.location}/Sources/OvCore/include",
 		"%{wks.location}/Sources/OvDebug/include",
@@ -49,7 +49,7 @@ project "OvGame"
 		"tinyxml2",
 		"tracy",
 
-		-- Overload SDK
+		-- Lost SDK
 		"OvAudio",
 		"OvCore",
 		"OvDebug",

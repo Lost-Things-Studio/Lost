@@ -1,5 +1,5 @@
-# Contributing to Overload
-First of all, thank you for your interest in Overload! Any contribution is welcome, including:
+# Contributing to Lost
+First of all, thank you for your interest in Lost! Any contribution is welcome, including:
 - Reporting a bug
 - Submitting a fix
 - Proposing new features
@@ -26,7 +26,7 @@ We use GitHub issues to track bugs. Report a bug by opening a new issue, it's th
 
 ## Coding Conventions
 ### File Header
-Every file must include the following header:
+Every file must include the following header, the one of Overload, which Lost is based on:
 ```cpp
 /**
 * @project: Overload
@@ -95,4 +95,4 @@ Every file must include the following header:
 *Note: Some coding conventions may have been overlooked during the writing of this document, so always refer to the existing codebase.*
 
 ## Thanks!
-Thanks for being a part of the [Overload Technologies](https://github.com/Overload-Technologies) team!
+Thanks for helping Lost!

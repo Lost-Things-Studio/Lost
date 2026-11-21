@@ -18,7 +18,7 @@ project "OvWindowing"
 		-- Dependencies
 		dependdir .. "glfw/include",
 
-		-- Overload SDK
+		-- Lost SDK
 		"%{wks.location}/Sources/OvRendering/include",
 		"%{wks.location}/Sources/OvTools/include",
 

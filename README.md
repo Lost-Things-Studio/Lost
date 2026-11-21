@@ -36,7 +36,7 @@ because more than one kind of game needs them.
 git clone https://github.com/Lost-Things-Studio/lost
 cd lost
 .\gen_proj.bat vs2022
-.\Overload.sln
+.\Lost.sln
 ```
 
 ### Linux (Clang)

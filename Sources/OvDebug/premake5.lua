@@ -15,7 +15,7 @@ project "OvDebug"
 	}
 
 	includedirs {
-		-- Overload SDK
+		-- Lost SDK
 		"%{wks.location}/Sources/OvTools/include",
 
 		-- Current Project

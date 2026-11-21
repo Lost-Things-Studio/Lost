@@ -12,11 +12,10 @@ end
 
 local version = readVersion()
 
--- The version of Overload the engine is based on
 -- The version of Overload that Lost is based on: update it with each sync from Overload
 local overloadVersion = "1.9"
 
-workspace "Overload"
+workspace "Lost"
 	configurations { "Debug", "Release", "Publish" }
 	platforms { "x64" }
 	startproject "OvEditor"
@@ -78,7 +77,7 @@ group "Dependencies/Prebuilt"
 	include "Dependencies/doctest"
 group ""
 
-group "Overload SDK"
+group "Lost SDK"
 	include "Sources/OvAudio"
 	include "Sources/OvCore"
 	include "Sources/OvDebug"
@@ -90,12 +89,12 @@ group "Overload SDK"
 	include "Sources/OvWindowing"
 group ""
 
-group "Overload Apps"
+group "Lost Apps"
 	include "Sources/OvEditor"
 	include "Sources/OvGame"
 group ""
 
-group "Overload Tests"
+group "Lost Tests"
 	include "Sources/OvTests"
 group ""
 
