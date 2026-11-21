@@ -139,7 +139,9 @@ binding.
     `Events.Remove(id)` removes the callback at once, even while its event runs;
   - the callback receives the same step as `OnUpdate`, and runs from the next frame on;
   - one that raises an error is logged and removed; one given an owner, an actor or a Behaviour's table (its actor is
-    taken), is removed once that actor is no longer alive. Any other owner raises an error;
+    taken), is removed once that actor is no longer alive. Any other owner raises an error. An owner is known by its
+    GUID: a scene loaded again makes its actors again under the same GUIDs, and a callback owned by one of them goes on
+    with the new actor;
   - the callbacks live with the Lua state, like the modules: they outlive a scene change, and the editor drops them
     when play starts and stops. They run only while the scene plays.
   - The standard library's timers and tweens run this way, in `LateUpdate` (see [Standard library](StandardLibrary.md)).
@@ -150,7 +152,9 @@ binding.
     what was kept for later, a save above all;
   - `Events.Remove(id)` removes it before then; one that raises an error is logged, and the others still run; one
     whose owner is no longer alive is skipped; one added while the game ends is not called. A scene change is not the
-    game's end.
+    game's end;
+  - the scripts reloaded while the game plays (the editor's Reload) start a new Lua state, which drops these callbacks
+    uncalled, and with them a `Std.SaveFile` write still waiting.
 - A `BoneAttachment` is placed after every script, so a script reading such an actor's place during the frame sees
   where it was the frame before.
 - The frame step handed to the Behaviours is in [0, 0.1] seconds, times the time scale, which is never below 0. A

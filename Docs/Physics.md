@@ -8,7 +8,9 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
 - A capsule's `height` is its straight part: the body is `height + 2 × radius` tall, centred on its actor.
 - A collider scales with its actor: a capsule's radius follows the X scale and its straight part the Y scale.
 - A negative scale mirrors what is drawn, not what collides: a mesh collider or a height field under a mirrored actor
-  collides as the unmirrored shape, as with Bullet before. Mirror their data instead.
+  collides as the unmirrored shape, as with Bullet before. Mirror their data instead. The navigation mesh, a terrain's
+  heights (`GetHeightAt`) and its vegetation follow the mirror, so that they and the collisions part ways under a
+  mirrored actor: keep such an actor's scale positive.
 - A linear or angular factor only frees or locks an axis: 0 locks it, anything else frees it whole. A body with no axis
   free is simulated as kinematic.
 - A static body (`SetStatic(true)`, `static` in a file) never moves by itself and only follows its transform when the
@@ -107,7 +109,8 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
   with up to `push_strength` newtons (100 by default); bodies meet it as they would a kinematic body, and cannot push
   it.
 - Its collision layer works as a body's, for what it stands on and walks into. Queries meet it, triggers see it come
-  in and go, and it raises collision events with what it touches, static bodies included.
+  in and go, and it raises collision events with what it touches, static bodies included. Those events come from its
+  own moves: standing still, it raises none with a dynamic body that comes to rest against it.
 - Moving its actor's transform takes it there at once. A disabled controller stays where it is.
 - The settings of a body (friction, bounciness, factors, collision mode, trigger, kinematic, static) mean nothing to a
   controller, and its file only holds its own. A setting missing from a file keeps its default.

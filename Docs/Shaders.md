@@ -69,6 +69,9 @@ include:
 | `STANDARD_SURFACE` | `void StandardSurface(inout StandardSurfaceData surface, vec3 fragPos, vec2 texCoords)` | Once the material's maps are read, before the lighting. After the alpha tests: clip with `STANDARD_CLIP` |
 | `STANDARD_LIGHTING` | `vec3 StandardLighting(vec3 color, StandardSurfaceData surface, vec3 fragPos)` | On the lit colour, emission included, before the fog: a rim light, a tint |
 
+The normal `STANDARD_VERTEX` changes is the one a material without a normal map is lit by; with a normal map, the
+tangent frame stays the model's: change the normal in `STANDARD_SURFACE` too if it must follow.
+
 `StandardSurfaceData` holds `albedo` (rgb lit, a written out), `normal` (world space), `metallic`, `roughness`, `ao`
 and `emissive`. A shader that only uses some of them leaves the others to `Standard`, which keeps its own behaviour,
 uniforms and variants.
