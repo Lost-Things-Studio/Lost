@@ -370,3 +370,6 @@ Lost's first version: Overload 1.9 and the changes below.
 - **A transform read without UI data stays without**: reading its clip setting gave UI data to every transform read
   from a file, so that a scene saved again wrote UI fields for each of its actors, and an actor read anew by Revert to
   Prefab kept the UI data it had.
+- **The UI library's buttons answer a click**: the controller consumes the click it gives a panel, and `DButton` read
+  the mouse as gameplay does, so it saw the button up at once and never clicked. Every input read of the library now
+  takes what the UI consumed, and a test holds it to that.
