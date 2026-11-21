@@ -407,3 +407,5 @@ Lost's first version: Overload 1.9 and the changes below.
   as `project_id` does. Reset emptied them, which left the game without its actions, its texts and its buses.
 - **A translations folder that cannot be read through** is read as far as it goes, with a warning. The walk could raise
   an exception the engine did not catch.
+- **A save file whose size cannot be read** counts as an entry and adds nothing to the folder's total. Its size read
+  as the largest number, so every write was refused as "storage full".
