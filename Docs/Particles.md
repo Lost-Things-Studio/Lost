@@ -25,7 +25,7 @@ sparks:SetColor(Vector4.new(1, 0.75, 0.3, 1), Vector4.new(1, 0.2, 0.05, 0))
 | --- | --- | --- | --- |
 | Max particles | `Set`/`GetMaxParticles` | `max_particles` | Alive at once (1 to 100000). One born past it takes the oldest's place. A new maximum clears the system |
 | Rate | `Set`/`GetRate` | `rate` | Born per second while playing, each at its own time within the frame |
-| Bursts | `Set`/`GetBursts` | `bursts` | `{ time, count }`: so many born at once, that long after each cycle starts |
+| Bursts | `Set`/`GetBursts` | `bursts` | `{ time, count }`: so many born at once, that long after each cycle starts (at most the duration: one at the duration comes as the cycle ends) |
 | Duration, looping | `Set`/`GetDuration`, `SetLooping`/`IsLooping` | `duration`, `looping` | A cycle's seconds; without looping, the system stops emitting after one |
 | Play on start | `Set`/`GetPlayOnStart` | `play_on_start` | Plays when the scene starts |
 | Lifetime, speed | `Set`/`GetLifetime(min, max)`, `Set`/`GetSpeed(min, max)` | `lifetime_min`, `lifetime_max`, `speed_min`, `speed_max` | Drawn between the two for each particle |
@@ -45,7 +45,8 @@ sparks:SetColor(Vector4.new(1, 0.75, 0.3, 1), Vector4.new(1, 0.2, 0.05, 0))
   spark or a rising puff of smoke does.
 - In the local space, gravity acts along the emitter's axes.
 - A setting changed applies to the particles born from then on, except the curves over life (size, colour, fades),
-  gravity and drag, which the shader reads for every particle.
+  gravity and drag, which the shader reads for every particle. A change of space clears the particles alive, whose
+  places were in the other space.
 
 ## Playing, and bursts from a script
 
@@ -53,7 +54,8 @@ sparks:SetColor(Vector4.new(1, 0.75, 0.3, 1), Vector4.new(1, 0.2, 0.05, 0))
   `Clear()` removes every particle. `IsPlaying()` and `GetAliveCount()` say where the system is.
 - `Emit(count[, overrides])` emits at once, playing or not, and returns how many were born. Its overrides apply to
   each particle: `position` and `direction` (`Vector3`, in the world), `color` (`Vector4`, multiplied by the colour over
-  life), `speed`, `size` (times the size over life) and `lifetime`. A spark where a blow lands:
+  life), `speed`, `size` (times the size over life) and `lifetime`. On a local system whose emitter is scaled to
+  nothing, `position` and `direction` are left out. A spark where a blow lands:
 
   ```lua
   hits:Emit(12, { position = hit.point, direction = hit.normal, color = Vector4.new(1, 0.4, 0.2, 1) })

@@ -391,3 +391,8 @@ Lost's first version: Overload 1.9 and the changes below.
   names none. Before, it was cut to a whole number, and an endless one was undefined.
 - **The bones a look at or spring bones turned go back to the animation** once the scene's last of them is removed.
   They stayed turned, as the step that lets them go was skipped without any.
+- **A burst at the cycle's duration** comes as the cycle ends. Its time was never reached.
+- **`Emit` with a position or a direction on a local system scaled to nothing** leaves them out. It raised an error, as
+  the emitter's space has no inverse.
+- **A change of a particle system's space clears its particles**, whose places were in the other space and would have
+  jumped.
