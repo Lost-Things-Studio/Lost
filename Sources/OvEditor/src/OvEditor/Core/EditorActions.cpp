@@ -887,18 +887,27 @@ void OvEditor::Core::EditorActions::DelayAction(std::function<void()> p_action, 
 
 void OvEditor::Core::EditorActions::ExecuteDelayedActions()
 {
-	std::for_each(m_delayedActions.begin(), m_delayedActions.end(), [](std::pair<uint32_t, std::function<void()>> & p_element)
-	{
-		--p_element.first;
+	// The actions due are taken out before any runs: one that delays another (an undo that reloads the scene, whose
+	// panels refresh later) adds to the list while it is not being gone through, and the new one waits its turn
+	std::vector<std::function<void()>> due;
 
-		if (p_element.first == 0)
-			p_element.second();
-	});
-
-	m_delayedActions.erase(std::remove_if(m_delayedActions.begin(), m_delayedActions.end(), [](std::pair<uint32_t, std::function<void()>> & p_element)
+	for (auto it = m_delayedActions.begin(); it != m_delayedActions.end();)
 	{
-		return p_element.first == 0;
-	}), m_delayedActions.end());
+		if (--it->first == 0)
+		{
+			due.push_back(std::move(it->second));
+			it = m_delayedActions.erase(it);
+		}
+		else
+		{
+			++it;
+		}
+	}
+
+	for (auto& action : due)
+	{
+		action();
+	}
 }
 
 OvEditor::Core::Context& OvEditor::Core::EditorActions::GetContext()
