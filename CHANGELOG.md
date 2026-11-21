@@ -389,3 +389,5 @@ Lost's first version: Overload 1.9 and the changes below.
   the transition never left.
 - **An animator's layer index** that is not a whole number, or endless, raises an error; a whole one past the layers
   names none. Before, it was cut to a whole number, and an endless one was undefined.
+- **The bones a look at or spring bones turned go back to the animation** once the scene's last of them is removed.
+  They stayed turned, as the step that lets them go was skipped without any.

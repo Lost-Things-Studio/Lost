@@ -187,10 +187,15 @@ void OvCore::SceneSystem::Scene::UpdateAnimationConstraints(float p_deltaTime)
 {
 	ZoneScoped;
 
-	if (m_fastAccessComponents.lookAts.empty() && m_fastAccessComponents.springBones.empty())
+	const bool constrained = !m_fastAccessComponents.lookAts.empty() || !m_fastAccessComponents.springBones.empty();
+
+	// Once the last constraint is gone, the bones it turned are let go one last time
+	if (!constrained && !m_constraintsApplied)
 	{
 		return;
 	}
+
+	m_constraintsApplied = constrained;
 
 	// Each frame starts again from the pose the clips and the scripts left
 	for (auto skinnedMeshRenderer : m_fastAccessComponents.skinnedMeshRenderers)
