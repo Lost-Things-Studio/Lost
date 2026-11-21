@@ -26,6 +26,7 @@ local kEpsilon = 1e-6
 
 local active = {}
 local added = {}
+local updating = nil -- the timers Update walks, while it runs, so that Clear reaches them too
 local driven = false
 
 ---@class StdTimer
@@ -45,7 +46,7 @@ end
 
 --- One step of a timer; returns whether it goes on
 local function Step(timer, gameStep, realStep)
-	if timer.m_cancelled or Owner.IsGone(timer.m_owner) then
+	if timer.m_cancelled or timer.m_done or Owner.IsGone(timer.m_owner) then
 		return false
 	end
 
@@ -62,7 +63,7 @@ local function Step(timer, gameStep, realStep)
 		return false
 	end
 
-	if timer.m_period == nil or result == false or timer.m_cancelled then
+	if timer.m_period == nil or result == false or timer.m_cancelled or timer.m_done then
 		return false
 	end
 
@@ -76,26 +77,28 @@ local function Step(timer, gameStep, realStep)
 end
 
 local function Update(gameStep, realStep)
-	local current = added
-	added = {}
+	local list = active
 
-	for i = 1, #current do
-		active[#active + 1] = current[i]
+	for i = 1, #added do
+		list[#list + 1] = added[i]
 	end
 
-	local kept = 0
+	-- A callback may add timers (to added) or clear them all: the list walked stays the same meanwhile
+	added = {}
+	active = {}
+	updating = list
 
-	for i = 1, #active do
-		local timer = active[i]
-		active[i] = nil
+	for i = 1, #list do
+		local timer = list[i]
 
 		if Step(timer, gameStep, realStep) then
-			kept = kept + 1
-			active[kept] = timer
+			active[#active + 1] = timer
 		else
 			timer.m_done = true
 		end
 	end
+
+	updating = nil
 end
 
 --- Advances the timers once a frame, from the first one made on
@@ -170,12 +173,10 @@ end
 
 --- Cancels every timer
 function Timers.Clear()
-	for _, timer in ipairs(active) do
-		timer.m_done = true
-	end
-
-	for _, timer in ipairs(added) do
-		timer.m_done = true
+	for _, list in ipairs({ active, added, updating or {} }) do
+		for i = 1, #list do
+			list[i].m_done = true
+		end
 	end
 
 	active = {}

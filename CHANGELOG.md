@@ -376,3 +376,7 @@ Lost's first version: Overload 1.9 and the changes below.
 - **A UI controller updated by hand is updated once a frame**: in the frame after its creation, a Behaviour's
   `controller:Update` and the controller's own update both ran, so its panels thought twice and a key typed then was
   typed twice.
+- **A tween whose curve or values fail stops alone**: its ease and its interpolation run inside the protected call,
+  as its `onUpdate` did. Before, such an error stopped the whole advance, and the tweens after it that frame.
+- **`Std.Timers.Clear()` and `Std.Tween.Clear()` from a callback** stop every timer and tween, those being advanced
+  included. Before, the ones still to be advanced that frame went on.
