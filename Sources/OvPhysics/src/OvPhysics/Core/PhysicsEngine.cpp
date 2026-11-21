@@ -443,6 +443,13 @@ bool OvPhysics::Core::PhysicsEngine::Update(float p_deltaTime)
 	m_physicsSystem->Update(simulatedStepCount * kFixedTimeStep, simulatedStepCount, m_tempAllocator.get(), m_jobSystem.get());
 
 	PostUpdate();
+
+	// The interpolation moves between the last two steps, however many this update took
+	for (PhysicalObject& physicalObject : m_physicalObjects)
+	{
+		physicalObject.KeepLastStepOf(simulatedStepCount);
+	}
+
 	return true;
 }
 

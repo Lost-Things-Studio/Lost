@@ -138,6 +138,52 @@ TEST_SUITE("Physics interpolation")
 		CHECK(smoothHeights.size() > static_cast<size_t>(stepCount) * 3);
 	}
 
+	TEST_CASE("over a frame of several steps, an interpolated body moves between the last two")
+	{
+		constexpr float kStep = 1.0f / 60.0f;
+		World world;
+		auto& smooth = world.AddBox({ 0.0f, 10.0f, 0.0f }, { 0.5f, 0.5f, 0.5f }, false);
+		auto& twin = world.AddBox({ 0.0f, 10.0f, 5.0f }, { 0.5f, 0.5f, 0.5f }, false);
+		smooth.SetInterpolated(true);
+		smooth.SetLinearVelocity({ 6.0f, 0.0f, 0.0f });
+		twin.SetLinearVelocity({ 6.0f, 0.0f, 0.0f });
+
+		// A step, then a frame of two and a half: the twin, not interpolated, is drawn at each last step
+		REQUIRE(world.engine.Update(kStep));
+		world.engine.Interpolate();
+		const float first = twin.GetTransform().GetWorldPosition().x;
+
+		REQUIRE(world.engine.Update(2.5f * kStep));
+		world.engine.Interpolate();
+		const float third = twin.GetTransform().GetWorldPosition().x;
+
+		// Halfway from the second step to the third, not from the first
+		const float step = (third - first) / 2.0f;
+		CHECK(smooth.GetTransform().GetWorldPosition().x == doctest::Approx(third - 0.5f * step).epsilon(1e-3));
+	}
+
+	TEST_CASE("an interpolated body made again (its scale changed) goes on from where the physics has it")
+	{
+		constexpr float kStep = 1.0f / 60.0f;
+		World world;
+		auto& smooth = world.AddBox({ 0.0f, 10.0f, 0.0f }, { 0.5f, 0.5f, 0.5f }, false);
+		auto& twin = world.AddBox({ 0.0f, 10.0f, 5.0f }, { 0.5f, 0.5f, 0.5f }, false);
+		smooth.SetInterpolated(true);
+		smooth.SetLinearVelocity({ 6.0f, 0.0f, 0.0f });
+		twin.SetLinearVelocity({ 6.0f, 0.0f, 0.0f });
+
+		REQUIRE(world.engine.Update(kStep));
+		world.engine.Interpolate();
+		REQUIRE(world.engine.Update(1.5f * kStep));
+		world.engine.Interpolate();
+
+		// Drawn half a step behind, it is made again at its next update: still beside its twin after that step
+		smooth.GetTransform().SetLocalScale({ 2.0f, 2.0f, 2.0f });
+		twin.GetTransform().SetLocalScale({ 2.0f, 2.0f, 2.0f });
+		REQUIRE(world.engine.Update(kStep));
+		CHECK(smooth.GetTransform().GetWorldPosition().x == doctest::Approx(twin.GetTransform().GetWorldPosition().x).epsilon(1e-4));
+	}
+
 	TEST_CASE("moving an interpolated body teleports it, whether in the fixed update or elsewhere")
 	{
 		World world;

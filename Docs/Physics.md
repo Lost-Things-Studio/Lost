@@ -71,7 +71,9 @@ The physics is Jolt Physics 5.6.0. It steps at a fixed 1/60 s; `OnFixedUpdate` r
   moves, a dynamic body or a character controller, between its last two physics steps, so that it moves smoothly at
   any frame rate. The simulation is the same with or without it.
 - Each frame, once the fixed update is done, the engine moves the transform to the point between the two steps that the
-  time gathered toward the next step gives. On screen, the body is thus up to one step, 1/60 s, behind the physics.
+  time gathered toward the next step gives. On screen, the body is thus up to one step, 1/60 s, behind the physics. A
+  frame that takes several steps moves it between the last two of them, as if they were even, and a body made again (its
+  scale or its shape changed) goes on from where the physics has it, not from where it is drawn.
 - During `OnFixedUpdate`, the transform holds the pose of the physics, as without interpolation; during `OnUpdate`,
   `OnLateUpdate` and on screen, the interpolated one. Code that steers a body reads it in `OnFixedUpdate`; a camera that
   follows it, in `OnLateUpdate`.

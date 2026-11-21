@@ -398,3 +398,8 @@ Lost's first version: Overload 1.9 and the changes below.
   jumped.
 - **A source changed while the editor pauses the game** (its bus, or spatial or flat) plays again on resuming. It
   started again paused, as a new voice the suspension did not know, and stayed silent.
+- **Interpolation over a frame of several steps** moves a body between the last two. It moved from the pose before
+  the first, so that at a low frame rate a body was drawn up to several steps behind, by a share that changed with
+  each frame.
+- **An interpolated body made again** (its scale changed) goes on from where the physics has it. It started again from
+  where it was drawn, a share of a step behind.
