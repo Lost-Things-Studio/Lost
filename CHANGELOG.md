@@ -409,6 +409,8 @@ Lost's first version: Overload 1.9 and the changes below.
   an exception the engine did not catch.
 - **A save file whose size cannot be read** counts as an entry and adds nothing to the folder's total. Its size read
   as the largest number, so every write was refused as "storage full".
+- **A scene made in the asset browser** no longer becomes the path of the scene open. It did, so that the next save
+  of the open scene wrote over the new file.
 - **An editor action that delays another** while the delayed actions run no longer changes their list as it is gone
   through. The new action waits for the next frame.
 - **A vegetation layer's seed** is read exactly, up to 4294967295, and a larger one raises an error. It was read as a

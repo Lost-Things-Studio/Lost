@@ -471,9 +471,14 @@ void OvEditor::Core::EditorActions::SaveSceneToDisk(OvCore::SceneSystem::Scene& 
 	tinyxml2::XMLDocument doc;
 	tinyxml2::XMLNode* node = doc.NewElement("root");
 	doc.InsertFirstChild(node);
-	m_context.sceneManager.StoreCurrentSceneSourcePath(p_path);
 	p_scene.OnSerialize(doc, node);
 	doc.SaveFile(p_path.c_str());
+
+	// Another scene (a new one, made from the asset browser) leaves the one open where it was
+	if (&p_scene == m_context.sceneManager.GetCurrentScene())
+	{
+		m_context.sceneManager.StoreCurrentSceneSourcePath(p_path);
+	}
 }
 
 void OvEditor::Core::EditorActions::LoadSceneFromDisk(const std::string& p_path, bool p_absolute)
