@@ -6,6 +6,7 @@
 
 #include <OvCore/Input/GameInput.h>
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include "OvDebug/Assertion.h"
 #include "OvTools/Utils/OptRef.h"
@@ -17,6 +18,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <imgui.h>
 #include <tinyxml2.h>
 
 #include <OvDebug/Logger.h>
@@ -49,6 +51,7 @@
 #include <OvEditor/Panels/MaterialEditor.h>
 #include <OvEditor/Panels/ProjectSettings.h>
 #include <OvEditor/Panels/SceneView.h>
+#include <OvEditor/Panels/UnsavedChanges.h>
 #include <OvEditor/Settings/EditorSettings.h>
 #include <OvEditor/Utils/FileSystem.h>
 #include <OvCore/SceneSystem/PrefabOperations.h>
@@ -438,11 +441,9 @@ OvEditor::Core::EditorActions::EditorActions(Context& p_context, PanelsManager& 
 		}
 	);
 
-	m_context.sceneManager.CurrentSceneSourcePathChangedEvent += [this](const std::string& p_newPath)
-	{
-		std::string titleExtra = " - " + (p_newPath.empty() ? "Untitled Scene" : GetResourcePath(p_newPath));
-		m_context.window->SetTitle(m_context.windowSettings.title + titleExtra);
-	};
+	m_context.sceneManager.CurrentSceneSourcePathChangedEvent += [this](const std::string&) { UpdateWindowTitle(); };
+	m_sceneHistory.ChangedEvent += [this] { UpdateWindowTitle(); };
+	m_sceneHistory.AppliedEvent += [this](std::optional<uint64_t> p_focus) { m_historyFocus = p_focus; };
 
 	// A game asking to quit from the editor leaves play mode, once the frame running its scripts is over
 	m_quitListener = OvCore::Global::QuitRequest::RequestedEvent += [this]
@@ -458,10 +459,18 @@ OvEditor::Core::EditorActions::~EditorActions()
 
 void OvEditor::Core::EditorActions::LoadEmptyScene()
 {
+	ConfirmLeaveScene("creating a new scene", [this] { LoadEmptySceneNow(); });
+}
+
+void OvEditor::Core::EditorActions::LoadEmptySceneNow()
+{
 	if (GetCurrentEditorMode() != EEditorMode::EDIT)
 		StopPlaying();
 
 	m_context.sceneManager.LoadDefaultScene();
+	m_pendingSceneEdit.reset();
+	m_sceneHistory.Clear();
+	TrackSelection();
 
 	OVLOG_INFO("New scene created");
 }
@@ -478,10 +487,16 @@ void OvEditor::Core::EditorActions::SaveSceneToDisk(OvCore::SceneSystem::Scene& 
 	if (&p_scene == m_context.sceneManager.GetCurrentScene())
 	{
 		m_context.sceneManager.StoreCurrentSceneSourcePath(p_path);
+		m_sceneHistory.MarkSaved();
 	}
 }
 
 void OvEditor::Core::EditorActions::LoadSceneFromDisk(const std::string& p_path, bool p_absolute)
+{
+	ConfirmLeaveScene("opening another scene", [this, p_path, p_absolute] { LoadSceneFromDiskNow(p_path, p_absolute); });
+}
+
+void OvEditor::Core::EditorActions::LoadSceneFromDiskNow(const std::string& p_path, bool p_absolute)
 {
 	if (GetCurrentEditorMode() != EEditorMode::EDIT)
 	{
@@ -493,6 +508,10 @@ void OvEditor::Core::EditorActions::LoadSceneFromDisk(const std::string& p_path,
 		OVLOG_ERROR("Failed to load scene from disk: " + p_path);
 		return;
 	}
+
+	m_pendingSceneEdit.reset();
+	m_sceneHistory.Clear();
+	TrackSelection();
 
 	OVLOG_INFO("Scene loaded from disk: " + m_context.sceneManager.GetCurrentSceneSourcePath());
 	m_panelsManager.GetPanelAs<OvEditor::Panels::SceneView>("Scene View").Focus();
@@ -509,6 +528,8 @@ void OvEditor::Core::EditorActions::SaveSceneChanges()
 	{
 		return;
 	}
+
+	FlushEdits(true);
 
 	if (IsCurrentSceneLoadedFromDisk())
 	{
@@ -531,6 +552,8 @@ void OvEditor::Core::EditorActions::SaveAs()
 	{
 		return;
 	}
+
+	FlushEdits(true);
 
 	OvWindowing::Dialogs::SaveFileDialog dialog("New Scene");
 	const auto initialPath = m_context.projectAssetsPath / "New Scene";
@@ -915,6 +938,411 @@ void OvEditor::Core::EditorActions::ExecuteDelayedActions()
 	}
 }
 
+namespace
+{
+	std::string ShortTypeName(std::string p_type)
+	{
+		// "class OvCore::ECS::Components::CPointLight" is a "Point Light"
+		if (const auto colons = p_type.rfind("::"); colons != std::string::npos)
+		{
+			p_type = p_type.substr(colons + 2);
+		}
+
+		if (p_type.size() > 1 && p_type[0] == 'C' && std::isupper(static_cast<unsigned char>(p_type[1])))
+		{
+			p_type = p_type.substr(1);
+		}
+
+		std::string spaced;
+		for (size_t i = 0; i < p_type.size(); ++i)
+		{
+			const bool upper = std::isupper(static_cast<unsigned char>(p_type[i]));
+			const bool lowerNext = i + 1 < p_type.size() && std::islower(static_cast<unsigned char>(p_type[i + 1]));
+			const bool lowerBefore = i > 0 && std::islower(static_cast<unsigned char>(p_type[i - 1]));
+
+			if (i > 0 && upper && (lowerBefore || lowerNext))
+			{
+				spaced += ' ';
+			}
+
+			spaced += p_type[i];
+		}
+
+		return spaced;
+	}
+
+	const char* TextOf(const tinyxml2::XMLElement* p_node, const char* p_name)
+	{
+		const auto* child = p_node ? p_node->FirstChildElement(p_name) : nullptr;
+		return child && child->GetText() ? child->GetText() : "";
+	}
+
+	std::string PrintOf(const tinyxml2::XMLElement* p_node)
+	{
+		if (!p_node)
+		{
+			return {};
+		}
+
+		tinyxml2::XMLPrinter printer(nullptr, true);
+		p_node->Accept(&printer);
+		return printer.CStr();
+	}
+
+	/**
+	* Names an edit of one actor after what changed in it: its name, its components, or the first component whose data did
+	*/
+	std::string DescribeActorEdit(const std::string& p_before, const std::string& p_after, const std::string& p_name)
+	{
+		tinyxml2::XMLDocument before;
+		tinyxml2::XMLDocument after;
+		before.Parse(p_before.c_str(), p_before.size());
+		after.Parse(p_after.c_str(), p_after.size());
+
+		const auto actorOf = [](tinyxml2::XMLDocument& p_doc) {
+			auto* actors = p_doc.FirstChildElement("actors");
+			return actors ? actors->FirstChildElement("actor") : nullptr;
+		};
+
+		const auto* a = actorOf(before);
+		const auto* b = actorOf(after);
+		if (!a || !b)
+		{
+			return "Edit " + p_name;
+		}
+
+		if (std::string(TextOf(a, "name")) != TextOf(b, "name"))
+		{
+			return "Rename " + std::string(TextOf(a, "name"));
+		}
+
+		const auto componentsOf = [](const tinyxml2::XMLElement* p_actor) {
+			std::vector<const tinyxml2::XMLElement*> components;
+			const auto* node = p_actor->FirstChildElement("components");
+			for (auto* component = node ? node->FirstChildElement("component") : nullptr; component; component = component->NextSiblingElement("component"))
+			{
+				components.push_back(component);
+			}
+			return components;
+		};
+
+		const auto componentsBefore = componentsOf(a);
+		const auto componentsAfter = componentsOf(b);
+
+		if (componentsAfter.size() > componentsBefore.size())
+		{
+			return "Add Component to " + p_name;
+		}
+
+		if (componentsAfter.size() < componentsBefore.size())
+		{
+			return "Remove Component from " + p_name;
+		}
+
+		for (size_t i = 0; i < componentsBefore.size(); ++i)
+		{
+			if (PrintOf(componentsBefore[i]) != PrintOf(componentsAfter[i]))
+			{
+				return "Edit " + ShortTypeName(TextOf(componentsAfter[i], "type")) + " of " + p_name;
+			}
+		}
+
+		if (PrintOf(a->FirstChildElement("behaviours")) != PrintOf(b->FirstChildElement("behaviours")))
+		{
+			return "Edit Scripts of " + p_name;
+		}
+
+		return "Edit " + p_name;
+	}
+
+}
+
+bool OvEditor::Core::EditorActions::IsEditHeld()
+{
+	if (!ImGui::GetCurrentContext())
+	{
+		return false;
+	}
+
+	const auto& io = ImGui::GetIO();
+	const bool mouseHeld = io.MouseDown[ImGuiMouseButton_Left] || io.MouseDown[ImGuiMouseButton_Right] || io.MouseDown[ImGuiMouseButton_Middle];
+	return mouseHeld || ImGui::IsAnyItemActive() || ImGui::GetDragDropPayload() != nullptr;
+}
+
+OvCore::SceneSystem::SceneHistory& OvEditor::Core::EditorActions::GetSceneHistory()
+{
+	return m_sceneHistory;
+}
+
+void OvEditor::Core::EditorActions::Undo()
+{
+	DelayAction([this] { ApplyHistory(true); }, 0);
+}
+
+void OvEditor::Core::EditorActions::Redo()
+{
+	DelayAction([this] { ApplyHistory(false); }, 0);
+}
+
+bool OvEditor::Core::EditorActions::CanUndo() const
+{
+	return m_editorMode == EEditorMode::EDIT && m_sceneHistory.CanUndo();
+}
+
+bool OvEditor::Core::EditorActions::CanRedo() const
+{
+	return m_editorMode == EEditorMode::EDIT && m_sceneHistory.CanRedo();
+}
+
+void OvEditor::Core::EditorActions::BeginSceneEdit(const std::string& p_label, bool p_nameSelection)
+{
+	auto* scene = m_context.sceneManager.GetCurrentScene();
+	if (m_editorMode != EEditorMode::EDIT || m_pendingSceneEdit || !scene)
+	{
+		return;
+	}
+
+	// What the selected actor had changed is its own edit, before this one
+	FlushEdits(true);
+
+	m_pendingSceneEdit = PendingSceneEdit{
+		p_label,
+		p_nameSelection,
+		OvCore::SceneSystem::SceneHistory::SerializeScene(*scene),
+		IsAnyActorSelected() ? GetSelectedActor().GetGUID() : 0
+	};
+}
+
+void OvEditor::Core::EditorActions::RecordEdits()
+{
+	if (m_editorMode != EEditorMode::EDIT)
+	{
+		// What a game does is not an edit: the selection is followed again once it is over
+		m_pendingSceneEdit.reset();
+		m_trackedGUID = 0;
+		m_trackedState.clear();
+		return;
+	}
+
+	FlushEdits(false);
+}
+
+void OvEditor::Core::EditorActions::FlushEdits(bool p_whileHeld)
+{
+	auto* scene = m_context.sceneManager.GetCurrentScene();
+	if (m_editorMode != EEditorMode::EDIT || !scene)
+	{
+		return;
+	}
+
+	auto* selected = IsAnyActorSelected() ? &GetSelectedActor() : nullptr;
+	if (selected && !selected->IsAlive())
+	{
+		selected = nullptr;
+	}
+
+	// An edit of the scene takes in all the frame did, the selected actor's changes with it
+	if (m_pendingSceneEdit)
+	{
+		auto edit = std::move(*m_pendingSceneEdit);
+		m_pendingSceneEdit.reset();
+
+		std::string label = edit.label;
+		if (edit.nameSelection && selected)
+		{
+			label += " " + selected->GetName();
+		}
+
+		m_sceneHistory.RecordScene(
+			std::move(label),
+			std::move(edit.before),
+			OvCore::SceneSystem::SceneHistory::SerializeScene(*scene),
+			edit.focus,
+			selected ? selected->GetGUID() : 0
+		);
+
+		TrackSelection();
+		return;
+	}
+
+	const uint64_t guid = selected ? selected->GetGUID() : 0;
+
+	if (guid != m_trackedGUID)
+	{
+		// The selection changed: what the actor selected before had changed is its edit
+		if (auto* previous = m_trackedGUID != 0 ? scene->FindActorByGUID(m_trackedGUID) : nullptr; previous && previous->IsAlive())
+		{
+			std::string state = OvCore::SceneSystem::SceneHistory::SerializeActor(*previous);
+			m_sceneHistory.RecordActor(DescribeActorEdit(m_trackedState, state, previous->GetName()), m_trackedGUID, m_trackedState, state);
+		}
+
+		TrackSelection();
+		return;
+	}
+
+	if (!selected || (!p_whileHeld && IsEditHeld()))
+	{
+		return;
+	}
+
+	std::string state = OvCore::SceneSystem::SceneHistory::SerializeActor(*selected);
+	if (state != m_trackedState)
+	{
+		m_sceneHistory.RecordActor(DescribeActorEdit(m_trackedState, state, selected->GetName()), guid, m_trackedState, state);
+		m_trackedState = std::move(state);
+	}
+}
+
+void OvEditor::Core::EditorActions::TrackSelection()
+{
+	auto* selected = IsAnyActorSelected() ? &GetSelectedActor() : nullptr;
+
+	if (selected && selected->IsAlive() && m_editorMode == EEditorMode::EDIT)
+	{
+		m_trackedGUID = selected->GetGUID();
+		m_trackedState = OvCore::SceneSystem::SceneHistory::SerializeActor(*selected);
+	}
+	else
+	{
+		m_trackedGUID = 0;
+		m_trackedState.clear();
+	}
+}
+
+void OvEditor::Core::EditorActions::ApplyHistory(bool p_undo)
+{
+	if (m_editorMode != EEditorMode::EDIT)
+	{
+		return;
+	}
+
+	// What was edited and not yet recorded comes first: it is what an undo undoes
+	FlushEdits(true);
+
+	if (p_undo ? !m_sceneHistory.CanUndo() : !m_sceneHistory.CanRedo())
+	{
+		return;
+	}
+
+	// The inspector holds the components an undo may remove: it shows the actor again once it is written back
+	auto& inspector = EDITOR_PANEL(Panels::Inspector, "Inspector");
+	inspector.UnFocus();
+
+	m_historyFocus.reset();
+	const std::string label = p_undo ? m_sceneHistory.GetUndoLabel() : m_sceneHistory.GetRedoLabel();
+	const bool applied = p_undo ? m_sceneHistory.Undo(m_context.sceneManager) : m_sceneHistory.Redo(m_context.sceneManager);
+
+	if (auto* scene = m_context.sceneManager.GetCurrentScene(); scene && m_historyFocus)
+	{
+		if (auto* actor = scene->FindActorByGUID(*m_historyFocus); actor && actor->IsAlive())
+		{
+			SelectActor(*actor);
+		}
+	}
+
+	TrackSelection();
+
+	if (applied)
+	{
+		OVLOG_INFO(std::string(p_undo ? "Undo: " : "Redo: ") + label);
+	}
+}
+
+bool OvEditor::Core::EditorActions::IsSceneDirty() const
+{
+	return m_sceneHistory.IsDirty();
+}
+
+void OvEditor::Core::EditorActions::ConfirmLeaveScene(const std::string& p_what, std::function<void()> p_action)
+{
+	FlushEdits(true);
+
+	if (!IsSceneDirty())
+	{
+		p_action();
+		return;
+	}
+
+	auto& prompt = EDITOR_PANEL(Panels::UnsavedChanges, "Unsaved Changes");
+	if (prompt.IsAsking())
+	{
+		return;
+	}
+
+	const std::string path = m_context.sceneManager.GetCurrentSceneSourcePath();
+	const std::string sceneName = path.empty() ? "Untitled Scene" : std::filesystem::path(path).stem().string();
+
+	prompt.Ask(sceneName, p_what, [this, p_action](Panels::UnsavedChanges::EChoice p_choice)
+	{
+		switch (p_choice)
+		{
+		case Panels::UnsavedChanges::EChoice::SAVE:
+			// The scene saved is the one edited, not the game's
+			if (m_editorMode != EEditorMode::EDIT)
+			{
+				StopPlaying();
+			}
+
+			SaveSceneChanges();
+
+			// A "Save As" given up leaves the changes unsaved: the action waits for another answer
+			if (!IsSceneDirty())
+			{
+				p_action();
+			}
+			break;
+
+		case Panels::UnsavedChanges::EChoice::DONT_SAVE:
+			p_action();
+			break;
+
+		case Panels::UnsavedChanges::EChoice::CANCEL:
+			break;
+		}
+	});
+}
+
+void OvEditor::Core::EditorActions::HandleCloseRequest()
+{
+	if (m_closeConfirmed || !m_context.window->ShouldClose())
+	{
+		return;
+	}
+
+	FlushEdits(true);
+
+	if (!IsSceneDirty())
+	{
+		return;
+	}
+
+	// The window stays until the user says what to do with the changes
+	m_context.window->SetShouldClose(false);
+
+	ConfirmLeaveScene("closing the editor", [this]
+	{
+		m_closeConfirmed = true;
+		m_context.window->SetShouldClose(true);
+	});
+}
+
+void OvEditor::Core::EditorActions::UpdateWindowTitle()
+{
+	const std::string path = m_context.sceneManager.GetCurrentSceneSourcePath();
+	std::string title = m_context.windowSettings.title + " - " + (path.empty() ? "Untitled Scene" : GetResourcePath(path));
+
+	if (IsSceneDirty())
+	{
+		title += "*";
+	}
+
+	if (title != m_windowTitle)
+	{
+		m_windowTitle = title;
+		m_context.window->SetTitle(title);
+	}
+}
+
 OvEditor::Core::Context& OvEditor::Core::EditorActions::GetContext()
 {
 	return m_context;
@@ -992,6 +1420,7 @@ void OvEditor::Core::EditorActions::StartPlaying()
 {
 	if (m_editorMode == EEditorMode::EDIT)
 	{
+		FlushEdits(true);
 		m_context.scriptEngine->Reload();
 		EDITOR_PANEL(Panels::Inspector, "Inspector").Refresh();
 
@@ -1070,6 +1499,8 @@ void OvEditor::Core::EditorActions::StopPlaying()
 		EDITOR_PANEL(Panels::SceneView, "Scene View").Focus();
 		if (auto actorInstance = m_context.sceneManager.GetCurrentScene()->FindActorByID(focusedActorID))
 			EDITOR_PANEL(Panels::Inspector, "Inspector").FocusActor(*actorInstance);
+
+		TrackSelection();
 	}
 }
 
@@ -1124,6 +1555,8 @@ OvMaths::FVector3 OvEditor::Core::EditorActions::CalculateActorSpawnPoint(float 
 
 OvCore::ECS::Actor & OvEditor::Core::EditorActions::CreateEmptyActor(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent, const std::string& p_name)
 {
+	BeginSceneEdit("Create", true);
+
     const auto currentScene = m_context.sceneManager.GetCurrentScene();
 	auto& instance = p_name.empty() ? currentScene->CreateActor() : currentScene->CreateActor(p_name);
 
@@ -1170,6 +1603,7 @@ OvCore::ECS::Actor & OvEditor::Core::EditorActions::CreateActorWithModel(const s
 
 bool OvEditor::Core::EditorActions::DestroyActor(OvCore::ECS::Actor & p_actor)
 {
+	BeginSceneEdit("Delete " + p_actor.GetName());
 	p_actor.MarkAsDestroy();
 	return true;
 }
@@ -1196,6 +1630,8 @@ void OvEditor::Core::EditorActions::DuplicateActor
 	bool p_keepSourceParentIfNoForcedParent
 )
 {
+	BeginSceneEdit("Duplicate " + p_toDuplicate.GetName());
+
 	tinyxml2::XMLDocument doc;
 	tinyxml2::XMLNode* actorsRoot = doc.NewElement("actors");
 	p_toDuplicate.OnSerialize(doc, actorsRoot);
@@ -1239,6 +1675,8 @@ void OvEditor::Core::EditorActions::DuplicateActor
 
 void OvEditor::Core::EditorActions::SaveActorAsPrefab(OvCore::ECS::Actor& p_actor, const std::string& p_path)
 {
+	BeginSceneEdit("Save " + p_actor.GetName() + " as Prefab");
+
 	if (!OvCore::SceneSystem::PrefabOperations::SaveToFile(p_actor, p_path))
 	{
 		OVLOG_ERROR("Failed to save prefab to: " + p_path);
@@ -1257,6 +1695,8 @@ OvCore::ECS::Actor* OvEditor::Core::EditorActions::InstantiatePrefab(const std::
 	if (!currentScene)
 		return nullptr;
 
+	BeginSceneEdit("Instantiate", true);
+
 	const std::filesystem::path realPath = GetRealPath(p_path);
 	const bool isEnginePrefab = !p_path.empty() && p_path.front() == ':';
 	return currentScene->InstantiatePrefab(GetResourcePath(realPath.string(), isEnginePrefab));
@@ -1264,6 +1704,8 @@ OvCore::ECS::Actor* OvEditor::Core::EditorActions::InstantiatePrefab(const std::
 
 bool OvEditor::Core::EditorActions::ApplyActorToPrefab(OvCore::ECS::Actor& p_actor)
 {
+	BeginSceneEdit("Apply " + p_actor.GetName() + " to Prefab");
+
 	auto* prefabInstanceRoot = ResolvePrefabInstanceRoot(p_actor);
 	if (!prefabInstanceRoot)
 	{
@@ -1284,6 +1726,8 @@ bool OvEditor::Core::EditorActions::ApplyActorToPrefab(OvCore::ECS::Actor& p_act
 
 bool OvEditor::Core::EditorActions::RevertActorToPrefab(OvCore::ECS::Actor& p_actor)
 {
+	BeginSceneEdit("Revert " + p_actor.GetName() + " to Prefab");
+
 	auto* prefabInstanceRoot = ResolvePrefabInstanceRoot(p_actor);
 	if (!prefabInstanceRoot)
 	{
@@ -1430,6 +1874,8 @@ void OvEditor::Core::EditorActions::PasteActor(OvCore::ECS::Actor* p_parent)
 
 	if (const auto copiedActor = currentScene->FindActorByGUID(actorCopyBuffer->guid))
 	{
+		BeginSceneEdit("Paste " + copiedActor->GetName());
+
 		auto* destinationParent = p_parent;
 
 		// Pasted actors are always inserted next to the target actor (same parent),
@@ -2153,6 +2599,12 @@ void OvEditor::Core::EditorActions::PropagateFileRename(std::string p_previousNa
 
 	EDITOR_PANEL(Panels::Inspector, "Inspector").Refresh();
 	EDITOR_PANEL(Panels::MaterialEditor, "Material Editor").Refresh();
+
+	// The edits recorded name the file as it was: putting one back would bring the old path back. The scene stays as
+	// unsaved as it was
+	m_pendingSceneEdit.reset();
+	m_sceneHistory.Clear(true);
+	TrackSelection();
 }
 
 uint64_t ReplaceStringInFile(const std::filesystem::path& p_filePath,

@@ -7,6 +7,10 @@
 #include "OvUI/Widgets/Layout/Group.h"
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/Resources/Loaders/MaterialLoader.h>
+#include <OvDebug/Logger.h>
+
+#include <filesystem>
+#include <tinyxml2.h>
 
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Panels/AssetView.h>
@@ -99,14 +103,50 @@ OvEditor::Panels::MaterialEditor::MaterialEditor(
 	m_shaderDroppedEvent += std::bind(&MaterialEditor::OnShaderDropped, this);
 }
 
+namespace
+{
+	std::string SerializeMaterial(OvCore::Resources::Material& p_material)
+	{
+		tinyxml2::XMLDocument doc;
+		tinyxml2::XMLNode* node = doc.NewElement("root");
+		doc.InsertFirstChild(node);
+		p_material.OnSerialize(doc, node);
+
+		tinyxml2::XMLPrinter printer(nullptr, true);
+		doc.Print(&printer);
+		return printer.CStr();
+	}
+
+	void RestoreMaterial(OvCore::Resources::Material& p_material, const std::string& p_state)
+	{
+		tinyxml2::XMLDocument doc;
+		if (doc.Parse(p_state.c_str(), p_state.size()) == tinyxml2::XML_SUCCESS)
+		{
+			p_material.OnDeserialize(doc, doc.FirstChild());
+		}
+	}
+}
+
 void OvEditor::Panels::MaterialEditor::Refresh()
 {
 	if (m_target)
-		SetTarget(*m_target);
+	{
+		// Its edits name the files it used: once one is renamed, putting one back would bring the old path back
+		FlushEdits(true);
+		m_history.Clear(true);
+		m_targetMaterialText->content = m_target->path;
+		OnMaterialDropped();
+		m_trackedState = SerializeMaterial(*m_target);
+	}
 }
 
 void OvEditor::Panels::MaterialEditor::SetTarget(OvCore::Resources::Material & p_newTarget)
 {
+	if (m_target == &p_newTarget)
+	{
+		FlushEdits(true);
+	}
+
 	m_target = &p_newTarget;
 	m_targetMaterialText->content = m_target->path;
 	OnMaterialDropped();
@@ -145,6 +185,75 @@ void OvEditor::Panels::MaterialEditor::Reset()
 	}
 }
 
+void OvEditor::Panels::MaterialEditor::Undo()
+{
+	EDITOR_EXEC(DelayAction([this] { ApplyHistory(true); }, 0));
+}
+
+void OvEditor::Panels::MaterialEditor::Redo()
+{
+	EDITOR_EXEC(DelayAction([this] { ApplyHistory(false); }, 0));
+}
+
+OvTools::Utils::StateHistory<std::string>& OvEditor::Panels::MaterialEditor::GetHistory()
+{
+	return m_history;
+}
+
+void OvEditor::Panels::MaterialEditor::_Draw_Impl()
+{
+	m_undoButton->disabled = !m_history.CanUndo();
+	m_redoButton->disabled = !m_history.CanRedo();
+	m_undoButton->tooltip = m_history.CanUndo() ? "Undo " + m_history.GetUndoLabel() : "Nothing to undo";
+	m_redoButton->tooltip = m_history.CanRedo() ? "Redo " + m_history.GetRedoLabel() : "Nothing to redo";
+
+	PanelWindow::_Draw_Impl();
+
+	// An edit is recorded once the field or the slider that makes it is let go
+	FlushEdits(false);
+}
+
+void OvEditor::Panels::MaterialEditor::FlushEdits(bool p_whileHeld)
+{
+	if (!m_target || (!p_whileHeld && OvEditor::Core::EditorActions::IsEditHeld()))
+	{
+		return;
+	}
+
+	std::string state = SerializeMaterial(*m_target);
+	if (state != m_trackedState)
+	{
+		const std::string name = std::filesystem::path(m_target->path).stem().string();
+		m_history.Record({ "Edit " + name, m_target->path, m_trackedState, state });
+		m_trackedState = std::move(state);
+	}
+}
+
+void OvEditor::Panels::MaterialEditor::ApplyHistory(bool p_undo)
+{
+	if (!m_target)
+	{
+		return;
+	}
+
+	FlushEdits(true);
+
+	const auto* entry = p_undo ? m_history.GetUndoEntry() : m_history.GetRedoEntry();
+	if (!entry || entry->target != m_target->path)
+	{
+		return;
+	}
+
+	const std::string label = entry->label;
+	RestoreMaterial(*m_target, p_undo ? entry->before : entry->after);
+	p_undo ? m_history.StepBack() : m_history.StepForward();
+
+	// Its fields are made again: the ones shown were bound to what the material held
+	OnMaterialDropped();
+	m_trackedState = SerializeMaterial(*m_target);
+	OVLOG_INFO(std::string(p_undo ? "Undo: " : "Redo: ") + label);
+}
+
 void OvEditor::Panels::MaterialEditor::OnMaterialDropped()
 {
 	disabled = m_target && IsReadyOnlyMaterial(*m_target);
@@ -168,6 +277,14 @@ void OvEditor::Panels::MaterialEditor::OnMaterialDropped()
 	if (m_target && m_target->GetShader())
 	{
 		OnShaderDropped();
+	}
+
+	// Another material (set, picked or dropped on the field) starts its own edits, once its fields are made
+	if (m_target != m_historyMaterial)
+	{
+		m_history.Clear();
+		m_historyMaterial = m_target;
+		m_trackedState = m_target ? SerializeMaterial(*m_target) : std::string{};
 	}
 }
 
@@ -206,6 +323,8 @@ void OvEditor::Panels::MaterialEditor::CreateHeaderButtons()
 		if (m_target)
 		{
 			OvCore::Resources::Loaders::MaterialLoader::Save(*m_target, EDITOR_EXEC(GetRealPath(m_target->path)));
+			FlushEdits(true);
+			m_history.MarkSaved();
 		}
 	};
 
@@ -257,6 +376,16 @@ void OvEditor::Panels::MaterialEditor::CreateHeaderButtons()
 	previewButton.tooltip = "Preview the current material in the Asset View";
 	previewButton.lineBreak = false;
 	previewButton.ClickedEvent += std::bind(&MaterialEditor::Preview, this);
+
+	auto& undoButton = CreateWidget<Buttons::Button>("Undo");
+	m_undoButton = &undoButton;
+	undoButton.lineBreak = false;
+	undoButton.ClickedEvent += [this] { Undo(); };
+
+	auto& redoButton = CreateWidget<Buttons::Button>("Redo");
+	m_redoButton = &redoButton;
+	redoButton.lineBreak = false;
+	redoButton.ClickedEvent += [this] { Redo(); };
 
 	auto& resetButton = CreateWidget<Buttons::Button>("Reset");
 	resetButton.backgroundColor = OVUI_STYLE(DangerButton);

@@ -45,6 +45,7 @@ using namespace OvCore::ECS::Components;
 OvEditor::Panels::MenuBar::MenuBar()
 {
 	CreateFileMenu();
+	CreateEditMenu();
 	CreateBuildMenu();
 	CreateWindowMenu();
 	CreateActorsMenu();
@@ -58,6 +59,8 @@ OvEditor::Panels::MenuBar::MenuBar()
 void OvEditor::Panels::MenuBar::HandleShortcuts(float p_deltaTime)
 {
 	auto& inputManager = *EDITOR_CONTEXT(inputManager);
+
+	UpdateEditMenu();
 
 	if (inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_CONTROL) == OvWindowing::Inputs::EKeyState::KEY_DOWN)
 	{
@@ -228,6 +231,28 @@ void OvEditor::Panels::MenuBar::CreateFileMenu()
 	fileMenu.CreateWidget<MenuItem>("Save Scene", "CTRL + S").ClickedEvent					+= EDITOR_BIND(SaveSceneChanges);
 	fileMenu.CreateWidget<MenuItem>("Save Scene As...", "CTRL + SHIFT + S").ClickedEvent	+= EDITOR_BIND(SaveAs);
 	fileMenu.CreateWidget<MenuItem>("Exit", "ALT + F4").ClickedEvent						+= [] { EDITOR_CONTEXT(window)->SetShouldClose(true); };
+}
+
+void OvEditor::Panels::MenuBar::CreateEditMenu()
+{
+	auto& editMenu = CreateWidget<MenuList>("Edit");
+	m_undoItem = &editMenu.CreateWidget<MenuItem>("Undo", "CTRL + Z");
+	m_undoItem->ClickedEvent += EDITOR_BIND(Undo);
+	m_redoItem = &editMenu.CreateWidget<MenuItem>("Redo", "CTRL + Y");
+	m_redoItem->ClickedEvent += EDITOR_BIND(Redo);
+	UpdateEditMenu();
+}
+
+void OvEditor::Panels::MenuBar::UpdateEditMenu()
+{
+	// "Undo Move Player", greyed when there is nothing to undo, or while a game runs
+	auto& actions = OvCore::Global::ServiceLocator::Get<OvEditor::Core::EditorActions>();
+	const auto& history = actions.GetSceneHistory();
+
+	m_undoItem->name = actions.CanUndo() ? "Undo " + history.GetUndoLabel() : "Undo";
+	m_undoItem->disabled = !actions.CanUndo();
+	m_redoItem->name = actions.CanRedo() ? "Redo " + history.GetRedoLabel() : "Redo";
+	m_redoItem->disabled = !actions.CanRedo();
 }
 
 void OvEditor::Panels::MenuBar::CreateBuildMenu()

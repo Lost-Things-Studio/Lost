@@ -6,6 +6,7 @@
 
 #include <OvCore/Input/GameInput.h>
 #include "OvEditor/Core/EditorActions.h"
+#include <imgui.h>
 #include <tracy/Tracy.hpp>
 
 #include <filesystem>
@@ -40,6 +41,7 @@
 #include <OvEditor/Panels/SceneView.h>
 #include <OvEditor/Panels/TextureDebugger.h>
 #include <OvEditor/Panels/Toolbar.h>
+#include <OvEditor/Panels/UnsavedChanges.h>
 #include <OvEditor/Settings/EditorSettings.h>
 #include <OvPhysics/Core/PhysicsEngine.h>
 #include <OvUI/Settings/PanelWindowSettings.h>
@@ -221,6 +223,7 @@ void OvEditor::Core::Editor::SetupUI()
 	m_panelsManager.CreatePanel<Panels::ProjectSettings>("Project Settings", false, settings);
 	m_panelsManager.CreatePanel<Panels::AssetProperties>("Asset Properties", false, settings);
 	m_panelsManager.CreatePanel<Panels::TextureDebugger>("Texture Debugger", false, settings);
+	m_panelsManager.CreatePanel<Panels::UnsavedChanges>("Unsaved Changes"); // Last: drawn over the others
 
 	// Needs to be called after all panels got created, because some settings in this menu depend on other panels
 	m_panelsManager.GetPanelAs<Panels::MenuBar>("Menu Bar").InitializeSettingsMenu();
@@ -260,6 +263,10 @@ void OvEditor::Core::Editor::Update(float p_deltaTime)
 	UpdateEditorPanels(p_deltaTime);
 	RenderEditorUI(p_deltaTime);
 	m_editorActions.ExecuteDelayedActions();
+
+	// What the frame edited is recorded once it is over, as is a close held back for unsaved changes
+	m_editorActions.RecordEdits();
+	m_editorActions.HandleCloseRequest();
 }
 
 void OvEditor::Core::Editor::UpdateGameInputGate()
@@ -312,6 +319,32 @@ void OvEditor::Core::Editor::HandleGlobalShortcuts()
 	const bool isControlPressed =
 		m_context.inputManager->GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_CONTROL) == OvWindowing::Inputs::EKeyState::KEY_DOWN ||
 		m_context.inputManager->GetKeyState(OvWindowing::Inputs::EKey::KEY_RIGHT_CONTROL) == OvWindowing::Inputs::EKeyState::KEY_DOWN;
+
+	// Ctrl+Z undoes, Ctrl+Y and Ctrl+Shift+Z redo; a text field being typed in has its own
+	if (isControlPressed && !ImGui::GetIO().WantTextInput)
+	{
+		const bool isShiftPressed =
+			m_context.inputManager->GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_SHIFT) == OvWindowing::Inputs::EKeyState::KEY_DOWN ||
+			m_context.inputManager->GetKeyState(OvWindowing::Inputs::EKey::KEY_RIGHT_SHIFT) == OvWindowing::Inputs::EKeyState::KEY_DOWN;
+
+		const bool undo = m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_Z) && !isShiftPressed;
+		const bool redo =
+			m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_Y) ||
+			(m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_Z) && isShiftPressed);
+
+		if (undo || redo)
+		{
+			// The material editor has its own edits, undone while it has the focus
+			if (auto& materialEditor = EDITOR_PANEL(MaterialEditor, "Material Editor"); materialEditor.IsOpened() && materialEditor.IsFocused())
+			{
+				undo ? materialEditor.Undo() : materialEditor.Redo();
+			}
+			else
+			{
+				undo ? m_editorActions.Undo() : m_editorActions.Redo();
+			}
+		}
+	}
 
 	if (isControlPressed && (isSceneViewFocused || isHierarchyFocused))
 	{

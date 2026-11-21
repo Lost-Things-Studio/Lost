@@ -267,6 +267,13 @@ Lost's first version: Overload 1.9 and the changes below.
   a `Vector4` to the script), enumerations (`Enum({ ... }, default)`, the chosen string) and lists
   (`List("number" | "string" | "bool", { ... })`, a plain table), each with its inspector widget and its type in
   prefab and scene files. The Lua API is now 1.25 (`Color`, `Enum`, `List`).
+- **Undo and redo in the editor**: Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z, and an Edit menu that names the edit. An edit is
+  what the inspector or the gizmo changed in the selected actor, one per gesture, or an operation on the scene's
+  structure (create, delete, duplicate, paste, rename, move in the hierarchy, prefabs). The material editor has edits
+  of its own. The last 200 edits are kept, at most 128 MB. In C++, `OvCore::SceneSystem::SceneHistory`, on
+  `OvTools::Utils::StateHistory`. See [Docs/Editor.md](Docs/Editor.md).
+- **Unsaved changes**: the editor's title ends with `*` while the scene has changes that are not saved, and the editor
+  asks whether to save them before a new scene, another scene, or closing.
 
 ### Changed
 
