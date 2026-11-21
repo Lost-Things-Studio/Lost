@@ -405,3 +405,5 @@ Lost's first version: Overload 1.9 and the changes below.
   where it was drawn, a share of a step behind.
 - **Reset keeps the project's content**: `input_actions`, `translations`, `default_language` and `audio_buses` stay,
   as `project_id` does. Reset emptied them, which left the game without its actions, its texts and its buses.
+- **A translations folder that cannot be read through** is read as far as it goes, with a warning. The walk could raise
+  an exception the engine did not catch.

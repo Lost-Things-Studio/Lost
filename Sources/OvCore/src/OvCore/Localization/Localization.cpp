@@ -711,13 +711,20 @@ void OvCore::Localization::LoadProjectTranslations(const OvTools::Filesystem::In
 		}
 		else
 		{
+			// Walked without exceptions: a file that cannot be read is left out, and the folder's other files are read
 			std::vector<std::filesystem::path> files;
-			for (const auto& file : std::filesystem::directory_iterator(directory, error))
+			for (std::filesystem::directory_iterator it(directory, error), end; !error && it != end; it.increment(error))
 			{
-				if (file.is_regular_file() && file.path().extension() == ".json")
+				std::error_code fileError;
+				if (it->is_regular_file(fileError) && it->path().extension() == ".json")
 				{
-					files.push_back(file.path());
+					files.push_back(it->path());
 				}
+			}
+
+			if (error)
+			{
+				OVLOG_WARNING("translations: \"" + folder + "\" cannot be read through (" + error.message() + "), its other files are left out");
 			}
 
 			std::sort(files.begin(), files.end());
