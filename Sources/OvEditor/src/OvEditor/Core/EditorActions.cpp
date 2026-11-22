@@ -37,6 +37,7 @@
 #include <OvCore/Resources/Loaders/MaterialLoader.h>
 
 #include <OvCore/Global/QuitRequest.h>
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/Helpers/GUIHelpers.h>
 #include <OvCore/Helpers/InputHelpers.h>
@@ -478,7 +479,8 @@ void OvEditor::Core::EditorActions::LoadEmptySceneNow()
 void OvEditor::Core::EditorActions::SaveSceneToDisk(OvCore::SceneSystem::Scene& p_scene, const std::string& p_path)
 {
 	tinyxml2::XMLDocument doc;
-	tinyxml2::XMLNode* node = doc.NewElement("root");
+	tinyxml2::XMLElement* node = doc.NewElement("root");
+	OvCore::Helpers::AssetFormat::WriteVersion(*node, OvCore::Helpers::AssetFormat::kSceneVersion);
 	doc.InsertFirstChild(node);
 	p_scene.OnSerialize(doc, node);
 	doc.SaveFile(p_path.c_str());
@@ -558,7 +560,7 @@ void OvEditor::Core::EditorActions::SaveAs()
 	OvWindowing::Dialogs::SaveFileDialog dialog("New Scene");
 	const auto initialPath = m_context.projectAssetsPath / "New Scene";
 	dialog.SetInitialDirectory(initialPath.string());
-	dialog.DefineExtension("Overload Scene", ".ovscene");
+	dialog.DefineExtension("Lost Scene", ".loscene");
 	dialog.Show();
 
 	if (dialog.HasSucceeded())
@@ -2036,20 +2038,20 @@ bool OvEditor::Core::EditorActions::ImportAsset(const std::string& p_initialDest
 {
 	using namespace OvWindowing::Dialogs;
 
-	std::string modelFormats = "*.fbx;*.obj;*.glb;*.vrm;";
+	std::string modelFormats = "*.fbx;*.obj;*.gltf;*.glb;*.vrm;";
 	std::string textureFormats = "*.png;*.jpeg;*.jpg;*.tga;*.hdr;";
-	std::string shaderFormats = "*.ovfx;";
-	std::string shaderPartFormats = "*.ovfxh;";
+	std::string shaderFormats = "*.lofx;*.ovfx;";
+	std::string shaderPartFormats = "*.lofxh;*.ovfxh;";
 	std::string soundFormats = "*.mp3;*.ogg;*.wav;*.flac;";
 	std::string scriptFormats = "*.lua;";
 	std::string fontFormats = "*.ttf;*.otf;";
 
 	OpenFileDialog selectAssetDialog("Select an asset to import");
 	selectAssetDialog.AddFileType("Any supported format", modelFormats + textureFormats + shaderFormats + shaderPartFormats + soundFormats + scriptFormats + fontFormats);
-	selectAssetDialog.AddFileType("Model (.fbx, .obj, .glb, .vrm)", modelFormats);
+	selectAssetDialog.AddFileType("Model (.fbx, .obj, .gltf, .glb, .vrm)", modelFormats);
 	selectAssetDialog.AddFileType("Texture (.png, .jpeg, .jpg, .tga, .hdr)", textureFormats);
-	selectAssetDialog.AddFileType("Shader (.ovfx)", shaderFormats);
-	selectAssetDialog.AddFileType("Shader Parts (.ovfxh)", shaderPartFormats);
+	selectAssetDialog.AddFileType("Shader (.lofx, .ovfx)", shaderFormats);
+	selectAssetDialog.AddFileType("Shader Parts (.lofxh, .ovfxh)", shaderPartFormats);
 	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav, .flac)", soundFormats);
 	selectAssetDialog.AddFileType("Script (.lua)", scriptFormats);
 	selectAssetDialog.AddFileType("Font (.ttf, .otf)", fontFormats);
@@ -2123,20 +2125,20 @@ bool OvEditor::Core::EditorActions::ImportAssetAtLocation(const std::string& p_d
 {
 	using namespace OvWindowing::Dialogs;
 
-	std::string modelFormats = "*.fbx;*.obj;*.glb;*.vrm;";
+	std::string modelFormats = "*.fbx;*.obj;*.gltf;*.glb;*.vrm;";
 	std::string textureFormats = "*.png;*.jpeg;*.jpg;*.tga;*.hdr;";
-	std::string shaderFormats = "*.ovfx;";
-	std::string shaderPartFormats = "*.ovfxh;";
+	std::string shaderFormats = "*.lofx;*.ovfx;";
+	std::string shaderPartFormats = "*.lofxh;*.ovfxh;";
 	std::string soundFormats = "*.mp3;*.ogg;*.wav;*.flac;";
 	std::string scriptFormats = "*.lua;";
 	std::string fontFormats = "*.ttf;*.otf;";
 
 	OpenFileDialog selectAssetDialog("Select an asset to import");
 	selectAssetDialog.AddFileType("Any supported format", modelFormats + textureFormats + shaderFormats + shaderPartFormats + soundFormats + scriptFormats + fontFormats);
-	selectAssetDialog.AddFileType("Model (.fbx, .obj, .glb, .vrm)", modelFormats);
+	selectAssetDialog.AddFileType("Model (.fbx, .obj, .gltf, .glb, .vrm)", modelFormats);
 	selectAssetDialog.AddFileType("Texture (.png, .jpeg, .jpg, .tga, .hdr)", textureFormats);
-	selectAssetDialog.AddFileType("Shader (.ovfx)", shaderFormats);
-	selectAssetDialog.AddFileType("Shader Parts (.ovfxh)", shaderPartFormats);
+	selectAssetDialog.AddFileType("Shader (.lofx, .ovfx)", shaderFormats);
+	selectAssetDialog.AddFileType("Shader Parts (.lofxh, .ovfxh)", shaderPartFormats);
 	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav, .flac)", soundFormats);
 	selectAssetDialog.AddFileType("Script (.lua)", scriptFormats);
 	selectAssetDialog.AddFileType("Font (.ttf, .otf)", fontFormats);

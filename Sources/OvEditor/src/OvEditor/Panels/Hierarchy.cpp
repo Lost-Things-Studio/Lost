@@ -131,7 +131,7 @@ public:
 				OvWindowing::Dialogs::SaveFileDialog dialog("Save Prefab");
 				dialog.SetInitialDirectory(EDITOR_CONTEXT(projectAssetsPath).string());
 				dialog.SetInitialFilename(target->GetName());
-				dialog.DefineExtension("Overload Prefab", ".ovprefab");
+				dialog.DefineExtension("Lost Prefab", ".loprefab");
 				dialog.Show();
 
 				if (!dialog.HasSucceeded())

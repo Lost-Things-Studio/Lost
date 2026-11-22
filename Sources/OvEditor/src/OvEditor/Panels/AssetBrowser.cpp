@@ -15,6 +15,7 @@
 
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/Global/ServiceLocator.h>
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/Helpers/GUIHelpers.h>
 #include <OvCore/ResourceManagement/MaterialManager.h>
@@ -290,14 +291,16 @@ namespace
 			if (!ValidateFolderPath(filePath, "Create shader"))
 				return;
 
-			const auto finalPath = FindAvailableFilePath(filePath / (p_shaderName + ".ovfx"));
+			const auto finalPath = FindAvailableFilePath(filePath / (p_shaderName + ".lofx"));
 
 			if (p_type.has_value())
 			{
 				std::filesystem::copy_file(
-					std::filesystem::path(EDITOR_CONTEXT(engineAssetsPath)) /
-					"Shaders" /
-					std::format("{}.ovfx", p_type.value()),
+					OvTools::Utils::PathParser::FindFileToRead(
+						std::filesystem::path(EDITOR_CONTEXT(engineAssetsPath)) /
+						"Shaders" /
+						std::format("{}.ovfx", p_type.value())
+					),
 					finalPath
 				);
 			}
@@ -349,7 +352,7 @@ namespace
 				p_setupCallback.value()(material);
 			}
 
-			const auto finalPath = FindAvailableFilePath(filePath / (p_materialName + ".ovmat"));
+			const auto finalPath = FindAvailableFilePath(filePath / (p_materialName + ".lomat"));
 			OvCore::Resources::Loaders::MaterialLoader::Save(material, finalPath.string());
 
 			ItemAddedEvent.Invoke(finalPath);
@@ -406,6 +409,7 @@ namespace
 				auto& createScriptMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Script");
 				auto& createShaderMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Shader");
 				auto& createMaterialMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Material");
+				auto& createAnimationGraphMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Animation Graph");
 
 				auto& createEmptyShaderMenu = createShaderMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Empty");
 				auto& createPartialShaderMenu = createShaderMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Partial");
@@ -423,6 +427,7 @@ namespace
 				auto& createFolder = createFolderMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
 				auto& createScene = createSceneMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
 				auto& createScript = createScriptMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
+				auto& createAnimationGraph = createAnimationGraphMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
 
 				auto& createEmptyMaterial = createEmptyMaterialMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
 				auto& createStandardMaterial = createStandardMaterialMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
@@ -440,6 +445,7 @@ namespace
 				createFolderMenu.ClickedEvent += [&createFolder] { createFolder.content = ""; };
 				createSceneMenu.ClickedEvent += [&createScene] { createScene.content = ""; };
 				createScriptMenu.ClickedEvent += [&createScript] { createScript.content = ""; };
+				createAnimationGraphMenu.ClickedEvent += [&createAnimationGraph] { createAnimationGraph.content = ""; };
 				createStandardShaderMenu.ClickedEvent += [&createStandardShader] { createStandardShader.content = ""; };
 				createUnlitShaderMenu.ClickedEvent += [&createUnlitShader] { createUnlitShader.content = ""; };
 				createSkysphereShaderMenu.ClickedEvent += [&createSkysphereShader] { createSkysphereShader.content = ""; };
@@ -464,7 +470,7 @@ namespace
 				createScene.EnterPressedEvent += [this](std::string newSceneName) {
 					if (!ValidateFolderPath(filePath, "Create scene"))
 						return;
-					const auto finalPath = FindAvailableFilePath(filePath / (newSceneName + ".ovscene"));
+					const auto finalPath = FindAvailableFilePath(filePath / (newSceneName + ".loscene"));
 
 					auto emptyScene = OvCore::SceneSystem::Scene{};
 					emptyScene.AddDefaultCamera();
@@ -476,10 +482,34 @@ namespace
 					Close();
 				};
 
+				createAnimationGraph.EnterPressedEvent += [this](std::string p_newName) {
+					if (!ValidateFolderPath(filePath, "Create animation graph"))
+						return;
+					const auto finalPath = FindAvailableFilePath(filePath / (p_newName + ".loanim"));
+
+					// One layer with one empty state: a graph that reads, to fill in (see Docs/Animation.md)
+					{
+						std::ofstream outfile(finalPath);
+						outfile << std::format(
+							"{{\n"
+							"\t\"version\": {},\n"
+							"\t\"parameters\": [],\n"
+							"\t\"layers\": [\n"
+							"\t\t{{ \"name\": \"Base\", \"states\": [ {{ \"name\": \"Idle\" }} ] }}\n"
+							"\t]\n"
+							"}}\n",
+							OvCore::Helpers::AssetFormat::kAnimationGraphVersion
+						);
+					}
+
+					ItemAddedEvent.Invoke(finalPath);
+					Close();
+				};
+
 				createPartialShader.EnterPressedEvent += [this](std::string newShaderName) {
 					if (!ValidateFolderPath(filePath, "Create shader"))
 						return;
-					const auto finalPath = FindAvailableFilePath(filePath / (newShaderName + ".ovfxh"));
+					const auto finalPath = FindAvailableFilePath(filePath / (newShaderName + ".lofxh"));
 
 					{
 						std::ofstream outfile(finalPath);
@@ -665,10 +695,11 @@ namespace
 			{
 				for (const std::string& materialName : model->GetMaterialNames())
 				{
-					const auto finalPath = FindAvailableFilePath(filePath.parent_path() / (materialName + ".ovmat"));
+					const auto finalPath = FindAvailableFilePath(filePath.parent_path() / (materialName + ".lomat"));
 
 					const std::string fileContent = std::format(
-						"<root><shader>:Shaders\\{}.ovfx</shader></root>",
+						"<root version=\"{}\"><shader>:Shaders/{}.ovfx</shader></root>",
+						OvCore::Helpers::AssetFormat::kMaterialVersion,
 						p_shaderType
 					);
 
@@ -711,7 +742,7 @@ namespace
 						? materialNames[materialIndex]
 						: std::format("embedded_material_{}", materialIndex);
 
-					const auto finalPath = FindAvailableFilePath(filePath.parent_path() / (materialName + ".ovmat"));
+					const auto finalPath = FindAvailableFilePath(filePath.parent_path() / (materialName + ".lomat"));
 					OvCore::Resources::Loaders::MaterialLoader::Save(*embeddedMaterial, finalPath.string());
 					DuplicateEvent.Invoke(finalPath);
 				}
@@ -1197,7 +1228,7 @@ void OvEditor::Panels::AssetBrowser::ConsiderItem(OvUI::Widgets::Layout::TreeNod
 				}
 
 				const std::string actorName = p_data.first->GetName().empty() ? "Prefab" : p_data.first->GetName();
-				const std::filesystem::path prefabPath = FindAvailableFilePath(correctPath / (actorName + ".ovprefab"));
+				const std::filesystem::path prefabPath = FindAvailableFilePath(correctPath / (actorName + ".loprefab"));
 
 				EDITOR_EXEC(SaveActorAsPrefab(*p_data.first, prefabPath.string()));
 
