@@ -6,8 +6,8 @@ the `Standard` shader's stages and extension points. Together they make the shad
 
 ## Version
 
-`Common/ShaderApi.ovfxh` defines `SHADER_API_VERSION_MAJOR` and `SHADER_API_VERSION_MINOR`, now 1.1: 1.1 added
-`Common/Particles.ovfxh`. The engine
+`Common/ShaderApi.lofxh` defines `SHADER_API_VERSION_MAJOR` and `SHADER_API_VERSION_MINOR`, now 1.1: 1.1 added
+`Common/Particles.lofxh`. The engine
 buffer includes it, so every shader can test them:
 
 ```glsl
@@ -32,33 +32,33 @@ this table against the files: a name added to a public include must be listed he
 
 | Include | Declares | Internal |
 | --- | --- | --- |
-| `Common/ShaderApi.ovfxh` | `SHADER_API_VERSION_MAJOR`, `SHADER_API_VERSION_MINOR` | |
-| `Common/Buffers/EngineUBO.ovfxh` | `ubo_Model`, `ubo_View`, `ubo_Projection`, `ubo_ViewProjection`, `ubo_ViewPos`, `ubo_NormalMatrix`, `ubo_UserMatrix`, `ubo_Time`, `ubo_GameTime`, `ubo_DepthOnly`, `ubo_InstanceCount`, `ubo_FogStart`, `ubo_FogDensity`, `ubo_FogMax`, `ubo_FogColor` | |
-| `Common/Constants.ovfxh` | `PI` | |
-| `Common/Fog.ovfxh` | `FogAmount(fragPos)`, `ApplyFog(color, fragPos)`, `FogFade(alpha, fragPos)` | |
-| `Common/Utils.ovfxh` | `TileAndOffsetTexCoords(texCoords, tiling, offset)`, `IsOrthographic(projection)`, `DistanceFadeAlpha(fragPos, viewPos, fadeStart, fadeLength)`, `Dithering(alpha, fragCoord)`, `ApplyParallaxOcclusionMapping(texCoords, heightMap, tangentViewPos, tangentFragPos, heightScale, minLayers, maxLayers)`, `ApplyParallaxMapping(texCoords, heightMap, tangentViewPos, tangentFragPos, heightScale)`, `IsParallaxOutOfBounds(texCoords, tiling, offset, projection)`, `ConstructTBN(model, normal, tangent, bitangent)`, `ComputeNormal(texCoords, normal, normalMap, TBN)`, `UnPack(packedFloat)` | `IsMasked` (deprecated) |
-| `Common/Instancing.ovfxh` | `InstanceModelMatrix(instance)`, `InstanceNormalMatrix(instance)`, `InstanceUserMatrix(instance)` | |
-| `Common/Skinning.ovfxh` | `ComputeSkinningMatrix(boneIDs, boneWeights)` | |
-| `Common/Particles.ovfxh` | `Particle`, `ParticleAt(instance)`, `ParticleModelMatrix(particle)` | |
-| `Common/Physics.ovfxh` | `IsPointInAABB(point, center, halfSize)`, `IsPointInSphere(point, center, radius)` | |
-| `Lighting/PBR.ovfxh` | `PBRLightingModel(albedo, metallic, roughness, ao, normal, viewPos, fragPos, shadowMap, lightSpaceMatrix, environmentMap, transmission, refractionIndex)` | `DistributionGGX`, `GeometrySchlickGGX`, `FresnelSchlick`, `GeometrySmith`, `CalculateBRDF` |
-| `Standard/StandardVertex.ovfxh` | `StandardVertex` (extension point) | |
-| `Standard/StandardFragment.ovfxh` | `StandardClip`, `StandardSurface`, `StandardLighting` (extension points), `StandardSurfaceData`, `u_Albedo`, `u_AlbedoMap`, `u_MaskMap`, `u_AmbientOcclusionMap`, `u_EmissiveMap`, `u_EmissiveColor`, `u_EmissiveIntensity`, `u_Metallic`, `u_MetallicMap`, `u_Roughness`, `u_RoughnessMap`, `u_Specular`, `u_SpecularMap`, `u_Glossiness`, `u_GlossinessMap`, `u_NormalMap`, `u_HeightMap`, `u_HeightScale`, `u_ParallaxClipEdges`, `u_MinLayers`, `u_MaxLayers`, `u_ShadowClippingThreshold`, `u_DistanceFadeStart`, `u_DistanceFadeLength`, `u_TextureTiling`, `u_TextureOffset`, `u_AlphaClippingThreshold`, `u_AlphaDithering`, `u_BuiltInToneMapping`, `u_BuiltInGammaCorrection`, `u_RefractionIndex`, `u_Transmission`, `u_Fog`, `_ShadowMap`, `_LightSpaceMatrix`, `_EnvironmentMap` | `DISABLE_IMAGE_BASED_LIGHTING` |
+| `Common/ShaderApi.lofxh` | `SHADER_API_VERSION_MAJOR`, `SHADER_API_VERSION_MINOR` | |
+| `Common/Buffers/EngineUBO.lofxh` | `ubo_Model`, `ubo_View`, `ubo_Projection`, `ubo_ViewProjection`, `ubo_ViewPos`, `ubo_NormalMatrix`, `ubo_UserMatrix`, `ubo_Time`, `ubo_GameTime`, `ubo_DepthOnly`, `ubo_InstanceCount`, `ubo_FogStart`, `ubo_FogDensity`, `ubo_FogMax`, `ubo_FogColor` | |
+| `Common/Constants.lofxh` | `PI` | |
+| `Common/Fog.lofxh` | `FogAmount(fragPos)`, `ApplyFog(color, fragPos)`, `FogFade(alpha, fragPos)` | |
+| `Common/Utils.lofxh` | `TileAndOffsetTexCoords(texCoords, tiling, offset)`, `IsOrthographic(projection)`, `DistanceFadeAlpha(fragPos, viewPos, fadeStart, fadeLength)`, `Dithering(alpha, fragCoord)`, `ApplyParallaxOcclusionMapping(texCoords, heightMap, tangentViewPos, tangentFragPos, heightScale, minLayers, maxLayers)`, `ApplyParallaxMapping(texCoords, heightMap, tangentViewPos, tangentFragPos, heightScale)`, `IsParallaxOutOfBounds(texCoords, tiling, offset, projection)`, `ConstructTBN(model, normal, tangent, bitangent)`, `ComputeNormal(texCoords, normal, normalMap, TBN)`, `UnPack(packedFloat)` | `IsMasked` (deprecated) |
+| `Common/Instancing.lofxh` | `InstanceModelMatrix(instance)`, `InstanceNormalMatrix(instance)`, `InstanceUserMatrix(instance)` | |
+| `Common/Skinning.lofxh` | `ComputeSkinningMatrix(boneIDs, boneWeights)` | |
+| `Common/Particles.lofxh` | `Particle`, `ParticleAt(instance)`, `ParticleModelMatrix(particle)` | |
+| `Common/Physics.lofxh` | `IsPointInAABB(point, center, halfSize)`, `IsPointInSphere(point, center, radius)` | |
+| `Lighting/PBR.lofxh` | `PBRLightingModel(albedo, metallic, roughness, ao, normal, viewPos, fragPos, shadowMap, lightSpaceMatrix, environmentMap, transmission, refractionIndex)` | `DistributionGGX`, `GeometrySchlickGGX`, `FresnelSchlick`, `GeometrySmith`, `CalculateBRDF` |
+| `Standard/StandardVertex.lofxh` | `StandardVertex` (extension point) | |
+| `Standard/StandardFragment.lofxh` | `StandardClip`, `StandardSurface`, `StandardLighting` (extension points), `StandardSurfaceData`, `u_Albedo`, `u_AlbedoMap`, `u_MaskMap`, `u_AmbientOcclusionMap`, `u_EmissiveMap`, `u_EmissiveColor`, `u_EmissiveIntensity`, `u_Metallic`, `u_MetallicMap`, `u_Roughness`, `u_RoughnessMap`, `u_Specular`, `u_SpecularMap`, `u_Glossiness`, `u_GlossinessMap`, `u_NormalMap`, `u_HeightMap`, `u_HeightScale`, `u_ParallaxClipEdges`, `u_MinLayers`, `u_MaxLayers`, `u_ShadowClippingThreshold`, `u_DistanceFadeStart`, `u_DistanceFadeLength`, `u_TextureTiling`, `u_TextureOffset`, `u_AlphaClippingThreshold`, `u_AlphaDithering`, `u_BuiltInToneMapping`, `u_BuiltInGammaCorrection`, `u_RefractionIndex`, `u_Transmission`, `u_Fog`, `_ShadowMap`, `_LightSpaceMatrix`, `_EnvironmentMap` | `DISABLE_IMAGE_BASED_LIGHTING` |
 
 - **The engine buffer** (`binding = 0`): the model, view and projection matrices, the eye's position, the renderer's
   user matrix (see [Rendering](Rendering.md)), real time and game time in seconds, the depth pre-pass flag, the number
   of instances of an instanced draw, and the scene's fog.
 - **The engine binds** `_ShadowMap`, `_LightSpaceMatrix` and `_EnvironmentMap` to a material that receives shadows and
   reflections: a lit shader declares them and passes them to `PBRLightingModel`.
-- `Lighting/Light.ovfxh`, `Lighting/Shadow.ovfxh`, `Lighting/IBL.ovfxh` and the other buffers of `Common/Buffers/`
-  are internal: `PBR.ovfxh`, `Instancing.ovfxh` and `Particles.ovfxh` include them.
+- `Lighting/Light.lofxh`, `Lighting/Shadow.lofxh`, `Lighting/IBL.lofxh` and the other buffers of `Common/Buffers/`
+  are internal: `PBR.lofxh`, `Instancing.lofxh` and `Particles.lofxh` include them.
 - **The particles** of a particle system's draw: `ParticleAt(gl_InstanceID)` returns the instance's particle (`alive`,
   `position` and `velocity` in the world, `size`, `color`, `rotation`, `life`, `seed`), worked out at the system's
   time; `ParticleModelMatrix(particle)` places a model as it. See [Particles](Particles.md).
 
 ## Building on Standard
 
-`Standard.ovfx` is two public includes, one per stage. A shader built on it declares its own passes and features, then
+`Standard.lofx` is two public includes, one per stage. A shader built on it declares its own passes and features, then
 includes both stages; before each include, it may define extension points, whose functions it writes after the
 include:
 
@@ -84,12 +84,12 @@ uniforms and variants.
 
 #shader vertex
 #version 450 core
-#include ":Shaders/Standard/StandardVertex.ovfxh"
+#include ":Shaders/Standard/StandardVertex.lofxh"
 
 #shader fragment
 #version 450 core
 #define STANDARD_LIGHTING
-#include ":Shaders/Standard/StandardFragment.ovfxh"
+#include ":Shaders/Standard/StandardFragment.lofxh"
 
 uniform vec3 u_RimColor = vec3(1.0);
 uniform float u_RimIntensity = 0.0;
@@ -102,7 +102,7 @@ vec3 StandardLighting(vec3 color, StandardSurfaceData surface, vec3 fragPos)
 ```
 
 The stages' varyings are `Standard`'s: a shader that needs its own (a colour per vertex, a value per instance) writes
-its own stages with the public includes. `Tests/GameChecks/Assets/Shaders/Hooked.ovfx` uses all four extension points.
+its own stages with the public includes. `Tests/GameChecks/Assets/Shaders/Hooked.lofx` uses all four extension points.
 
 ## The fog
 
@@ -112,7 +112,7 @@ process stack sets (see [Rendering](Rendering.md)).
 - `Standard` and `Unlit` have a material option, `u_Fog`: on by default for `Standard`, off for `Unlit`, which matches
   what they did before the option. Turn it off for what must stay sharp in the haze (a sky, a marker), on for an unlit
   surface that belongs to the scene.
-- A custom shader includes `Common/Fog.ovfxh` after the engine buffer, and calls `ApplyFog(color, fragPos)` on a
+- A custom shader includes `Common/Fog.lofxh` after the engine buffer, and calls `ApplyFog(color, fragPos)` on a
   surface's final colour, or `FogFade(alpha, fragPos)` on a blended effect's opacity, which fades out instead of
   turning into a patch of fog. A shader that forgets it shows as a sharp shape against the haze.
 
@@ -121,7 +121,7 @@ process stack sets (see [Rendering](Rendering.md)).
 - A lit custom shader that receives shadows declares `#pass SHADOW_PASS` and discards below
   `u_ShadowClippingThreshold` there, and declares `_ShadowMap`, `_LightSpaceMatrix` and `_EnvironmentMap`.
 - Identical meshes are drawn as one instanced draw when their shader declares `#engine_capability INSTANCING` and reads
-  its matrices through `Common/Instancing.ovfxh` (`InstanceModelMatrix`, `InstanceNormalMatrix`,
+  its matrices through `Common/Instancing.lofxh` (`InstanceModelMatrix`, `InstanceNormalMatrix`,
   `InstanceUserMatrix(gl_InstanceID)`): the opaque ones of one material and mesh, and blended ones of one material side
   by side in the drawing order. A value passed from the vertex to the fragment stage per instance is `flat`. A shader
   that reads `ubo_UserMatrix` instead does not declare the capability.

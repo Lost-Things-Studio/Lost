@@ -53,7 +53,7 @@ A terrain is two components on one actor: a `PhysicalHeightField`, which holds t
   coarser level, every triangle with a hole of the full detail on or inside it, so a hole seen from afar is drawn up to
   a coarse cell wider than it is. No skirt hangs along a hole.
 - **The look**:
-  - The material is `:Materials/Terrain.ovmat` by default (`Standard`, rough, casting and receiving shadows), or any
+  - The material is `:Materials/Terrain.lomat` by default (`Standard`, rough, casting and receiving shadows), or any
     other (`SetMaterialPath`, `material`).
   - The terrain draws with a copy of it, so two terrains may share a material.
   - Its albedo map gets the colour map, stretched over the whole terrain, a pixel centre on each sample for a map of

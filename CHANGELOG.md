@@ -92,8 +92,8 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Shader API**: the public includes, their functions and uniforms, the engine buffer and `Standard`'s stages are
   declared in [Docs/Shaders.md](Docs/Shaders.md) and versioned (`SHADER_API_VERSION_MAJOR`/`MINOR`, 1.0, in every
   shader through the engine buffer); the engine's tests check the declaration against the includes.
-- **Standard's extension points**: `Standard` is two public includes (`Standard/StandardVertex.ovfxh`,
-  `Standard/StandardFragment.ovfxh`) that a shader includes and extends through `STANDARD_VERTEX`, `STANDARD_CLIP`,
+- **Standard's extension points**: `Standard` is two public includes (`Standard/StandardVertex.lofxh`,
+  `Standard/StandardFragment.lofxh`) that a shader includes and extends through `STANDARD_VERTEX`, `STANDARD_CLIP`,
   `STANDARD_SURFACE` and `STANDARD_LIGHTING`, instead of copying `Standard` and falling behind it. `Standard` draws as
   before, pixel for pixel.
 - **Global frame events**: `Events.AddUpdate(callback[, owner])`, `Events.AddLateUpdate` and `Events.Remove` run a
@@ -152,13 +152,13 @@ Lost's first version: Overload 1.9 and the changes below.
   that is not that component (`light.SetIntensity(2)`) raises an error instead of reading it as one. The Lua API is
   now 1.10. See [Docs/Scripting.md](Docs/Scripting.md).
 - **Material blend modes**: a blendable material is combined with what is already drawn as alpha (as before), additive
-  or premultiplied (`blend_mode` in a `.ovmat`, "Blend Mode" in the material editor, `Material::SetBlendMode` in
+  or premultiplied (`blend_mode` in a material file, "Blend Mode" in the material editor, `Material::SetBlendMode` in
   C++). A material saved before them keeps blending as alpha. See [Docs/Rendering.md](Docs/Rendering.md#blend-modes).
 - **GPU particles**: the `ParticleSystem` component emits particles the GPU draws in one draw per mesh. Each is
   written once at its birth, and the shader works out the rest on the system's clock: rate and bursts, five shapes,
   gravity and drag, size and colour over life, fades, spin, the world's space or the emitter's, game or real time,
-  seeds. Billboards by default (`:Shaders/Particle.ovfx`, `:Materials/Particle.ovmat`), or any model with a shader
-  that reads the particles through the new public include `Common/Particles.ovfxh`. Scripts burst particles where they
+  seeds. Billboards by default (`:Shaders/Particle.lofx`, `:Materials/Particle.lomat`), or any model with a shader
+  that reads the particles through the new public include `Common/Particles.lofxh`. Scripts burst particles where they
   want with `Emit(count, overrides)`. In the editor: Add Component and Actors > Others > Particle System. The Lua API is
   now 1.11 (`ParticleSystem`, `ParticleShape`, `ParticleSpace`, `Actor:Get`/`Add`/`RemoveParticleSystem`), and the
   shader API 1.1. See [Docs/Particles.md](Docs/Particles.md).
@@ -192,11 +192,11 @@ Lost's first version: Overload 1.9 and the changes below.
   a ground; out of sight it rests, and a jump starts it again from rest. In C++, `OvCore::Animation::SpringSolver`.
   Both apply after the scripts, from the frame's pose, before the bone attachments. The Lua API is now 1.15. See
   [Docs/Animation.md](Docs/Animation.md#spring-bones).
-- **Animation graphs**: the `Animator` component plays a JSON file of the project (`.ovanim`): parameters (numbers,
+- **Animation graphs**: the `Animator` component plays a JSON file of the project (`.loanim`): parameters (numbers,
   booleans, triggers), layers over each other under a bone mask, states (a clip, clips blended along a parameter in
   step, or nothing), and transitions on conditions, triggers and exit times, with fades that start from the blend they
   interrupt. The skinned mesh renderer samples the graph instead of its own layers, with the same bone matching. A file
-  that cannot play says where, with its JSON path. The editor knows `.ovanim` files (`EFileType::ANIMATION_GRAPH`):
+  that cannot play says where, with its JSON path. The editor knows `.loanim` files (`EFileType::ANIMATION_GRAPH`):
   the Asset Browser lists them, the inspector picks them, and a rename follows them. In C++,
   `OvCore::Animation::AnimationGraph`, and `Scene::GetRealAssetPath` is public. The Lua API is now 1.16. See [Docs/Animation.md](Docs/Animation.md#animator).
 - **Terrains**: a `PhysicalHeightField` can come from a height map, an image of the project of 8 or 16 bits with a scale
@@ -205,7 +205,7 @@ Lost's first version: Overload 1.9 and the changes below.
   `math.huge`). Over a hole there is no height, and the terrain leaves out the triangles the physics leaves out. The
   `Terrain` component draws it in chunks, each at one of up to 4 levels of detail by its distance to the camera, with
   skirts hiding the gaps; its colour comes from a colour map, an image or a colour per sample from a script, on the
-  albedo of `:Materials/Terrain.ovmat` or any material. In C++, `OvCore::Terrain::Heightmap` and `TerrainMesher`. The
+  albedo of `:Materials/Terrain.lomat` or any material. In C++, `OvCore::Terrain::Heightmap` and `TerrainMesher`. The
   Lua API is now 1.17. See [Docs/Terrain.md](Docs/Terrain.md).
 - **Levels of detail for models**: a `ModelRenderer` takes up to 7 lighter models, each drawn from its distance on
   with the renderer's materials by slot, the distance measured to the centre of the model's bounds rather than to its
@@ -225,7 +225,7 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Lit UI in the world**: a `Text` or an `Image` under a world space canvas can be lit as the scene is, by its lights,
   the shadows it receives and its fog (`lit` in a file, "Lit" in the inspector, `SetLit` and `IsLit` in Lua;
   `DPanel:SetLit` and `DLabel:SetLit` in the UI library). It is drawn among the transparent surfaces with a copy of the
-  host's lit material (`:Materials/TextLit.ovmat`, `:Materials/ImageLit.ovmat`, through
+  host's lit material (`:Materials/TextLit.lomat`, `:Materials/ImageLit.lomat`, through
   `UIResourceRegistry::Definition`), the elements of a canvas in the order of the hierarchy
   (`SceneDrawableDescriptor::sortPosition`). A screen space canvas stays unlit. The Lua API is now 1.20. See
   [Docs/Rendering.md](Docs/Rendering.md#lit-ui-in-the-world).
@@ -282,6 +282,10 @@ Lost's first version: Overload 1.9 and the changes below.
   in version 1 (`format_version=1`, `<root version="1">`, `"version": 1`). A file without a version is version 0 and
   reads as before; a file of a newer version is refused with an error that names it, and a newer project is not opened
   (OvGame ends with exit code 1).
+- **Converting a project to the Lost formats**: File > Convert Project to Lost Formats renames each file of a project
+  under one of Overload's names, its project file included, and changes the references to it and to the engine's
+  resources; in Lua scripts, the strings that are exactly such a path, each line listed in a report
+  (`LostFormatsConversion.txt`). In C++, `OvCore::Helpers::FormatConversion`.
 - **Create > Animation Graph** in the asset browser: a graph of one layer and one empty state, to fill in. A graph's
   `editor` member is left for the graph editor.
 
@@ -302,7 +306,7 @@ Lost's first version: Overload 1.9 and the changes below.
   dynamic bodies is now the project option `physics_ragdoll_ignores_dynamic_bodies`, off by default. A project that
   relied on it sets it to `true`.
 - **Text texture coordinates are in atlas pixels**: a custom text shader divides them by
-  `textureSize(u_FontAtlas, 0)`, as `Text.ovfx` does, so that a growing atlas moves no glyph.
+  `textureSize(u_FontAtlas, 0)`, as `Text.lofx` does, so that a growing atlas moves no glyph.
 - **The UI controller updates itself**: a `controller:Update(deltaTime)` from a Behaviour now changes nothing after
   the frame the controller is created in, and can be removed. Panel callbacks run after every `OnLateUpdate`; a
   gameplay script that read clicks meant for the UI no longer sees them.
@@ -317,6 +321,8 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Up to 64 sounds are heard at once**, the loudest, instead of 16.
 - **A sound in the world fades no more past its source's maximum distance**, 500 metres by default, where it faded
   without end: a source of an older scene, exponential from its threshold, keeps there a five-hundredth of its volume.
+- **The engine's and the editor's resources have Lost's names**: `:Shaders/Standard.lofx`, `:Materials/Default.lomat`,
+  `Common/Fog.lofxh`... A project or a script that names them by Overload's names still finds them.
 - **Files are written in a fixed order**: a material's uniforms and features, and an INI file's keys (a project, an
   asset's metadata, the editor's settings), are written sorted by name. They came in a map's order, which could differ
   from one save to the next.
