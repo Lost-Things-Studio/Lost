@@ -8,6 +8,7 @@
 #include <filesystem>
 
 #include <OvCore/Global/ServiceLocator.h>
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/ResourceManagement/ModelManager.h>
 #include <OvCore/ResourceManagement/TextureManager.h>
@@ -84,6 +85,7 @@ void OvEditor::Panels::AssetProperties::SetTarget(const std::string& p_path)
 void OvEditor::Panels::AssetProperties::Refresh()
 {
 	m_metadata.reset(new OvTools::Filesystem::IniFile(EDITOR_EXEC(GetRealPath(m_resource)) + ".meta"));
+	OvCore::Helpers::AssetFormat::CheckMetadata(*m_metadata, m_resource + ".meta");
 
 	CreateSettings();
 	CreateInfo();
@@ -383,6 +385,7 @@ void OvEditor::Panels::AssetProperties::CreateTextureSettings()
 
 void OvEditor::Panels::AssetProperties::Apply()
 {
+	OvCore::Helpers::AssetFormat::WriteMetadataVersion(*m_metadata);
 	m_metadata->Rewrite();
 
 	const auto resourcePath = EDITOR_EXEC(GetResourcePath(m_resource));

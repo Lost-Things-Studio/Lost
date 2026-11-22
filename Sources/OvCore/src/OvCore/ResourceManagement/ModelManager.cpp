@@ -7,6 +7,7 @@
 #include "OvCore/ResourceManagement/ModelManager.h"
 
 #include <OvCore/Global/ServiceLocator.h>
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/ResourceManagement/MaterialManager.h>
 #include <OvCore/ResourceManagement/TextureManager.h>
 #include <OvRendering/Resources/Parsers/EmbeddedAssetPath.h>
@@ -24,6 +25,7 @@ namespace
 	ModelMetadata GetAssetMetadata(const std::string& p_path)
 	{
 		auto metaFile = OvTools::Filesystem::IniFile(p_path + ".meta");
+		OvCore::Helpers::AssetFormat::CheckMetadata(metaFile, p_path + ".meta");
 		ModelMetadata modelMetadata;
 
 		if (metaFile.GetOrDefault("CALC_TANGENT_SPACE",			true))	modelMetadata.parserFlags |= OvRendering::Resources::Parsers::EModelParserFlags::CALC_TANGENT_SPACE;

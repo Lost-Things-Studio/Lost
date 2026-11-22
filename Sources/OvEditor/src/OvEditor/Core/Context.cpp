@@ -8,9 +8,11 @@
 #include <filesystem>
 
 #include <OvCore/Global/ServiceLocator.h>
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/Helpers/ProjectSettings.h>
 #include <OvCore/Scripting/ScriptEngine.h>
 #include <OvDebug/Assertion.h>
+#include <OvDebug/Logger.h>
 #include <OvEditor/Core/Context.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Utils/FileSystem.h>
@@ -18,7 +20,9 @@
 #include <OvEditor/Settings/EditorSettings.h>
 #include <OvRendering/Entities/Light.h>
 #include <OvTools/Utils/SystemCalls.h>
+#include <OvWindowing/Dialogs/MessageBox.h>
 #include <optional>
+#include <stdexcept>
 
 using namespace OvCore::Global;
 using namespace OvCore::ResourceManagement;
@@ -114,6 +118,14 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	sceneManager(projectAssetsPath.string(), engineAssetsPath.string()),
 	projectSettings(projectFile.string())
 {
+	// A project newer than this engine is not opened: saving it would write it back in an older version
+	if (std::string error; !OvCore::Helpers::AssetFormat::ReadVersion(projectSettings, OvCore::Helpers::AssetFormat::kProjectVersion, projectFile.filename().string(), error))
+	{
+		OVLOG_ERROR(error);
+		OvWindowing::Dialogs::MessageBox message("Project not opened", error, OvWindowing::Dialogs::MessageBox::EMessageType::ERROR, OvWindowing::Dialogs::MessageBox::EButtonLayout::OK);
+		throw std::runtime_error(error);
+	}
+
 	// A project made with an older version lacks the settings added since: they get their default, the others stay
 	if (CompleteProjectSettings())
 	{
@@ -296,6 +308,7 @@ void OvEditor::Core::Context::ResetProjectSettings()
 bool OvEditor::Core::Context::CompleteProjectSettings()
 {
 	bool added = false;
+	added |= projectSettings.Add<int>(OvCore::Helpers::AssetFormat::kIniVersionKey, OvCore::Helpers::AssetFormat::kProjectVersion);
 	added |= projectSettings.Add<float>("gravity", -9.81f);
 	added |= projectSettings.Add<int>("x_resolution", 1280);
 	added |= projectSettings.Add<int>("y_resolution", 720);
