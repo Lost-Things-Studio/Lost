@@ -293,7 +293,8 @@ namespace OvCore::SceneSystem
 		Navigation::NavMesh& GetNavigation();
 
 		/**
-		* Returns the file an asset path names: in the project's assets, or the engine's for a path starting with ':'
+		* Returns the file an asset path names: in the project's assets, or the engine's for a path starting with ':'. A
+		* file asked for under the other name of its format is found under the name it has (PathParser::FindFileToRead)
 		* @param p_path
 		*/
 		std::filesystem::path GetRealAssetPath(const std::string& p_path) const;

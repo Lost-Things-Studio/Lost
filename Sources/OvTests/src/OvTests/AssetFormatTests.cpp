@@ -346,6 +346,21 @@ TEST_SUITE("Asset formats")
 		CHECK(unknown->find("versoin: unknown member") == 0);
 	}
 
+	TEST_CASE("an asset a component reads itself is found under its format's other name")
+	{
+		OvTests::TempFolder folder;
+		const auto graph = folder.WriteFile("Assets/Animations/Hero.loanim", "{}");
+		const auto engine = folder.WriteFile("Engine/Animations/Base.ovanim", "{}");
+		OvCore::SceneSystem::SceneManager manager((folder.GetPath() / "Assets").string(), (folder.GetPath() / "Engine").string());
+		const auto& scene = *manager.GetCurrentScene();
+
+		// An animator's graph, as CAnimator reads it
+		CHECK(scene.GetRealAssetPath("Animations/Hero.ovanim") == graph);
+		CHECK(scene.GetRealAssetPath("Animations/Hero.loanim") == graph);
+		CHECK(scene.GetRealAssetPath(":Animations/Base.loanim") == engine);
+		CHECK(scene.GetRealAssetPath("Animations/Missing.ovanim") == folder.GetPath() / "Assets/Animations/Missing.ovanim");
+	}
+
 	TEST_CASE("a resource asked for under its format's other name is the one of the file that exists")
 	{
 		OvTests::TempFolder folder;

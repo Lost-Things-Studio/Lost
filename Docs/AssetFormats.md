@@ -38,8 +38,8 @@ sounds and fonts.
 - **Overload's names are still read**: `.ovX` and `.loX` are the same file type (one `PathParser::EFileType`). They are
   found, listed, opened and referenced the same way.
 - **A file asked for by one name is found under the other**: a scene that names `Materials/Rock.ovmat` reads
-  `Materials/Rock.lomat` once the file has been renamed, and so do the resource managers, `#include`, scenes, prefabs
-  and projects (`PathParser::FindFileToRead`). The resource is kept under the name the file has, so that what refers to
+  `Materials/Rock.lomat` once the file has been renamed, and so do the resource managers, `#include`, scenes, prefabs,
+  projects and the files a component reads itself, such as an animator's graph (`PathParser::FindFileToRead`). The resource is kept under the name the file has, so that what refers to
   it is saved with that name. A file is never written under the other name.
 - **A folder holds one project file**, `.loproject` or `.ovproject`. Given a folder with both, the editor opens the Lost
   one, and `OvGame --project` asks for the file to be named.
