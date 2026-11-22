@@ -204,6 +204,7 @@ public:
 			{
 				if (auto* target = GetTargetActor())
 				{
+					EDITOR_EXEC(BeginSceneEdit("Rename " + target->GetName()));
 					target->SetName(p_newName);
 				}
 			};
@@ -395,6 +396,7 @@ OvEditor::Panels::Hierarchy::Hierarchy
 
 		ConsiderWidget(*p_element.second);
 
+		EDITOR_EXEC(BeginSceneEdit("Move " + p_element.first->GetName()));
 		p_element.first->DetachFromParent();
 
 		EDITOR_CONTEXT(sceneManager).GetCurrentScene()->MoveActorToBack(*p_element.first);
@@ -541,6 +543,7 @@ void OvEditor::Panels::Hierarchy::AddActorByInstance(OvCore::ECS::Actor & p_acto
 			return;
 		}
 
+		EDITOR_EXEC(BeginSceneEdit("Move " + p_element.first->GetName()));
 		p_element.first->SetParent(p_actor);
 
 		EDITOR_CONTEXT(sceneManager).GetCurrentScene()->MoveActorToBack(*p_element.first);

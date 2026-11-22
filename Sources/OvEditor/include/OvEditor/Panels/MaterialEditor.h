@@ -13,6 +13,7 @@
 #include <OvUI/Widgets/Buttons/AButton.h>
 #include <OvUI/Widgets/Layout/Group.h>
 #include <OvUI/Widgets/Layout/Columns.h>
+#include <OvTools/Utils/StateHistory.h>
 
 namespace OvCore::Resources { class Material; }
 
@@ -64,8 +65,29 @@ namespace OvEditor::Panels
 		* Reset material
 		*/
 		void Reset();
-		
+
+		/**
+		* Undoes the last edit of the material, once the frame is over
+		*/
+		void Undo();
+
+		/**
+		* Redoes the last edit undone, once the frame is over
+		*/
+		void Redo();
+
+		/**
+		* The edits made to the material edited (its path as their target), forgotten when another one is
+		*/
+		OvTools::Utils::StateHistory<std::string>& GetHistory();
+
+	protected:
+		void _Draw_Impl() override;
+
 	private:
+		void FlushEdits(bool p_whileHeld);
+		void ApplyHistory(bool p_undo);
+
 		void OnMaterialDropped();
 		void OnShaderDropped();
 
@@ -88,6 +110,12 @@ namespace OvEditor::Panels
 		OvUI::Widgets::InputFields::AssetField* m_shaderText = nullptr;
 
 		OvUI::Widgets::Buttons::AButton* m_editShaderButton = nullptr;
+		OvUI::Widgets::Buttons::AButton* m_undoButton = nullptr;
+		OvUI::Widgets::Buttons::AButton* m_redoButton = nullptr;
+
+		OvTools::Utils::StateHistory<std::string> m_history;
+		std::string m_trackedState; // The material's data when its edits last were recorded
+		OvCore::Resources::Material* m_historyMaterial = nullptr; // The material the edits are of
 		OvUI::Widgets::Buttons::AButton* m_compileShaderButton = nullptr;
 
 		OvTools::Eventing::Event<> m_materialDroppedEvent;

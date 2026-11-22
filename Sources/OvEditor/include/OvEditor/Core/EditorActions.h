@@ -7,8 +7,11 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
+#include <optional>
 
 #include <OvCore/Global/ServiceLocator.h>
+#include <OvCore/SceneSystem/SceneHistory.h>
 #include <OvEditor/Core/Context.h>
 #include <OvEditor/Core/PanelsManager.h>
 #include <OvTools/Filesystem/IniFile.h>
@@ -468,6 +471,72 @@ namespace OvEditor::Core
 		void SaveAs();
 		#pragma endregion
 
+		#pragma region HISTORY
+		/**
+		* The edits made to the scene open, to undo and redo them
+		*/
+		OvCore::SceneSystem::SceneHistory& GetSceneHistory();
+
+		/**
+		* Undoes the last edit of the scene, once the frame is over. Only in edit mode
+		*/
+		void Undo();
+
+		/**
+		* Redoes the last edit undone, once the frame is over. Only in edit mode
+		*/
+		void Redo();
+
+		/**
+		* True in edit mode, if there is an edit to undo
+		*/
+		bool CanUndo() const;
+
+		/**
+		* True in edit mode, if there is an edit to redo
+		*/
+		bool CanRedo() const;
+
+		/**
+		* Starts an edit of the scene's structure (actors made, removed, moved in the hierarchy). It is recorded once the
+		* frame is over, with everything the frame did to the scene: an edit started again in the same frame is part of
+		* the first. Only in edit mode
+		* @param p_label (shown as "Undo <label>")
+		* @param p_nameSelection (if true, the label ends with the name of the actor selected once the frame is over)
+		*/
+		void BeginSceneEdit(const std::string& p_label, bool p_nameSelection = false);
+
+		/**
+		* Records the edits of the frame: the edit of the scene started in it, then what changed in the selected actor
+		* (in the inspector, with the gizmo), once no field or handle is held. The editor calls it at the end of each frame
+		*/
+		void RecordEdits();
+
+		/**
+		* True while a field, a handle or a drag is held, with the mouse or the keyboard: the edit it makes is not over yet
+		*/
+		static bool IsEditHeld();
+
+		/**
+		* True if the scene has changes that are not saved
+		*/
+		bool IsSceneDirty() const;
+
+		/**
+		* Runs an action that leaves the scene open (a new scene, another one, closing the editor), once the user says
+		* what to do with its unsaved changes: save them, drop them, or stay. Runs it at once if there are none
+		* @param p_what (what the action does, as "open another scene")
+		* @param p_action
+		*/
+		void ConfirmLeaveScene(const std::string& p_what, std::function<void()> p_action);
+
+		/**
+		* Holds a close of the editor's window back until the unsaved changes of the scene are saved or dropped. The editor
+		* calls it at the end of each frame
+		*/
+		void HandleCloseRequest();
+		#pragma endregion
+
 		#pragma region SCRIPTING
 		/**
 		* Refresh every scripts (Re-interpret)
@@ -542,6 +611,29 @@ namespace OvEditor::Core
 		OvTools::Eventing::ListenerID m_quitListener;
 
 		std::unique_ptr<tinyxml2::XMLDocument> m_sceneBackup;
+
+		void LoadEmptySceneNow();
+		void LoadSceneFromDiskNow(const std::string& p_path, bool p_absolute);
+		void ApplyHistory(bool p_undo);
+		void FlushEdits(bool p_whileHeld);
+		void TrackSelection();
+		void UpdateWindowTitle();
+
+		struct PendingSceneEdit
+		{
+			std::string label;
+			bool nameSelection = false;
+			std::string before;
+			uint64_t focus = 0;
+		};
+
+		OvCore::SceneSystem::SceneHistory m_sceneHistory;
+		std::optional<PendingSceneEdit> m_pendingSceneEdit;
+		std::optional<uint64_t> m_historyFocus;
+		uint64_t m_trackedGUID = 0; // The selected actor, whose edits are recorded
+		std::string m_trackedState; // ... and its data when they last were
+		bool m_closeConfirmed = false;
+		std::string m_windowTitle;
 	};
 }
 

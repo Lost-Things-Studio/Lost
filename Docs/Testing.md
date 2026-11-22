@@ -55,6 +55,7 @@ It covers:
 | Physics interpolation | A body drawn between its last two steps and the same physics without it, teleports in and out of the fixed update, a character's position but not its rotation, kinematic and static bodies left alone |
 | Character controller | Landing and standing, slopes it walks and slopes it slides down, walls and the real velocity, steps, drops and ledges, jumps and ceilings, queries, triggers and collision events, layers, teleports, impulses and pushes |
 | Scene | GUIDs, destroyed actors and their children freed at garbage collection |
+| Scene history | An actor's edit undone and redone, the actor keeping its id, GUID and place; a deleted actor back with its children, their GUIDs and order, and selected again; a move and a duplicate undone with the whole scene; a new edit dropping what could be redone, the limits, the saved mark; an edit whose actor is gone passed over; the generic history's cursor, saved mark, limits and clear |
 | Lua API | The bindings and the definitions of `Resources/Engine/Lua` hold the same names, inherited members included |
 | Shader API | `Docs/Shaders.md` lists every name of each public shader include, and the version is defined for every shader |
 | Lua modules | `require` from the project and the engine's resources, its cache shared with `Resources.GetScript`, and the error for each failure; the global frame events (order, removal, a failing callback); the game's end (once, in order, a failure left alone, a removal and an addition while it runs); a Behaviour from the engine's resources |

@@ -6,6 +6,7 @@ it. Each page states the behaviour of the current version; [`CHANGELOG.md`](../C
 | Page | What it covers |
 | --- | --- |
 | [Projects](Projects.md) | The project file and its settings |
+| [Editor](Editor.md) | Undo and redo, what makes an edit, the unsaved mark, the question before changes are lost |
 | [Command line](CommandLine.md) | Running a project with `OvGame`: options, captures, exit codes |
 | [Scripting](Scripting.md) | The Lua sandbox, modules, Behaviours and their lifecycle, actors and references, update order, time |
 | [Standard library](StandardLibrary.md) | `Class`, `Signal`, `Timers`, `Tween`, `Ease`, `Pool` and `StateMachine`, shipped in Lua with the engine |
