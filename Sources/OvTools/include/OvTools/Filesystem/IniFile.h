@@ -41,7 +41,7 @@ namespace OvTools::Filesystem
 
 		/**
 		* Rewrite the entiere .ini file with the current values. This operation is destructive and can't be undone.
-		* Any comment or line break in your .ini file will get destroyed
+		* Any comment or line break in your .ini file will get destroyed. The keys are written sorted by name
 		*/
 		void Rewrite() const;
 
