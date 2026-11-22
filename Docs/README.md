@@ -6,6 +6,7 @@ it. Each page states the behaviour of the current version; [`CHANGELOG.md`](../C
 | Page | What it covers |
 | --- | --- |
 | [Projects](Projects.md) | The project file and its settings |
+| [Asset formats](AssetFormats.md) | The rules every Lost file format follows: extensions, versions, how files are read and written, moving a project to the Lost formats |
 | [Editor](Editor.md) | Undo and redo, what makes an edit, the unsaved mark, the question before changes are lost |
 | [Command line](CommandLine.md) | Running a project with `OvGame`: options, captures, exit codes |
 | [Scripting](Scripting.md) | The Lua sandbox, modules, Behaviours and their lifecycle, actors and references, update order, time |
