@@ -52,7 +52,7 @@ std::array<int, 4> CalculateOptimalWindowSizeAndPosition(
 OvGame::Core::Context::Context(const LaunchOptions& p_options) :
 	engineAssetsPath(p_options.engineAssets.value_or(std::filesystem::current_path() / "Data" / "Engine")),
 	projectAssetsPath(p_options.projectFile ? p_options.projectFile->parent_path() / "Assets" : std::filesystem::current_path() / "Data" / "User" / "Assets"),
-	projectSettings(p_options.projectFile.value_or(std::filesystem::current_path() / "Data" / "User" / "Game.ini").string()),
+	projectSettings(p_options.GetProjectSettingsFile().string()),
 	sceneManager(projectAssetsPath.string(), engineAssetsPath.string())
 {
 	startScene = p_options.scene.value_or(projectSettings.GetOrDefault<std::string>("start_scene", {}));

@@ -51,7 +51,7 @@ namespace OvEditor::Core
 
 		/**
 		* Constructor
-		* @param p_projectFolder (including the .ovproject file)
+		* @param p_projectFolder (the folder holding the .loproject or .ovproject file)
 		*/
 		Context(const std::filesystem::path& p_projectFolder);
 

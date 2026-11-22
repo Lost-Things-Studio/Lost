@@ -4,26 +4,15 @@
 * @licence: MIT
 */
 
-#include <algorithm>
-#include <cctype>
 #include <charconv>
 
 #include <OvGame/Core/LaunchOptions.h>
+#include <OvTools/Utils/PathParser.h>
 
 namespace
 {
 	/**
-	* Whether a path names a project file, whatever the case of its extension (Windows names ignore it)
-	*/
-	bool IsProjectFile(const std::filesystem::path& p_path)
-	{
-		std::string extension = p_path.extension().string();
-		std::transform(extension.begin(), extension.end(), extension.begin(), [](char p_character) { return static_cast<char>(std::tolower(static_cast<unsigned char>(p_character))); });
-		return extension == ".ovproject";
-	}
-
-	/**
-	* The project file a --project argument names: the file itself, or the one .ovproject of a folder
+	* The project file a --project argument names: the file itself, or the one project file of a folder
 	*/
 	std::optional<std::filesystem::path> FindProjectFile(const std::filesystem::path& p_path, std::string& p_error)
 	{
@@ -31,10 +20,10 @@ namespace
 
 		if (std::filesystem::is_regular_file(p_path, error))
 		{
-			if (IsProjectFile(p_path))
+			if (OvTools::Utils::PathParser::IsProjectFile(p_path))
 				return p_path;
 
-			p_error = "--project: " + p_path.string() + " is not a .ovproject file";
+			p_error = "--project: " + p_path.string() + " is not a project file (.loproject or .ovproject)";
 			return std::nullopt;
 		}
 
@@ -44,23 +33,18 @@ namespace
 			return std::nullopt;
 		}
 
-		std::vector<std::filesystem::path> found;
-		for (std::filesystem::directory_iterator entry(p_path, error), end; !error && entry != end; entry.increment(error))
-		{
-			std::error_code entryError;
-			if (entry->is_regular_file(entryError) && IsProjectFile(entry->path()))
-				found.push_back(entry->path());
-		}
-
+		// Read once more for its error, which the listing of project files leaves out
+		std::filesystem::directory_iterator readable(p_path, error);
 		if (error)
 		{
 			p_error = "--project: " + p_path.string() + " cannot be read (" + error.message() + ")";
 			return std::nullopt;
 		}
 
+		const auto found = OvTools::Utils::PathParser::FindProjectFiles(p_path);
 		if (found.size() != 1)
 		{
-			p_error = "--project: " + p_path.string() + (found.empty() ? " holds no .ovproject file" : " holds several .ovproject files: name one");
+			p_error = "--project: " + p_path.string() + (found.empty() ? " holds no project file (.loproject or .ovproject)" : " holds several project files: name one");
 			return std::nullopt;
 		}
 
@@ -182,13 +166,18 @@ OvGame::Core::LaunchOptions::ParseResult OvGame::Core::LaunchOptions::Parse(cons
 	return result;
 }
 
+std::filesystem::path OvGame::Core::LaunchOptions::GetProjectSettingsFile() const
+{
+	return projectFile.value_or(std::filesystem::current_path() / "Data" / "User" / "Game.ini");
+}
+
 std::string OvGame::Core::LaunchOptions::GetUsage()
 {
 	return
 		"Usage: OvGame [options]\n"
 		"Without options, runs the built game: its project in Data/User, the engine in Data/Engine.\n"
 		"An argument that does not start with -- is left aside.\n"
-		"  --project <folder or file>  run this project (a .ovproject file, or the folder holding it), its assets in\n"
+		"  --project <folder or file>  run this project (a .loproject or .ovproject file, or the folder holding it), its assets in\n"
 		"                              the Assets folder next to it\n"
 		"  --engine <folder>           the engine's resources (a Lost checkout's Resources/Engine)\n"
 		"  --scene <path>              start on this scene, relative to the project's assets\n"
@@ -199,6 +188,6 @@ std::string OvGame::Core::LaunchOptions::GetUsage()
 		"                              default): the system's device, else the null driver\n"
 		"  --fail-on-error             end with exit code 2 if an error was logged\n"
 		"  --dump-lua-api              print the engine's Lua API, one name per line, and quit\n"
-		"Exit codes: 0 on success, 1 for bad options or a scene that cannot be loaded, 2 for logged errors\n"
+		"Exit codes: 0 on success, 1 for bad options, or a project or scene that cannot be read, 2 for logged errors\n"
 		"(with --fail-on-error), 3 when the screenshot was not written.\n";
 }
