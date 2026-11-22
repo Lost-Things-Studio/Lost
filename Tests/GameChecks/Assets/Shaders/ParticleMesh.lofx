@@ -7,8 +7,8 @@
 #version 450 core
 
 #define STANDARD_VERTEX
-#include ":Shaders/Standard/StandardVertex.ovfxh"
-#include ":Shaders/Common/Particles.ovfxh"
+#include ":Shaders/Standard/StandardVertex.lofxh"
+#include ":Shaders/Common/Particles.lofxh"
 
 void StandardVertex(inout vec3 worldPosition, inout vec3 worldNormal, vec2 texCoords)
 {
@@ -23,4 +23,4 @@ void StandardVertex(inout vec3 worldPosition, inout vec3 worldNormal, vec2 texCo
 #shader fragment
 #version 450 core
 
-#include ":Shaders/Standard/StandardFragment.ovfxh"
+#include ":Shaders/Standard/StandardFragment.lofxh"

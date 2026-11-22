@@ -1,4 +1,4 @@
--- An animation graph on the engine's mannequin (Animations/Mannequin.ovanim): a locomotion blend along the speed and a
+-- An animation graph on the engine's mannequin (Animations/Mannequin.loanim): a locomotion blend along the speed and a
 -- jump, under an arms layer masked above spine_02 that rests empty or punches on a trigger. With time stopped, the
 -- graph's pose is checked bone by bone against twins playing the same clips on their own layers: the idle at rest, the
 -- walk and the run in equal parts halfway between them, the punch on the arms over the legs' blend. With time running:
@@ -22,7 +22,7 @@ local function Mannequin(sName, vPosition)
 	local oActor = Scenes.GetCurrentScene():CreateActor(sName, "")
 	oActor:GetTransform():SetLocalPosition(vPosition)
 	oActor:AddModelRenderer():SetModel(Resources.GetModel(":Models/Mannequin.fbx"))
-	oActor:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial(":Materials/Default.ovmat"))
+	oActor:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial(":Materials/Default.lomat"))
 	return oActor, oActor:AddSkinnedMeshRenderer()
 end
 
@@ -79,22 +79,22 @@ function AnimationGraphCheck:OnStart()
 
 	t.oDrivenActor, t.oDriven = Mannequin("Driven", Vector3.new(0, 0, 0))
 	t.oAnimator = t.oDrivenActor:AddAnimator()
-	t.oAnimator:SetGraphPath("Animations/Mannequin.ovanim")
+	t.oAnimator:SetGraphPath("Animations/Mannequin.loanim")
 
 	t.oTwinActor, t.oTwin = Mannequin("Twin", Vector3.new(1.2, 0, 0))
 	t.oPunchActor, t.oPunch = Mannequin("PunchTwin", Vector3.new(2.4, 0, 0))
 
 	local oBrokenActor = Mannequin("Broken", Vector3.new(-1.2, 0, 0))
 	t.oBroken = oBrokenActor:AddAnimator()
-	t.oBroken:SetGraphPath("Animations/UnknownClip.ovanim")
+	t.oBroken:SetGraphPath("Animations/UnknownClip.loanim")
 
 	local oMissingActor = Mannequin("Missing", Vector3.new(-2.4, 0, 0))
 	t.oMissing = oMissingActor:AddAnimator()
-	t.oMissing:SetGraphPath("Animations/Nowhere.ovanim")
+	t.oMissing:SetGraphPath("Animations/Nowhere.loanim")
 
 	t.oLateActor = Mannequin("Late", Vector3.new(-3.6, 0, 0))
 	t.oLate = t.oLateActor:AddAnimator()
-	t.oLate:SetGraphPath("Animations/Mannequin.ovanim")
+	t.oLate:SetGraphPath("Animations/Mannequin.loanim")
 end
 
 function AnimationGraphCheck:OnUpdate()
@@ -132,7 +132,7 @@ function AnimationGraphCheck:OnUpdate()
 
 		oCheck:Expect(not t.oBroken:IsLoaded(), "a graph naming a clip the model lacks does not play")
 		oCheck:Expect(Mentions(t.oBroken:GetError(), "layers[0].states[0].clip: no clip 'root|moonwalk'"), "and says where: " .. tostring(t.oBroken:GetError()))
-		oCheck:Expect(Mentions(t.oMissing:GetError(), "cannot read 'Animations/Nowhere.ovanim'"), "a missing file is named: " .. tostring(t.oMissing:GetError()))
+		oCheck:Expect(Mentions(t.oMissing:GetError(), "cannot read 'Animations/Nowhere.loanim'"), "a missing file is named: " .. tostring(t.oMissing:GetError()))
 
 		-- Its renderer taken away, an animator stops; it plays again once one is back
 		oCheck:Expect(t.oLate:IsLoaded(), "a second animator plays the same graph")

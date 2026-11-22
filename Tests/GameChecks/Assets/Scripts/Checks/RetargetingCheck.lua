@@ -41,7 +41,7 @@ function RetargetingCheck:OnStart()
 		local oActor = oScene:CreateActor(sName, "")
 		oActor:GetTransform():SetLocalPosition(Vector3.new((i - 3) * 1.5, 0, 0))
 		oActor:AddModelRenderer():SetModel(Resources.GetModel("Models/Rigs/" .. sName .. ".gltf"))
-		oActor:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial(":Materials/Default.ovmat"))
+		oActor:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial(":Materials/Default.lomat"))
 		t[sName] = oActor:AddSkinnedMeshRenderer()
 	end
 end

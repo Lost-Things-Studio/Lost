@@ -70,7 +70,7 @@
                         <type>class OvCore::ECS::Components::CMaterialRenderer</type>
                         <data>
                             <materials>
-                                <material>:Materials/Default.ovmat</material>
+                                <material>:Materials/Default.lomat</material>
                             </materials>
                             <visibility_flags>7</visibility_flags>
                         </data>

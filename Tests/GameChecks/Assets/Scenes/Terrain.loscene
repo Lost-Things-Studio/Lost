@@ -6,7 +6,7 @@
                 <tag></tag>
                 <active>true</active>
                 <id>1</id>
-                <guid>3201</guid>
+                <guid>3001</guid>
                 <prefab_source></prefab_source>
                 <prefab_node_guid>0</prefab_node_guid>
                 <parent>0</parent>
@@ -22,7 +22,7 @@
                 </components>
                 <behaviours>
                     <behaviour>
-                        <type>Scripts/Checks/VegetationCheck.lua</type>
+                        <type>Scripts/Checks/TerrainCheck.lua</type>
                         <data/>
                     </behaviour>
                 </behaviours>
@@ -32,7 +32,7 @@
                 <tag></tag>
                 <active>true</active>
                 <id>2</id>
-                <guid>3202</guid>
+                <guid>3002</guid>
                 <prefab_source></prefab_source>
                 <prefab_node_guid>0</prefab_node_guid>
                 <parent>0</parent>
@@ -72,49 +72,8 @@
                             <chunk_size>32</chunk_size>
                             <lod_count>4</lod_count>
                             <lod_distance>30</lod_distance>
-                            <material>:Materials/Terrain.ovmat</material>
+                            <material>:Materials/Terrain.lomat</material>
                             <color_map>Textures/Terrain/HillsColor.png</color_map>
-                        </data>
-                    </component>
-                    <component>
-                        <type>class OvCore::ECS::Components::CVegetation</type>
-                        <data>
-                            <layers>
-                                <layer>
-                                    <name>Grass</name>
-                                    <model>:Models/Cone.fbx</model>
-                                    <material>Materials/Grass.ovmat</material>
-                                    <density>1.5</density>
-                                    <min_scale>0.12</min_scale>
-                                    <max_scale>0.25</max_scale>
-                                    <random_yaw>true</random_yaw>
-                                    <slope_alignment>0.6</slope_alignment>
-                                    <max_slope>35</max_slope>
-                                    <min_height>-10000</min_height>
-                                    <max_height>7.5</max_height>
-                                    <seed>7</seed>
-                                    <draw_distance>40</draw_distance>
-                                    <cast_shadows>false</cast_shadows>
-                                    <density_map></density_map>
-                                </layer>
-                                <layer>
-                                    <name>Stones</name>
-                                    <model>:Models/Sphere.fbx</model>
-                                    <material>Materials/Stone.ovmat</material>
-                                    <density>0.06</density>
-                                    <min_scale>0.15</min_scale>
-                                    <max_scale>0.5</max_scale>
-                                    <random_yaw>true</random_yaw>
-                                    <slope_alignment>1</slope_alignment>
-                                    <max_slope>60</max_slope>
-                                    <min_height>-10000</min_height>
-                                    <max_height>10000</max_height>
-                                    <seed>3</seed>
-                                    <draw_distance>70</draw_distance>
-                                    <cast_shadows>true</cast_shadows>
-                                    <density_map></density_map>
-                                </layer>
-                            </layers>
                         </data>
                     </component>
                 </components>

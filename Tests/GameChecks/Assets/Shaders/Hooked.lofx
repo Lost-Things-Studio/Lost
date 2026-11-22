@@ -11,7 +11,7 @@
 #version 450 core
 
 #define STANDARD_VERTEX
-#include ":Shaders/Standard/StandardVertex.ovfxh"
+#include ":Shaders/Standard/StandardVertex.lofxh"
 
 uniform float u_Swell = 0.0;
 
@@ -26,7 +26,7 @@ void StandardVertex(inout vec3 worldPosition, inout vec3 worldNormal, vec2 texCo
 #define STANDARD_CLIP
 #define STANDARD_SURFACE
 #define STANDARD_LIGHTING
-#include ":Shaders/Standard/StandardFragment.ovfxh"
+#include ":Shaders/Standard/StandardFragment.lofxh"
 
 #if SHADER_API_VERSION_MAJOR != 1
 #error "made for the engine's shader API 1.x"

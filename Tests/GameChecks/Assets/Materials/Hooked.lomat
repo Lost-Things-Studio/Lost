@@ -1,5 +1,5 @@
 <root>
-    <shader>Shaders/Hooked.ovfx</shader>
+    <shader>Shaders/Hooked.lofx</shader>
     <settings>
         <cast_shadows>true</cast_shadows>
         <receive_shadows>true</receive_shadows>

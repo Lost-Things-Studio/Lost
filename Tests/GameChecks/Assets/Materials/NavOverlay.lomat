@@ -1,5 +1,5 @@
 <root>
-    <shader>:Shaders/Unlit.ovfx</shader>
+    <shader>:Shaders/Unlit.lofx</shader>
     <settings>
         <cast_shadows>false</cast_shadows>
         <receive_shadows>false</receive_shadows>

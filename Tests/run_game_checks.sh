@@ -4,7 +4,7 @@
 # Usage: Tests/run_game_checks.sh <OvGame binary> [check name...]
 # The game needs a display: a desktop session, or xvfb-run on a headless Linux machine. On Linux, the saves of the
 # checks go to a temporary folder, never to the user's own; elsewhere, they go to the save folder of the project's own
-# ID (GameChecks.ovproject's project_id), apart from any game's. The system's language is set aside.
+# ID (GameChecks.loproject's project_id), apart from any game's. The system's language is set aside.
 set -u
 
 if [ $# -lt 1 ]; then
@@ -25,8 +25,11 @@ if [ $# -gt 0 ]; then
 	CHECKS=("$@")
 else
 	CHECKS=()
-	for SCENE in "$ROOT/Tests/GameChecks/Assets/Scenes/"*.ovscene; do
-		CHECKS+=("$(basename "$SCENE" .ovscene)")
+	# A check is a scene, under Lost's name or Overload's (LegacyFormats keeps Overload's)
+	for SCENE in "$ROOT/Tests/GameChecks/Assets/Scenes/"*.loscene "$ROOT/Tests/GameChecks/Assets/Scenes/"*.ovscene; do
+		[ -e "$SCENE" ] || continue
+		SCENE="$(basename "$SCENE")"
+		CHECKS+=("${SCENE%.*}")
 	done
 fi
 
@@ -43,8 +46,10 @@ for NAME in "${CHECKS[@]}"; do
 	LOG="$DATA/$NAME.log"
 	# A check ends the game itself: the frame cap only stops one that never does. The physics steps in real time,
 	# so a check that waits for it needs as many frames as the game draws in that time
+	SCENE="Scenes/$NAME.loscene"
+	[ -e "$ROOT/Tests/GameChecks/Assets/$SCENE" ] || SCENE="Scenes/$NAME.ovscene"
 	timeout 300 "$GAME" --project "$ROOT/Tests/GameChecks" --engine "$ROOT/Resources/Engine" \
-		--scene "Scenes/$NAME.ovscene" --frames 20000 --hidden-window --fail-on-error > "$LOG" 2>&1
+		--scene "$SCENE" --frames 20000 --hidden-window --fail-on-error > "$LOG" 2>&1
 	CODE=$?
 	VERDICT="$(sed 's/\x1b\[[0-9;]*m//g' "$LOG" | grep -o "CHECK PASSED $NAME .*" | head -1)"
 

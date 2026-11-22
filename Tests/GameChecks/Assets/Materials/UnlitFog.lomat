@@ -1,7 +1,7 @@
 <root>
-    <shader>Shaders/ParticleMesh.ovfx</shader>
+    <shader>:Shaders/Unlit.lofx</shader>
     <settings>
-        <cast_shadows>false</cast_shadows>
+        <cast_shadows>true</cast_shadows>
         <receive_shadows>true</receive_shadows>
         <blendable>false</blendable>
         <backface_culling>true</backface_culling>
@@ -12,8 +12,7 @@
         <draw_order>1000</draw_order>
     </settings>
     <uniforms>
-        <uniform><name>u_Albedo</name><value><x>0.3</x><y>0.6</y><z>0.9</z><w>1</w></value></uniform>
-        <uniform><name>u_Roughness</name><value>0.5</value></uniform>
-        <uniform><name>u_Metallic</name><value>0</value></uniform>
+        <uniform><name>u_Diffuse</name><value><x>1</x><y>0.8</y><z>0.2</z><w>1</w></value></uniform>
+        <uniform><name>u_Fog</name><value>1</value></uniform>
     </uniforms>
 </root>
