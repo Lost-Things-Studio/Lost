@@ -26,7 +26,7 @@ namespace OvCore::Rendering
 	class EngineBufferRenderFeature : public OvRendering::Features::ARenderFeature
 	{
 	public:
-		// Shader storage binding point of the instances buffer (see Common/Buffers/InstancesSSBO.ovfxh)
+		// Shader storage binding point of the instances buffer (see Common/Buffers/InstancesSSBO.lofxh)
 		static constexpr uint32_t kInstancesBufferBindingPoint = 2;
 
 		/**
@@ -86,7 +86,7 @@ namespace OvCore::Rendering
 		void ApplyFogState();
 
 		/**
-		* CPU copy of the engine UBO (std140 layout, see EngineUBO.ovfxh)
+		* CPU copy of the engine UBO (std140 layout, see EngineUBO.lofxh)
 		*/
 		struct EngineUBO
 		{

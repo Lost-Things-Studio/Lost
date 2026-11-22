@@ -70,8 +70,8 @@ OvCore::Rendering::EngineBufferRenderFeature::EngineBufferRenderFeature(
 	ARenderFeature(p_renderer, p_executionPolicy),
 	m_instancesBuffer(64 * 1024) // Grows on demand
 {
-	static_assert(sizeof(EngineUBO) == 448, "EngineUBO must match the std140 layout of EngineUBO.ovfxh");
-	static_assert(sizeof(PreparedInstance) == 192, "PreparedInstance must match the std430 layout of InstancesSSBO.ovfxh");
+	static_assert(sizeof(EngineUBO) == 448, "EngineUBO must match the std140 layout of EngineUBO.lofxh");
+	static_assert(sizeof(PreparedInstance) == 192, "PreparedInstance must match the std430 layout of InstancesSSBO.lofxh");
 	m_startTime = std::chrono::high_resolution_clock::now();
 }
 

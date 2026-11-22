@@ -68,14 +68,14 @@ OvGame::Core::Context::Context(const LaunchOptions& p_options) :
 	SoundManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 
 	materialManager.ProvideStandardShaderDefinition({
-		.shaderPath = ":Shaders/Standard.ovfx"
+		.shaderPath = ":Shaders/Standard.lofx"
 	});
 	uiResourceRegistry.ProvideDefinition({
-		.imageMaterialPath = ":Materials/Image.ovmat",
-		.textMaterialPath = ":Materials/Text.ovmat",
+		.imageMaterialPath = ":Materials/Image.lomat",
+		.textMaterialPath = ":Materials/Text.lomat",
 		.defaultFontPath = ":Fonts/Roboto-Regular.ttf",
-		.litImageMaterialPath = ":Materials/ImageLit.ovmat",
-		.litTextMaterialPath = ":Materials/TextLit.ovmat"
+		.litImageMaterialPath = ":Materials/ImageLit.lomat",
+		.litTextMaterialPath = ":Materials/TextLit.lomat"
 	});
 
 	/* Settings */

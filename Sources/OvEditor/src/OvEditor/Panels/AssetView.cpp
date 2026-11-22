@@ -53,12 +53,12 @@ OvEditor::Panels::AssetView::AssetView
 	m_cameraController.LockTargetActor(*m_assetActor);
 	
 	/* Default Material */
-	m_defaultMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
+	m_defaultMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.lofx"]);
 	m_defaultMaterial.SetProperty("u_Metallic", 0.0f);
 	m_defaultMaterial.SetProperty("u_Roughness", 0.5f);
 
 	/* Texture Material */
-	m_textureMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Unlit.ovfx"]);
+	m_textureMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Unlit.lofx"]);
 	m_textureMaterial.SetProperty("u_Diffuse", OvMaths::FVector4(1.f, 1.f, 1.f, 1.f));
 	m_textureMaterial.SetBackfaceCulling(false);
 	m_textureMaterial.SetBlendable(true);

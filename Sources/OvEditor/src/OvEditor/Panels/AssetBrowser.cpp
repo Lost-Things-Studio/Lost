@@ -299,7 +299,7 @@ namespace
 					OvTools::Utils::PathParser::FindFileToRead(
 						std::filesystem::path(EDITOR_CONTEXT(engineAssetsPath)) /
 						"Shaders" /
-						std::format("{}.ovfx", p_type.value())
+						std::format("{}.lofx", p_type.value())
 					),
 					finalPath
 				);
@@ -339,7 +339,7 @@ namespace
 
 			if (p_type.has_value())
 			{
-				const std::string shaderPath = std::format(":Shaders\\{}.ovfx", p_type.value());
+				const std::string shaderPath = std::format(":Shaders/{}.lofx", p_type.value());
 
 				if (auto shader = EDITOR_CONTEXT(shaderManager)[shaderPath])
 				{
@@ -698,7 +698,7 @@ namespace
 					const auto finalPath = FindAvailableFilePath(filePath.parent_path() / (materialName + ".lomat"));
 
 					const std::string fileContent = std::format(
-						"<root version=\"{}\"><shader>:Shaders/{}.ovfx</shader></root>",
+						"<root version=\"{}\"><shader>:Shaders/{}.lofx</shader></root>",
 						OvCore::Helpers::AssetFormat::kMaterialVersion,
 						p_shaderType
 					);

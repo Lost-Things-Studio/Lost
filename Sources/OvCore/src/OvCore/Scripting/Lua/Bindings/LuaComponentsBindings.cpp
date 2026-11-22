@@ -1344,7 +1344,7 @@ void BindLuaComponents(sol::state& p_luaState)
 			layer.name = std::format("Layer {}", p_this.GetLayerCount() + 1);
 			if (OvCore::Global::ServiceLocator::Has<OvCore::ResourceManagement::MaterialManager>())
 			{
-				layer.material = OVSERVICE(OvCore::ResourceManagement::MaterialManager).GetResource(":Materials/Default.ovmat");
+				layer.material = OVSERVICE(OvCore::ResourceManagement::MaterialManager).GetResource(":Materials/Default.lomat");
 			}
 
 			if (p_settings)

@@ -98,7 +98,7 @@ namespace OvCore::ECS::Components
 		float GetLodDistance() const;
 
 		/**
-		* Sets the material the terrain is drawn with (":Materials/Terrain.ovmat" by default). Its albedo map gets the
+		* Sets the material the terrain is drawn with (":Materials/Terrain.lomat" by default). Its albedo map gets the
 		* colour map, if any
 		* @param p_path
 		*/

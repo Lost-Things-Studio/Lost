@@ -1,6 +1,6 @@
 ---@meta
 
---- Plays an animation graph on its actor's skinned mesh: a JSON file of the project (.ovanim) whose layers hold
+--- Plays an animation graph on its actor's skinned mesh: a JSON file of the project (.loanim) whose layers hold
 --- states, each a clip or clips blended along a parameter, and transitions between them on the parameters a script
 --- sets (see Docs/Animation.md). While it plays, the skinned mesh renderer samples the graph's clips instead of its own
 --- layers, with the same bone matching. Moved on once a frame, after every OnUpdate and before every OnLateUpdate, so

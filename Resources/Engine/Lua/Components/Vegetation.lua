@@ -4,7 +4,7 @@
 ---@class VegetationLayerSettings
 ---@field name? string
 ---@field model? Model the model scattered
----@field material? Material drawing every instance, its shader declaring INSTANCING (":Materials/Default.ovmat" by default)
+---@field material? Material drawing every instance, its shader declaring INSTANCING (":Materials/Default.lomat" by default)
 ---@field density? number instances per square metre where the density map weighs 1, from 0 to 100 (1 by default)
 ---@field minScale? number (1 by default)
 ---@field maxScale? number (1 by default)

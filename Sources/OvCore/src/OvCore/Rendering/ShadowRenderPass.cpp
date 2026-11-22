@@ -51,7 +51,7 @@ namespace
 OvCore::Rendering::ShadowRenderPass::ShadowRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) :
 	OvRendering::Core::ARenderPass(p_renderer)
 {
-	const auto shadowShader = OVSERVICE(OvCore::ResourceManagement::ShaderManager).GetResource(":Shaders\\ShadowFallback.ovfx");
+	const auto shadowShader = OVSERVICE(OvCore::ResourceManagement::ShaderManager).GetResource(":Shaders\\ShadowFallback.lofx");
 	OVASSERT(shadowShader, "Cannot find the shadow shader");
 
 	m_shadowMaterial.SetShader(shadowShader);

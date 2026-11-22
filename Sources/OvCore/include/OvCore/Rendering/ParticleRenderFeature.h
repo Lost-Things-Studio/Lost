@@ -13,7 +13,7 @@
 namespace OvCore::Rendering
 {
 	/**
-	* Render feature binding a particle system's buffer before each of its draws (Common/Particles.ovfxh reads it)
+	* Render feature binding a particle system's buffer before each of its draws (Common/Particles.lofxh reads it)
 	*/
 	class ParticleRenderFeature : public OvRendering::Features::ARenderFeature
 	{

@@ -174,7 +174,7 @@ public:
 	{
 		m_fakeLightsBuffer = CreateDebugLightBuffer();
 
-		m_cameraMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
+		m_cameraMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.lofx"]);
 		m_cameraMaterial.SetProperty("u_Albedo", FVector4{ 0.0f, 0.447f, 1.0f, 1.0f });
 		m_cameraMaterial.SetProperty("u_Metallic", 0.0f);
 		m_cameraMaterial.SetProperty("u_Roughness", 0.25f);
@@ -245,7 +245,7 @@ public:
 		m_fakeLightsBuffer = CreateDebugLightBuffer();
 
 		m_reflectiveMaterial.SetDepthTest(false);
-		m_reflectiveMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
+		m_reflectiveMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.lofx"]);
 		m_reflectiveMaterial.SetProperty("u_Albedo", FVector4{ 1.0, 1.0f, 1.0f, 1.0f });
 		m_reflectiveMaterial.SetProperty("u_Metallic", 1.0f);
 		m_reflectiveMaterial.SetProperty("u_Roughness", 0.0f);

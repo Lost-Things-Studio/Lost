@@ -1,0 +1,82 @@
+#pass SHADOW_PASS
+
+#feature ALPHA_CLIPPING
+#engine_feature SKINNING
+
+#shader vertex
+#version 450 core
+
+#include ":Shaders/Common/Buffers/EngineUBO.lofxh"
+#include ":Shaders/Common/Skinning.lofxh"
+#include ":Shaders/Common/Utils.lofxh"
+
+layout (location = 0) in vec3 geo_Pos;
+layout (location = 1) in vec2 geo_TexCoords;
+#if defined(SKINNING)
+layout (location = 5) in uvec4 geo_BoneIDs;
+layout (location = 6) in vec4 geo_BoneWeights;
+#endif
+
+out VS_OUT
+{
+    vec3 FragPos;
+    vec2 TexCoords;
+} vs_out;
+
+void main()
+{
+#if defined(SKINNING)
+    const mat4 modelMatrix = ubo_Model * ComputeSkinningMatrix(geo_BoneIDs, geo_BoneWeights);
+#else
+    const mat4 modelMatrix = ubo_Model;
+#endif
+
+    vs_out.FragPos = vec3(modelMatrix * vec4(geo_Pos, 1.0));
+    vs_out.TexCoords = geo_TexCoords;
+
+    gl_Position = ubo_ViewProjection * vec4(vs_out.FragPos, 1.0);
+}
+
+#shader fragment
+#version 450 core
+
+#include ":Shaders/Common/Buffers/EngineUBO.lofxh"
+#include ":Shaders/Common/Fog.lofxh"
+#include ":Shaders/Common/Utils.lofxh"
+
+in VS_OUT
+{
+    vec3 FragPos;
+    vec2 TexCoords;
+} fs_in;
+
+uniform sampler2D u_DiffuseMap;
+uniform vec4 u_Diffuse = vec4(1.0);
+uniform vec2 u_TextureTiling = vec2(1.0);
+uniform vec2 u_TextureOffset = vec2(0.0);
+
+#if defined(ALPHA_CLIPPING)
+uniform float u_AlphaClippingThreshold = 0.1f;
+#endif
+
+// Whether the scene's distance fog covers the material (off by default: an unlit surface often shows through the haze)
+uniform bool u_Fog = false;
+
+out vec4 FRAGMENT_COLOR;
+
+void main()
+{
+#if defined(SHADOW_PASS)
+    // Empty fragment shader for shadow pass
+#else
+    const vec2 texCoords = TileAndOffsetTexCoords(fs_in.TexCoords, u_TextureTiling, u_TextureOffset);
+    const vec4 diffuseColor = texture(u_DiffuseMap, texCoords) * u_Diffuse;
+#if defined(ALPHA_CLIPPING)
+    if (diffuseColor.a < u_AlphaClippingThreshold)
+    {
+        discard;
+    }
+#endif
+    FRAGMENT_COLOR = u_Fog ? vec4(ApplyFog(diffuseColor.rgb, fs_in.FragPos), diffuseColor.a) : diffuseColor;
+#endif
+}

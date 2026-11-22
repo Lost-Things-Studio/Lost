@@ -30,7 +30,7 @@ OvCore::Rendering::PostProcessRenderPass::PostProcessRenderPass(OvRendering::Cor
 		);
 	}
 
-	m_blitMaterial.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\Blit.ovfx"]);
+	m_blitMaterial.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\Blit.lofx"]);
 
 	// Instantiate available effects
 	m_effects.reserve(4);
