@@ -102,7 +102,7 @@ binding.
 
   ```lua
   local oPrefab = Prefab()
-  oPrefab.path = "Prefabs/Item.ovprefab"
+  oPrefab.path = "Prefabs/Item.loprefab"
 
   local oActor = Scenes.GetCurrentScene():InstantiatePrefab(oPrefab, oParent)
   ```

@@ -46,7 +46,7 @@ triangles instead of thousands.
 ## Blend modes
 
 - A blendable material is drawn in the transparent pass, after the opaque ones, and combined with what is already
-  drawn by its blend mode (`blend_mode` in a `.ovmat`, "Blend Mode" in the material editor):
+  drawn by its blend mode (`blend_mode` in a material file, "Blend Mode" in the material editor):
 
   | Mode | `blend_mode` | Result | For |
   | --- | --- | --- | --- |

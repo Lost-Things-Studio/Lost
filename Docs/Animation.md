@@ -46,10 +46,10 @@
 ## Animator
 
 The `Animator` component plays an animation graph on its actor's skinned mesh: a JSON file of the project
-(`.ovanim`) whose layers hold states and the transitions between them, driven by parameters a script
+(`.loanim`, or Overload's `.ovanim`) whose layers hold states and the transitions between them, driven by parameters a script
 sets.
 
-- **Setting it up**: `SetGraphPath("Animations/Hero.ovanim")`, and the model whose clips the graph plays
+- **Setting it up**: `SetGraphPath("Animations/Hero.loanim")`, and the model whose clips the graph plays
   (`SetAnimationSourceModel`, the rendered model by default), with a bone map for clips of another rig (`SetBoneMap`, as
   for a layer, see [Clips on other rigs](#clips-on-other-rigs)). In a file: `graph`, `animation_source`, `bone_map`.
 - **While it plays**, the skinned mesh renderer samples the graph's clips instead of its own layers, which come back
@@ -68,13 +68,15 @@ sets.
   inspector, and plays nothing: an unknown member, a missing name, an unknown state or parameter, a clip the model
   lacks (`layers[0].states[1].clip: no clip 'Run' in 'Animations/Rig.fbx'`).
 - **The inspector** shows each layer's state and every parameter, which can be changed while the game plays.
-- **In the editor**, the Asset Browser lists the `.ovanim` files: the Graph field picks one or takes one dropped on it,
+- **In the editor**, the Asset Browser lists the graph files: the Graph field picks one or takes one dropped on it,
   "Open" edits it in the code editor ("Reload Graph" reads it again), and renaming one updates the animators that use it.
+  Create > Animation Graph makes a graph of one layer and one empty state, to fill in.
 
 ### The graph file
 
 ```json
 {
+	"version": 1,
 	"parameters": [
 		{ "name": "Speed", "type": "float", "default": 0 },
 		{ "name": "Grounded", "type": "bool", "default": true },
@@ -114,6 +116,9 @@ sets.
 }
 ```
 
+- **Version**: `version`, a whole number, 1 today; a graph without one is version 0, and one newer than the engine
+  reads is refused (see [Asset formats](AssetFormats.md)). `editor` belongs to the graph editor, and the engine leaves
+  it alone.
 - **Parameters**: `name`, `type` (`"float"`, `"bool"` or `"trigger"`) and `default` (none for a trigger).
 - **Layers**, in order, each over the ones before: `name`, `weight` (0 to 1, 1 by default), `mask` (a bone: the layer
   plays on it and the bones under it only), `default` (its first state otherwise), `states`, `transitions`. A layer

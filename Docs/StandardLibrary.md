@@ -131,7 +131,7 @@ Std.Tween.Run({
 ```lua
 local sparks = Std.Pool.New({
 	max = 32,
-	make = function() return Prefabs.Spawn("Prefabs/Spark.ovprefab") end,
+	make = function() return Prefabs.Spawn("Prefabs/Spark.loprefab") end,
 	isFree = function(spark) return not spark:IsActive() end,
 	evict = function(spark) spark:SetActive(false) end
 })
