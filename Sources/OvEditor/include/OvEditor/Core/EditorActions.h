@@ -469,6 +469,13 @@ namespace OvEditor::Core
 		* Save the current scene to a new disk location (Can create a duplication of the scene file)
 		*/
 		void SaveAs();
+
+		/**
+		* Moves the project to the Lost formats (OvCore::Helpers::FormatConversion), once the scene's changes are saved or
+		* given up and the user agrees. The report goes to LostFormatsConversion.txt in the project's folder, and the
+		* editor closes: the files it has open have new names
+		*/
+		void ConvertProjectToLostFormats();
 		#pragma endregion
 
 		#pragma region HISTORY

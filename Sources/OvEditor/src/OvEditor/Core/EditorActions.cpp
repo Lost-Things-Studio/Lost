@@ -38,6 +38,7 @@
 
 #include <OvCore/Global/QuitRequest.h>
 #include <OvCore/Helpers/AssetFormat.h>
+#include <OvCore/Helpers/FormatConversion.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/Helpers/GUIHelpers.h>
 #include <OvCore/Helpers/InputHelpers.h>
@@ -69,7 +70,7 @@
 
 namespace
 {
-	constexpr std::string_view kDefaultMaterialPath = ":Materials\\Default.ovmat";
+	constexpr std::string_view kDefaultMaterialPath = ":Materials/Default.lomat";
 
 	OvCore::ECS::Actor* ResolvePrefabInstanceRoot(OvCore::ECS::Actor& p_actor)
 	{
@@ -546,6 +547,64 @@ void OvEditor::Core::EditorActions::SaveSceneChanges()
 	{
 		SaveAs();
 	}
+}
+
+void OvEditor::Core::EditorActions::ConvertProjectToLostFormats()
+{
+	using namespace OvWindowing::Dialogs;
+
+	if (m_editorMode != EEditorMode::EDIT)
+	{
+		StopPlaying();
+	}
+
+	ConfirmLeaveScene("converting the project", [this]
+	{
+		MessageBox question(
+			"Convert to the Lost formats",
+			"Each file of the project under one of Overload's names (.ovscene, .ovmat...) takes its Lost name (.loscene, .lomat...), "
+			"and the references to it follow. A Lua string that is such a path changes too, and each line changed is listed in a report.\n\n"
+			"The editor then closes: open the project again.\n\nConvert the project?",
+			MessageBox::EMessageType::QUESTION,
+			MessageBox::EButtonLayout::YES_NO,
+			true
+		);
+
+		if (question.GetUserAction() != MessageBox::EUserAction::YES)
+		{
+			return;
+		}
+
+		const auto report = OvCore::Helpers::FormatConversion::ConvertProject(m_context.projectFolder, m_context.engineAssetsPath);
+		const std::string text = OvCore::Helpers::FormatConversion::Describe(report);
+		const std::string summary = text.substr(0, text.find('\n'));
+
+		if (!report.HasChanges())
+		{
+			OVLOG_INFO("Lost formats: nothing to convert" + (report.problems.empty() ? std::string{} : "\n" + text));
+			MessageBox done("Lost formats", "The project has nothing to convert.\n\n" + text, MessageBox::EMessageType::INFORMATION, MessageBox::EButtonLayout::OK, true);
+			return;
+		}
+
+		const auto reportFile = m_context.projectFolder / "LostFormatsConversion.txt";
+		{
+			std::ofstream file(reportFile, std::ios::binary | std::ios::trunc);
+			file << text;
+		}
+
+		OVLOG_INFO("Converted to the Lost formats: " + summary + ". The report: " + reportFile.string());
+		MessageBox done(
+			"Project converted",
+			summary + ".\n\nThe report is in LostFormatsConversion.txt, in the project's folder. The editor closes: open the project again.",
+			report.problems.empty() ? MessageBox::EMessageType::INFORMATION : MessageBox::EMessageType::WARNING,
+			MessageBox::EButtonLayout::OK,
+			true
+		);
+
+		// What the editor has open has new names on disk: it closes, the scene's changes already saved or given up
+		m_closeConfirmed = true;
+		m_context.window->SetShouldClose(true);
+	});
 }
 
 void OvEditor::Core::EditorActions::SaveAs()
