@@ -27,6 +27,7 @@ TEST_SUITE("OvGame command line")
 		CHECK_FALSE(result.options->failOnError);
 		CHECK_FALSE(result.options->dumpLuaApi);
 		CHECK_FALSE(result.options->nullAudio);
+		CHECK(result.options->GetProjectSettingsFile() == std::filesystem::current_path() / "Data" / "User" / "Game.ini");
 	}
 
 	TEST_CASE("help stops the parsing")
@@ -71,21 +72,27 @@ TEST_SUITE("OvGame command line")
 		CHECK_FALSE(device.options->nullAudio);
 	}
 
-	TEST_CASE("a project is a .ovproject file or the folder that holds exactly one")
+	TEST_CASE("a project is a .loproject or .ovproject file, or the folder that holds exactly one")
 	{
 		OvTests::TempFolder folder;
 		const auto file = folder.WriteFile("One/One.ovproject", "");
+		const auto lost = folder.WriteFile("Lost/Lost.loproject", "");
 		folder.WriteFile("Two/A.ovproject", "");
-		folder.WriteFile("Two/B.ovproject", "");
+		folder.WriteFile("Two/B.loproject", "");
 		folder.WriteFile("None/readme.txt", "");
 
 		const auto byFile = LaunchOptions::Parse({ "--project", file.string() });
 		REQUIRE(byFile.options);
 		CHECK(std::filesystem::equivalent(*byFile.options->projectFile, file));
 
+		const auto byFolder = LaunchOptions::Parse({ "--project", (folder.GetPath() / "Lost").string() });
+		REQUIRE(byFolder.options);
+		CHECK(std::filesystem::equivalent(*byFolder.options->projectFile, lost));
+		CHECK(std::filesystem::equivalent(byFolder.options->GetProjectSettingsFile(), lost));
+
 		CHECK(LaunchOptions::Parse({ "--project", (folder.GetPath() / "Two").string() }).error.find("several") != std::string::npos);
-		CHECK(LaunchOptions::Parse({ "--project", (folder.GetPath() / "None").string() }).error.find("no .ovproject") != std::string::npos);
-		CHECK(LaunchOptions::Parse({ "--project", (folder.GetPath() / "None/readme.txt").string() }).error.find("not a .ovproject") != std::string::npos);
+		CHECK(LaunchOptions::Parse({ "--project", (folder.GetPath() / "None").string() }).error.find("holds no project file") != std::string::npos);
+		CHECK(LaunchOptions::Parse({ "--project", (folder.GetPath() / "None/readme.txt").string() }).error.find("is not a project file") != std::string::npos);
 		CHECK(LaunchOptions::Parse({ "--project", (folder.GetPath() / "Missing").string() }).error.find("no file or folder") != std::string::npos);
 	}
 
