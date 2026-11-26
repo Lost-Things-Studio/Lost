@@ -5,6 +5,9 @@
 */
 
 #include <algorithm>
+#include <cctype>
+#include <string_view>
+#include <utility>
 
 #include <OvTools/Utils/PathParser.h>
 
@@ -133,15 +136,15 @@ OvTools::Utils::PathParser::EFileType OvTools::Utils::PathParser::GetFileType(co
 
 	if (ext == "fbx" || ext == "obj" || ext == "glb" || ext == "gltf" || ext == "vrm") return EFileType::MODEL;
 	else if (ext == "png" || ext == "jpeg" || ext == "jpg" || ext == "tga" || ext == "hdr") return EFileType::TEXTURE;
-	else if (ext == "ovfx") return EFileType::SHADER;
-	else if (ext == "ovfxh") return EFileType::SHADER_PART;
-	else if (ext == "ovmat") return EFileType::MATERIAL;
+	else if (ext == "lofx" || ext == "ovfx") return EFileType::SHADER;
+	else if (ext == "lofxh" || ext == "ovfxh") return EFileType::SHADER_PART;
+	else if (ext == "lomat" || ext == "ovmat") return EFileType::MATERIAL;
 	else if (ext == "wav" || ext == "mp3" || ext == "ogg" || ext == "flac") return EFileType::SOUND;
-	else if (ext == "ovscene") return EFileType::SCENE;
-	else if (ext == "ovprefab") return EFileType::PREFAB;
+	else if (ext == "loscene" || ext == "ovscene") return EFileType::SCENE;
+	else if (ext == "loprefab" || ext == "ovprefab") return EFileType::PREFAB;
 	else if (ext == "lua" || ext == "ovscript") return EFileType::SCRIPT;
 	else if (ext == "ttf" || ext == "otf") return EFileType::FONT;
-	else if (ext == "ovanim") return EFileType::ANIMATION_GRAPH;
+	else if (ext == "loanim" || ext == "ovanim") return EFileType::ANIMATION_GRAPH;
 
 	return EFileType::UNKNOWN;
 }
@@ -160,4 +163,102 @@ std::filesystem::path OvTools::Utils::PathParser::GetRealPath(
 	}
 
 	return (p_projectPath / normalizedPath).lexically_normal();
+}
+
+namespace
+{
+	// Each format's extension in Lost, and in Overload, which Lost still reads
+	constexpr std::pair<std::string_view, std::string_view> kFormatNames[] = {
+		{ "loproject", "ovproject" },
+		{ "loscene", "ovscene" },
+		{ "loprefab", "ovprefab" },
+		{ "lomat", "ovmat" },
+		{ "lofx", "ovfx" },
+		{ "lofxh", "ovfxh" },
+		{ "loanim", "ovanim" },
+	};
+}
+
+std::string OvTools::Utils::PathParser::GetFormatAlias(const std::string& p_path)
+{
+	const std::string ext = GetExtension(p_path);
+	if (ext.size() >= p_path.size())
+	{
+		return {}; // No extension
+	}
+
+	std::string lower = ext;
+	std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+	for (const auto& [lost, overload] : kFormatNames)
+	{
+		if (lower == lost || lower == overload)
+		{
+			return p_path.substr(0, p_path.size() - ext.size()) + std::string(lower == lost ? overload : lost);
+		}
+	}
+
+	return {};
+}
+
+std::filesystem::path OvTools::Utils::PathParser::FindFileToRead(const std::filesystem::path& p_file)
+{
+	std::error_code error;
+	if (std::filesystem::exists(p_file, error))
+	{
+		return p_file;
+	}
+
+	if (const std::string alias = GetFormatAlias(p_file.string()); !alias.empty() && std::filesystem::exists(alias, error))
+	{
+		return alias;
+	}
+
+	return p_file;
+}
+
+namespace
+{
+	std::string LowerExtension(const std::filesystem::path& p_path)
+	{
+		std::string extension = p_path.extension().string();
+		std::transform(extension.begin(), extension.end(), extension.begin(), [](char p_character) { return static_cast<char>(std::tolower(static_cast<unsigned char>(p_character))); });
+		return extension;
+	}
+}
+
+bool OvTools::Utils::PathParser::IsProjectFile(const std::filesystem::path& p_path)
+{
+	const std::string extension = LowerExtension(p_path);
+	return extension == ".loproject" || extension == ".ovproject";
+}
+
+std::vector<std::filesystem::path> OvTools::Utils::PathParser::FindProjectFiles(const std::filesystem::path& p_folder)
+{
+	std::vector<std::filesystem::path> found;
+	std::error_code error;
+
+	for (std::filesystem::directory_iterator entry(p_folder, error), end; !error && entry != end; entry.increment(error))
+	{
+		std::error_code entryError;
+		if (entry->is_regular_file(entryError) && IsProjectFile(entry->path()))
+		{
+			found.push_back(entry->path());
+		}
+	}
+
+	if (error)
+	{
+		return {};
+	}
+
+	// The Lost name before Overload's, so that a project converted while its old file stays opens as converted
+	std::sort(found.begin(), found.end(), [](const auto& p_a, const auto& p_b)
+	{
+		const bool aLost = LowerExtension(p_a) == ".loproject";
+		const bool bLost = LowerExtension(p_b) == ".loproject";
+		return aLost != bLost ? aLost : p_a.filename() < p_b.filename();
+	});
+
+	return found;
 }

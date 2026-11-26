@@ -4,7 +4,9 @@
 * @licence: MIT
 */
 
+#include <algorithm>
 #include <sstream>
+#include <vector>
 #include <tinyxml2.h>
 
 #include <baregl/types/EUniformType.h>
@@ -52,8 +54,19 @@ void OvCore::Resources::Material::OnSerialize(tinyxml2::XMLDocument& p_doc, tiny
 		return;
 	}
 
-	for (const auto& [name, prop] : m_properties)
+	// By name, so that a material saved twice is the same file: the properties are kept in no particular order
+	std::vector<const decltype(m_properties)::value_type*> properties;
+	properties.reserve(m_properties.size());
+	for (const auto& entry : m_properties)
 	{
+		properties.push_back(&entry);
+	}
+	std::sort(properties.begin(), properties.end(), [](const auto* p_a, const auto* p_b) { return p_a->first < p_b->first; });
+
+	for (const auto* entry : properties)
+	{
+		const auto& [name, prop] = *entry;
+
 		// Skip serialization of this property if the current program isn't using its associated uniform
 		if (!program->GetUniformInfo(name))
 		{
@@ -110,16 +123,15 @@ void OvCore::Resources::Material::OnSerialize(tinyxml2::XMLDocument& p_doc, tiny
 		std::visit(visitor, value);
 	}
 
+	// By name as well, the set having no order of its own
+	std::vector<std::string> sortedFeatures(m_features.begin(), m_features.end());
+	std::sort(sortedFeatures.begin(), sortedFeatures.end());
+
 	std::string features;
 
-	for (auto it = m_features.begin(); it != m_features.end(); ++it)
+	for (size_t i = 0; i < sortedFeatures.size(); ++i)
 	{
-		features += *it;
-
-		if (std::next(it) != m_features.end())
-		{
-			features += ",";
-		}
+		features += (i > 0 ? "," : "") + sortedFeatures[i];
 	}
 
 	Serializer::SerializeString(p_doc, p_node, "features", features);

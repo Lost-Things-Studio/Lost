@@ -10,6 +10,7 @@
 
 #include <OvDebug/Assertion.h>
 #include <OvCore/Global/ServiceLocator.h>
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/ResourceManagement/ModelManager.h>
 #include <OvCore/ResourceManagement/TextureManager.h>
 #include <OvRendering/Resources/Parsers/EmbeddedAssetPath.h>
@@ -30,7 +31,8 @@ namespace
 
 	TextureMetadata LoadTextureMetadata(const std::string_view p_filePath)
 	{
-		const auto metaFile = OvTools::Filesystem::IniFile(std::format("{}.meta", p_filePath));
+		auto metaFile = OvTools::Filesystem::IniFile(std::format("{}.meta", p_filePath));
+		OvCore::Helpers::AssetFormat::CheckMetadata(metaFile, std::format("{}.meta", p_filePath));
 		auto metadata = TextureMetadata{};
 
 		metadata.minFilter = static_cast<baregl::types::ETextureFilteringMode>(metaFile.GetOrDefault("MIN_FILTER", static_cast<int>(metadata.minFilter)));

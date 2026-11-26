@@ -6,6 +6,7 @@
 
 #include <tinyxml2.h>
 
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/SceneSystem/SceneManager.h>
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CAmbientSphereLight.h>
@@ -77,6 +78,9 @@ bool OvCore::SceneSystem::SceneManager::LoadScene(const std::string& p_path, boo
 
 	path /= OvTools::Utils::PathParser::MakeNonWindowsStyle(p_path);
 
+	// A scene named ".ovscene" and saved since as ".loscene" (or the reverse) is still found
+	path = OvTools::Utils::PathParser::FindFileToRead(path);
+
 	tinyxml2::XMLDocument doc;
 	if (doc.LoadFile(path.string().c_str()) != tinyxml2::XMLError::XML_SUCCESS)
 	{
@@ -84,7 +88,7 @@ bool OvCore::SceneSystem::SceneManager::LoadScene(const std::string& p_path, boo
 		return false;
 	}
 
-	if (LoadSceneFromMemory(doc))
+	if (LoadSceneFromMemory(doc, path.string()))
 	{
 		StoreCurrentSceneSourcePath(path.string());
 		return true;
@@ -93,11 +97,29 @@ bool OvCore::SceneSystem::SceneManager::LoadScene(const std::string& p_path, boo
 	return false;
 }
 
-bool OvCore::SceneSystem::SceneManager::LoadSceneFromMemory(tinyxml2::XMLDocument& p_doc)
+bool OvCore::SceneSystem::SceneManager::LoadSceneFromMemory(tinyxml2::XMLDocument& p_doc, const std::string& p_source)
 {
 	if (!p_doc.Error())
 	{
 		tinyxml2::XMLNode* root = p_doc.FirstChild();
+
+		// A newer scene is refused whole: read in part, it would lose what this engine does not know once saved
+		if (const auto* rootElement = root ? root->ToElement() : nullptr)
+		{
+			std::string error;
+			if (!Helpers::AssetFormat::ReadVersion(*rootElement, Helpers::AssetFormat::kSceneVersion, p_source, error))
+			{
+				OVLOG_ERROR("Failed to load scene: " + error);
+
+				if (m_errorDialogsEnabled)
+				{
+					OvWindowing::Dialogs::MessageBox message("Scene loading failed", error, OvWindowing::Dialogs::MessageBox::EMessageType::ERROR, OvWindowing::Dialogs::MessageBox::EButtonLayout::OK, true);
+				}
+
+				return false;
+			}
+		}
+
 		if (root)
 		{
 			tinyxml2::XMLNode* sceneNode = root->FirstChildElement("scene");

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <vector>
 
 namespace
 {
@@ -129,9 +130,18 @@ void OvTools::Filesystem::IniFile::Rewrite() const
 
 	if (outfile.is_open())
 	{
-		for (const auto& [key, value] : m_data)
+		// By name, so that a file written twice is the same file: the keys are kept in no particular order
+		std::vector<const decltype(m_data)::value_type*> entries;
+		entries.reserve(m_data.size());
+		for (const auto& entry : m_data)
 		{
-			outfile << key << "=" << value << std::endl;
+			entries.push_back(&entry);
+		}
+		std::sort(entries.begin(), entries.end(), [](const auto* p_a, const auto* p_b) { return p_a->first < p_b->first; });
+
+		for (const auto* entry : entries)
+		{
+			outfile << entry->first << "=" << entry->second << std::endl;
 		}
 	}
 

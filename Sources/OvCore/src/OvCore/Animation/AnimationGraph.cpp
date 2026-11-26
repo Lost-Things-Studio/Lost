@@ -10,6 +10,7 @@
 #include <unordered_map>
 
 #include <OvCore/Animation/AnimationGraph.h>
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvTools/Utils/Json.h>
 
 namespace
@@ -657,9 +658,25 @@ std::optional<std::string> OvCore::Animation::GraphDefinition::Parse(std::string
 	}
 
 	Reader reader(p_definition);
-	const Object* object = reader.ObjectAt(*root, "", { "parameters", "layers" });
 
-	if (object)
+	// "editor" is the graph editor's, which keeps where it draws the states there: the engine leaves it alone
+	const Object* object = reader.ObjectAt(*root, "", { "version", "editor", "parameters", "layers" });
+
+	// Version 0 without one (see Docs/AssetFormats.md)
+	if (const Value* version = object ? reader.Find(*object, "version") : nullptr)
+	{
+		const double* number = version->AsNumber();
+		if (!number || *number < 0.0 || *number != std::floor(*number))
+		{
+			reader.Fail("version", "must be a whole number of 0 or more");
+		}
+		else if (*number > static_cast<double>(OvCore::Helpers::AssetFormat::kAnimationGraphVersion))
+		{
+			reader.Fail("version", std::format("{:g} is newer than this engine reads (version {} at most)", *number, OvCore::Helpers::AssetFormat::kAnimationGraphVersion));
+		}
+	}
+
+	if (object && !reader.error)
 	{
 		if (const Array* parameters = reader.ArrayAt(*object, "", "parameters", false))
 		{

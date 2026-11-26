@@ -12,11 +12,13 @@
 #include <string>
 #include <vector>
 
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/Scripting/Lua/LuaApi.h>
 #include <OvDebug/Logger.h>
 #include <OvGame/Core/Application.h>
 #include <OvGame/Core/LaunchOptions.h>
 #include <OvRendering/Utils/Defines.h>
+#include <OvTools/Filesystem/IniFile.h>
 #include <OvTools/Profiling/TracyAllocators.h>
 
 FORCE_DEDICATED_GPU
@@ -51,6 +53,17 @@ namespace
 			for (const auto& name : OvCore::Scripting::LuaApi::Describe())
 				std::cout << name << '\n';
 			return EXIT_SUCCESS;
+		}
+
+		// A project newer than this engine is not run: its settings may mean what this engine does not know
+		{
+			const auto projectFile = result.options->GetProjectSettingsFile();
+			std::string error;
+			if (!OvCore::Helpers::AssetFormat::ReadVersion(OvTools::Filesystem::IniFile(projectFile.string()), OvCore::Helpers::AssetFormat::kProjectVersion, projectFile.filename().string(), error))
+			{
+				std::cerr << "OvGame: " << error << '\n';
+				return EXIT_FAILURE;
+			}
 		}
 
 		// Errors are counted over the whole run, from the start scene's loading to the game's destruction

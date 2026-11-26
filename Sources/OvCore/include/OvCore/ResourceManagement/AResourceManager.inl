@@ -7,6 +7,9 @@
 #pragma once
 
 #include <algorithm>
+#include <system_error>
+
+#include <OvTools/Utils/PathParser.h>
 
 #include "OvCore/ResourceManagement/AResourceManager.h"
 
@@ -161,6 +164,13 @@ namespace OvCore::ResourceManagement
 		}
 		else if (p_tryToLoadIfNotFound)
 		{
+			// A file asked for under the other name of its format is the resource of the file that exists, under its
+			// path: what refers to it is saved with the name it has
+			if (const auto resolved = ResolveFormatName(p_path); resolved != p_path)
+			{
+				return GetResource(resolved, true);
+			}
+
 			return LoadResource(p_path);
 		}
 
@@ -191,6 +201,31 @@ namespace OvCore::ResourceManagement
 
 	template<typename T>
 	inline std::filesystem::path AResourceManager<T>::GetRealPath(const std::filesystem::path& p_path) const
+	{
+		return OvTools::Utils::PathParser::FindFileToRead(MapPath(p_path));
+	}
+
+	template<typename T>
+	inline std::filesystem::path AResourceManager<T>::ResolveFormatName(const std::filesystem::path& p_path) const
+	{
+		const std::string alias = OvTools::Utils::PathParser::GetFormatAlias(p_path.string());
+		if (alias.empty())
+		{
+			return p_path;
+		}
+
+		if (m_resources.find(NormalizeKey(alias)) != m_resources.end())
+		{
+			return alias;
+		}
+
+		std::error_code error;
+		const bool found = std::filesystem::exists(MapPath(p_path), error);
+		return !found && std::filesystem::exists(MapPath(alias), error) ? std::filesystem::path(alias) : p_path;
+	}
+
+	template<typename T>
+	inline std::filesystem::path AResourceManager<T>::MapPath(const std::filesystem::path& p_path) const
 	{
 		// Keep support for the engine prefix ':'
 		const std::string s = p_path.string();

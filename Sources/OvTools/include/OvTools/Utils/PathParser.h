@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 
 namespace OvTools::Utils
@@ -107,5 +108,32 @@ namespace OvTools::Utils
 			const std::filesystem::path& p_enginePath,
 			const std::filesystem::path& p_projectPath
 		);
+
+		/**
+		* The same path under the other name of its format: ".loscene" for ".ovscene", and the reverse (for projects,
+		* scenes, prefabs, materials, shaders, shader parts and animation graphs). An empty string for any other extension
+		* @param p_path
+		*/
+		static std::string GetFormatAlias(const std::string& p_path);
+
+		/**
+		* A file to read: the file itself if it exists, or else the same file under the other name of its format, if that
+		* one exists. Never for a file to write, which keeps the name it is given
+		* @param p_file
+		*/
+		static std::filesystem::path FindFileToRead(const std::filesystem::path& p_file);
+
+		/**
+		* Whether a path names a project file: ".loproject", or Overload's ".ovproject", whatever the case of its
+		* extension (Windows names ignore it)
+		* @param p_path
+		*/
+		static bool IsProjectFile(const std::filesystem::path& p_path);
+
+		/**
+		* The project files directly in a folder, the Lost ones first, then by name. Empty if the folder cannot be read
+		* @param p_folder
+		*/
+		static std::vector<std::filesystem::path> FindProjectFiles(const std::filesystem::path& p_folder);
 	};
 }

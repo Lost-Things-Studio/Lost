@@ -19,7 +19,7 @@ namespace OvEditor::Core
 	public:
 		/**
 		* Constructor
-		* @param p_projectFolder (The folder containing the .ovproject file)
+		* @param p_projectFolder (The folder containing the .loproject or .ovproject file)
 		*/
 		Application(const std::filesystem::path& p_projectFolder);
 

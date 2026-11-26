@@ -74,7 +74,7 @@ namespace OvEditor::Core
 
 			openProjectButton.ClickedEvent += [this] {
 				OvWindowing::Dialogs::OpenFileDialog dialog("Open project");
-				dialog.AddFileType("Overload Project", "*.ovproject");
+				dialog.AddFileType("Lost Project", "*.loproject;*.ovproject");
 				dialog.Show();
 
 				const std::filesystem::path projectFile = dialog.GetSelectedFilePath();
@@ -91,7 +91,7 @@ namespace OvEditor::Core
 
 			newProjectButton.ClickedEvent += [this, &pathField] {
 				OvWindowing::Dialogs::SaveFileDialog dialog("New project location");
-				dialog.DefineExtension("Overload Project", "..");
+				dialog.DefineExtension("Lost Project", "..");
 				dialog.Show();
 				if (dialog.HasSucceeded())
 				{

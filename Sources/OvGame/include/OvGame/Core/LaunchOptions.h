@@ -21,7 +21,7 @@ namespace OvGame::Core
 	struct LaunchOptions
 	{
 		/**
-		* The project file (.ovproject) to run, its assets in the Assets folder next to it
+		* The project file (.loproject, or Overload's .ovproject) to run, its assets in the Assets folder next to it
 		*/
 		std::optional<std::filesystem::path> projectFile;
 
@@ -69,6 +69,11 @@ namespace OvGame::Core
 		* @param p_arguments
 		*/
 		static ParseResult Parse(const std::vector<std::string>& p_arguments);
+
+		/**
+		* The project file the run reads: the one given, or a built game's Data/User/Game.ini
+		*/
+		std::filesystem::path GetProjectSettingsFile() const;
 
 		/**
 		* The options, as --help prints them

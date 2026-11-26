@@ -16,8 +16,10 @@
 
 #include <OvDebug/Logger.h>
 #include <OvCore/ECS/Actor.h>
+#include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/Helpers/Serializer.h>
 #include <OvCore/SceneSystem/PrefabOperations.h>
+#include <OvTools/Utils/PathParser.h>
 
 namespace
 {
@@ -101,6 +103,7 @@ bool OvCore::SceneSystem::PrefabOperations::SaveToFile(OvCore::ECS::Actor& p_roo
 	tinyxml2::XMLDocument doc;
 
 	auto* rootNode = doc.NewElement("root");
+	OvCore::Helpers::AssetFormat::WriteVersion(*rootNode, OvCore::Helpers::AssetFormat::kPrefabVersion);
 	doc.InsertFirstChild(rootNode);
 
 	auto* prefabNode = doc.NewElement("prefab");
@@ -136,8 +139,11 @@ OvCore::ECS::Actor* OvCore::SceneSystem::PrefabOperations::InstantiateFromFile(
 		return nullptr;
 	}
 
+	// A prefab named ".ovprefab" and saved since as ".loprefab" (or the reverse) is still found
+	const std::filesystem::path prefabPath = OvTools::Utils::PathParser::FindFileToRead(p_prefabPath);
+
 	tinyxml2::XMLDocument doc;
-	const auto loadResult = doc.LoadFile(p_prefabPath.string().c_str());
+	const auto loadResult = doc.LoadFile(prefabPath.string().c_str());
 	if (loadResult != tinyxml2::XML_SUCCESS)
 	{
 		OVLOG_ERROR("Failed to instantiate prefab \"" + p_prefabPath.string() + "\": XML parsing failed (code " + std::to_string(loadResult) + ").");
@@ -145,6 +151,13 @@ OvCore::ECS::Actor* OvCore::SceneSystem::PrefabOperations::InstantiateFromFile(
 	}
 
 	auto* rootNode = doc.FirstChildElement("root");
+
+	if (std::string error; rootNode && !OvCore::Helpers::AssetFormat::ReadVersion(*rootNode, OvCore::Helpers::AssetFormat::kPrefabVersion, prefabPath.string(), error))
+	{
+		OVLOG_ERROR("Failed to instantiate prefab: " + error);
+		return nullptr;
+	}
+
 	auto* prefabNode = rootNode ? rootNode->FirstChildElement("prefab") : nullptr;
 	auto* actorsNode = prefabNode ? prefabNode->FirstChildElement("actors") : nullptr;
 

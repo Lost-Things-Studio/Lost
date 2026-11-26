@@ -274,6 +274,16 @@ Lost's first version: Overload 1.9 and the changes below.
   `OvTools::Utils::StateHistory`. See [Docs/Editor.md](Docs/Editor.md).
 - **Unsaved changes**: the editor's title ends with `*` while the scene has changes that are not saved, and the editor
   asks whether to save them before a new scene, another scene, or closing.
+- **Lost's file names**: projects, scenes, prefabs, materials, shaders, shader includes and animation graphs are
+  `.loproject`, `.loscene`, `.loprefab`, `.lomat`, `.lofx`, `.lofxh` and `.loanim`. Overload's names are still read as
+  the same file types, a file asked for by one name is found under the other, and what the editor makes has the Lost
+  name: a new scene, prefab, material, shader, project, and Save As. See [Docs/AssetFormats.md](Docs/AssetFormats.md).
+- **Format versions**: a project, a scene, a prefab, a material, an animation graph and an asset's metadata are written
+  in version 1 (`format_version=1`, `<root version="1">`, `"version": 1`). A file without a version is version 0 and
+  reads as before; a file of a newer version is refused with an error that names it, and a newer project is not opened
+  (OvGame ends with exit code 1).
+- **Create > Animation Graph** in the asset browser: a graph of one layer and one empty state, to fill in. A graph's
+  `editor` member is left for the graph editor.
 
 ### Changed
 
@@ -307,6 +317,10 @@ Lost's first version: Overload 1.9 and the changes below.
 - **Up to 64 sounds are heard at once**, the loudest, instead of 16.
 - **A sound in the world fades no more past its source's maximum distance**, 500 metres by default, where it faded
   without end: a source of an older scene, exponential from its threshold, keeps there a five-hundredth of its volume.
+- **Files are written in a fixed order**: a material's uniforms and features, and an INI file's keys (a project, an
+  asset's metadata, the editor's settings), are written sorted by name. They came in a map's order, which could differ
+  from one save to the next.
+- **The import dialogs** show `.gltf` models, and shaders under both names.
 - **Unreadable properties are reported**: a property written in a file with an unknown type (`type="boolean"`) is
   logged as an error, and one whose type the script no longer declares as a warning. Both were ignored silently.
 

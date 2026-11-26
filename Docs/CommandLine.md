@@ -12,7 +12,7 @@ A built game runs as before: the project in `Data/User` (its settings in `Data/U
 
 | Option | What it does |
 | --- | --- |
-| `--project <folder or file>` | Runs this project: a `.ovproject` file, or the folder that holds exactly one. Its assets are the `Assets` folder next to it |
+| `--project <folder or file>` | Runs this project: a `.loproject` file (or Overload's `.ovproject`), or the folder that holds exactly one. Its assets are the `Assets` folder next to it |
 | `--engine <folder>` | The engine's resources, a Lost checkout's `Resources/Engine` (`Data/Engine` by default) |
 | `--scene <path>` | Starts on this scene, relative to the project's assets, instead of the project's `start_scene` |
 | `--frames <n>` | Quits after n frames |
@@ -30,7 +30,7 @@ The paths are relative to the current folder. For example, ten seconds of a scen
 frame captured:
 
 ```sh
-OvGame --project ../MyGame --engine ../lost/Resources/Engine --scene Scenes/Level1.ovscene \
+OvGame --project ../MyGame --engine ../lost/Resources/Engine --scene Scenes/Level1.loscene \
        --frames 600 --screenshot level1.png --hidden-window --fail-on-error
 ```
 
@@ -39,7 +39,7 @@ OvGame --project ../MyGame --engine ../lost/Resources/Engine --scene Scenes/Leve
 | Code | Meaning |
 | --- | --- |
 | 0 | The run went well |
-| 1 | An option is wrong, or the start scene cannot be loaded (the game then runs an empty scene until it quits) |
+| 1 | An option is wrong, the project file is of a newer version than this engine reads (the game does not start), or the start scene cannot be loaded (the game then runs an empty scene until it quits) |
 | 2 | With `--fail-on-error`: an error was logged, from the start scene's loading to the game's shutdown |
 | 3 | The screenshot was not written: it cannot be, the window was minimized on the last frame, or the game quit before it |
 

@@ -9,6 +9,7 @@
 #include <OvEditor/Core/Application.h>
 #include <OvEditor/Utils/ProjectManagement.h>
 #include <OvEditor/Utils/FileSystem.h>
+#include <OvTools/Utils/PathParser.h>
 #include <OvWindowing/Dialogs/MessageBox.h>
 
 namespace
@@ -28,15 +29,9 @@ namespace
 
 	std::optional<std::filesystem::path> _FindProjectFileInDirectory(const std::filesystem::path& p_path)
 	{
-		for (const auto& entry : std::filesystem::directory_iterator(p_path))
-		{
-			if (entry.is_regular_file() && entry.path().extension() == ".ovproject")
-			{
-				return entry.path();
-			}
-		}
-
-		return std::nullopt;
+		// A .loproject, or Overload's .ovproject; the Lost one first if a folder has both
+		const auto found = OvTools::Utils::PathParser::FindProjectFiles(p_path);
+		return found.empty() ? std::nullopt : std::optional<std::filesystem::path>(found.front());
 	}
 }
 
@@ -174,7 +169,7 @@ namespace OvEditor::Utils::ProjectManagement
 				return false;
 			}
 
-			const auto projectFile = p_projectPath / std::format("{}.ovproject", p_projectPath.stem().string());
+			const auto projectFile = p_projectPath / std::format("{}.loproject", p_projectPath.stem().string());
 
 			std::ofstream{ projectFile };
 
@@ -191,20 +186,8 @@ namespace OvEditor::Utils::ProjectManagement
 
 	void OpenProject(const std::filesystem::path& p_projectPath)
 	{
-		// Find the project file (*.ovproject) in the given path.
-		// It can be named anything, but it should have the .ovproject extension.
-		auto findProjectFile = [](const std::filesystem::path& p_path) -> std::optional<std::filesystem::path> {
-			for (const auto& entry : std::filesystem::directory_iterator(p_path))
-			{
-				if (entry.is_regular_file() && entry.path().extension() == ".ovproject")
-				{
-					return entry.path();
-				}
-			}
-			return std::nullopt;
-		};
-
-		const auto projectFile = findProjectFile(p_projectPath);
+		// The project file can be named anything, with the extension .loproject, or Overload's .ovproject
+		const auto projectFile = _FindProjectFileInDirectory(p_projectPath);
 
 		if (projectFile)
 		{

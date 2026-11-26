@@ -119,12 +119,22 @@ namespace OvCore::ResourceManagement
 		virtual T* CreateResource(const std::filesystem::path& p_path) = 0;
 		virtual void DestroyResource(T* p_resource) = 0;
 		virtual void ReloadResource(T* p_resource, const std::filesystem::path& p_path) = 0;
+
+		/**
+		* The file a resource is read from. A file asked for under the other name of its format (".ovmat" for a ".lomat"
+		* file, or the reverse) is found under the name it has
+		* @param p_path
+		*/
 		std::filesystem::path GetRealPath(const std::filesystem::path& p_path) const;
 
 		/**
 		* Changes the revision, for a resource whose content changed in place
 		*/
 		void MarkResourcesChanged();
+
+	private:
+		std::filesystem::path MapPath(const std::filesystem::path& p_path) const;
+		std::filesystem::path ResolveFormatName(const std::filesystem::path& p_path) const;
 
 	private:
 		inline static std::filesystem::path __PROJECT_ASSETS_PATH;

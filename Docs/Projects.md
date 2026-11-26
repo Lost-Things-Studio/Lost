@@ -1,12 +1,19 @@
 # Projects
 
-A project is a folder holding an `Assets` folder and a project file, `<name>.ovproject`: plain `key=value` lines that
-the editor and the built game read.
+A project is a folder holding an `Assets` folder and a project file, `<name>.loproject`: plain `key=value` lines that
+the editor and the built game read. An Overload project's `<name>.ovproject` is read the same way (see
+[Asset formats](AssetFormats.md)).
+
+- **Its version** is the key `format_version`, 1 today. A project without it is version 0, and the editor adds it.
+- **A project of a newer version** than the engine reads is refused: the editor says so and does not open it, and the
+  game ends with exit code 1 (see [Command line](CommandLine.md)).
+- **The editor writes the keys sorted by name**, so that a project saved twice is the same file.
 
 ## Keys the editor writes
 
 | Key | Default | What it sets |
 | --- | --- | --- |
+| `format_version` | 1 | The project file's version (see [Asset formats](AssetFormats.md)). Reset keeps the latest |
 | `executable_name` | `Game` | The built game's name and window title. It names the save folder when `project_id` is empty |
 | `project_id` | empty | The name of the save folder (see [Saving](Saving.md)): set it once, and renaming the game keeps its saves |
 | `start_scene` | empty | The scene a built game opens, relative to `Assets` (`--scene` replaces it, see [Command line](CommandLine.md)) |

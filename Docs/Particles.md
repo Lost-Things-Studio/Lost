@@ -12,7 +12,7 @@ Lua:
 
 ```lua
 local sparks = actor:AddParticleSystem()
-sparks:SetMaterial(Resources.GetMaterial("Materials/Sparks.ovmat"))
+sparks:SetMaterial(Resources.GetMaterial("Materials/Sparks.lomat"))
 sparks:SetRate(300)
 sparks:SetLifetime(0.6, 1.2)
 sparks:SetSpeed(4, 7)

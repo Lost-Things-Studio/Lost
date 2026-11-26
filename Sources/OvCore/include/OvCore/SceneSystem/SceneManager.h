@@ -66,10 +66,11 @@ namespace OvCore::SceneSystem
 		bool LoadScene(const std::string& p_path, bool p_absolute = false);
 
 		/**
-		* Load specific scene in memory
-		* @param p_scenePath
+		* Load specific scene in memory. A scene of a version newer than the engine reads is refused
+		* @param p_doc
+		* @param p_source (the file it was read from, named in an error)
 		*/
-		bool LoadSceneFromMemory(tinyxml2::XMLDocument& p_doc);
+		bool LoadSceneFromMemory(tinyxml2::XMLDocument& p_doc, const std::string& p_source = "The scene");
 
 		/**
 		* Destroy current scene from memory

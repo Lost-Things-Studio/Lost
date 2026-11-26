@@ -315,11 +315,11 @@ OvCore::ECS::Actor& OvCore::SceneSystem::Scene::CreateActor(const std::string& p
 
 std::filesystem::path OvCore::SceneSystem::Scene::GetRealAssetPath(const std::string& p_path) const
 {
-	return OvTools::Utils::PathParser::GetRealPath(
+	return OvTools::Utils::PathParser::FindFileToRead(OvTools::Utils::PathParser::GetRealPath(
 		std::filesystem::path{ p_path },
 		m_engineAssetsPath,
 		m_projectAssetsPath
-	);
+	));
 }
 
 void OvCore::SceneSystem::Scene::BeginBatchActorCreation()
