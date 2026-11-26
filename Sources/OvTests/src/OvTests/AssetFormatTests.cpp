@@ -224,7 +224,10 @@ TEST_SUITE("Asset formats")
 			ini.Add<int>("x_resolution", 1280);
 			ini.Rewrite();
 		}
-		CHECK(ReadText(path) == "executable_name=Game\nformat_version=1\nx_resolution=1280\ny_resolution=720\n");
+		// Written in text mode, so its lines end with "\r\n" on Windows
+		std::string sorted = ReadText(path);
+		std::erase(sorted, '\r');
+		CHECK(sorted == "executable_name=Game\nformat_version=1\nx_resolution=1280\ny_resolution=720\n");
 	}
 
 	TEST_CASE("an asset's metadata of a newer version is left aside, the asset read with the default settings")
@@ -266,7 +269,7 @@ TEST_SUITE("Asset formats")
 
 		// Asked for by Overload's name, it is found by its own
 		REQUIRE(manager.LoadScene((folder.GetPath() / "Lost.ovscene").string(), true));
-		CHECK(manager.GetCurrentSceneSourcePath() == (folder.GetPath() / "Lost.loscene").string());
+		CHECK(std::filesystem::path(manager.GetCurrentSceneSourcePath()) == folder.GetPath() / "Lost.loscene");
 
 		CHECK_FALSE(manager.LoadScene((folder.GetPath() / "Newer.loscene").string(), true));
 		CHECK(logs.Contains(ELogLevel::LOG_ERROR, "Newer.loscene is version 2 of its format"));
