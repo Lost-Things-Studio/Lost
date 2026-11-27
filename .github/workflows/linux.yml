@@ -41,6 +41,15 @@ jobs:
     - name: Run the engine tests
       run: Bin/${{ matrix.configuration }}/OvTests/OvTests
 
+    # The checks' assets packed, verified and extracted: what comes out is what went in
+    - name: Round-trip a package
+      run: |
+        LOSTPACK=Bin/${{ matrix.configuration }}/LostPack/LostPack
+        $LOSTPACK pack Tests/GameChecks/Assets "$RUNNER_TEMP/checks.lopak" --project-id GameChecks
+        $LOSTPACK verify "$RUNNER_TEMP/checks.lopak"
+        $LOSTPACK extract "$RUNNER_TEMP/checks.lopak" "$RUNNER_TEMP/checks"
+        diff -r Tests/GameChecks/Assets "$RUNNER_TEMP/checks"
+
     # The game draws with Mesa's software renderer under a virtual display
     - name: Run the in-game checks
       run: xvfb-run -a -s "-screen 0 1280x720x24" Tests/run_game_checks.sh Bin/${{ matrix.configuration }}/OvGame/OvGame

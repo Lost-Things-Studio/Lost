@@ -20,6 +20,9 @@ project "OvTests"
 		-- The game's code that has no window to need: its command line and its image writer
 		"%{wks.location}/Sources/OvGame/src/OvGame/Core/LaunchOptions.cpp",
 		"%{wks.location}/Sources/OvGame/src/OvGame/Utils/PngWriter.cpp",
+
+		-- The package tool's commands
+		"%{wks.location}/Sources/LostPack/src/LostPack/Commands.cpp",
 	}
 
 	includedirs {
@@ -38,6 +41,7 @@ project "OvTests"
 		"%{wks.location}/Sources/OvCore/include",
 		"%{wks.location}/Sources/OvDebug/include",
 		"%{wks.location}/Sources/OvGame/include",
+		"%{wks.location}/Sources/LostPack/include",
 		"%{wks.location}/Sources/OvMaths/include",
 		"%{wks.location}/Sources/OvPhysics/include",
 		"%{wks.location}/Sources/OvRendering/include",
