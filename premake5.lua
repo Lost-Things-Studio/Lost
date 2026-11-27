@@ -93,6 +93,7 @@ group ""
 group "Lost Apps"
 	include "Sources/OvEditor"
 	include "Sources/OvGame"
+	include "Sources/LostPack"
 group ""
 
 group "Lost Tests"
