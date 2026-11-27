@@ -56,7 +56,6 @@ project "OvTests"
 	links {
 		-- Dependencies
 		"assimp",
-		"zlib", -- Used by assimp, so after it
 		"baregl",
 		"freetype",
 		"glfw",
@@ -77,7 +76,10 @@ project "OvTests"
 		"OvRendering",
 		"OvTools",
 		"OvUI",
-		"OvWindowing"
+		"OvWindowing",
+
+		-- Used by assimp and OvTools: after both, as Linux links in one pass
+		"zlib"
 	}
 
 	filter { "configurations:Debug" }
