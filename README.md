@@ -112,6 +112,7 @@ Lost builds its dependencies from source, in `Dependencies/`, each with its lice
 | [SoLoud](https://github.com/jarikomppa/soloud) | Audio | zlib |
 | [stb_image](https://github.com/nothings/stb) | Decoding images | Public domain or MIT |
 | [TinyXML-2](https://github.com/leethomason/tinyxml2) | Scene, prefab and material files | zlib |
+| [zlib](https://zlib.net) | Packages, and the models Assimp decompresses | zlib |
 | [Tracy](https://github.com/wolfpld/tracy) | The profiler | BSD 3-Clause |
 
 Where Lost changes a dependency's code, a `Lost:` comment marks the change.

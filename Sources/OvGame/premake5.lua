@@ -38,6 +38,7 @@ project "OvGame"
 	links {
 		-- Dependencies
 		"assimp",
+		"zlib", -- Used by assimp, so after it
 		"baregl",
 		"freetype",
 		"glfw",

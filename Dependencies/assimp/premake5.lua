@@ -10,7 +10,7 @@
 -- 2. Set up configuration headers
 -- 	2.1 Copy the "include/assimp/config.h.in" file to "include/assimp/config.h" and edit it to your liking. I'd recommend commenting the #cmakedefine lines and just defining the values you need.
 --  2.2 Copy the "include/assimp/revision.h.in" file to "include/assimp/revision.h" and replace the placeholders with the proper version numbers.
---	2.3 Copy the "contrib/zlib/zconf.h.in" file to "contrib/zlib/zconf.h" and edit it to your liking.
+--	2.3 zlib is not built here: it is its own project (Dependencies/zlib), which the engine links next to assimp.
 --
 -- 3. Edit the 'files { ... }' and 'defines { ... }' depending on which importers/exporters you need. By default, Overload uses OBJ and FBX.
 -- 4. (optional) remove the unused dependencies from `contrib/` and unused importers/exporters from `code/AssetLib/`
@@ -29,7 +29,7 @@ project 'assimp'
 		'contrib/irrXML/',
 		'contrib/unzip/',
 		'contrib/pugixml/src/',
-		'contrib/zlib/',
+		'../zlib/',
 		'contrib/rapidjson/include/',
 		'contrib/utf8cpp/source',
 		'code',
@@ -45,7 +45,6 @@ project 'assimp'
 
 		-- Dependencies
 		'contrib/unzip/**',
-		'contrib/zlib/*',
 
 		-- Common
 		'code/Common/**',

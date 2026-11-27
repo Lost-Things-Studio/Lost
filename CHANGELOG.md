@@ -327,6 +327,8 @@ Lost's first version: Overload 1.9 and the changes below.
   asset's metadata, the editor's settings), are written sorted by name. They came in a map's order, which could differ
   from one save to the next.
 - **The import dialogs** show `.gltf` models, and shaders under both names.
+- **zlib is its own library** (`Dependencies/zlib`, 1.2.13), which Assimp and the packages share. It was built inside
+  Assimp's.
 - **Unreadable properties are reported**: a property written in a file with an unknown type (`type="boolean"`) is
   logged as an error, and one whose type the script no longer declares as a warning. Both were ignored silently.
 
