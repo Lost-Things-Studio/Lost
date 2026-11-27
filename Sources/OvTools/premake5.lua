@@ -17,6 +17,7 @@ project "OvTools"
 	includedirs {
 		-- Dependencies
 		dependdir .. "tracy",
+		dependdir .. "zlib",
 
 		-- Current Project
 		"include"
