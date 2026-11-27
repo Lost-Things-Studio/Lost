@@ -1,0 +1,22 @@
+#pass SHADOW_PASS
+#pass REFLECTION_PASS
+
+#feature PARALLAX_MAPPING
+#feature NORMAL_MAPPING
+#feature DISTANCE_FADE
+#feature SPECULAR_WORKFLOW
+#engine_feature SKINNING
+#engine_capability INSTANCING
+
+// The engine's lit shader. Its two stages are public includes, so that a shader built on it keeps up with the engine
+// and adds to it through extension points (see Standard/StandardVertex.lofxh, Standard/StandardFragment.lofxh)
+
+#shader vertex
+#version 450 core
+
+#include ":Shaders/Standard/StandardVertex.lofxh"
+
+#shader fragment
+#version 450 core
+
+#include ":Shaders/Standard/StandardFragment.lofxh"

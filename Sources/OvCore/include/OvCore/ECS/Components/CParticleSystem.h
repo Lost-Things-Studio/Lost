@@ -25,12 +25,12 @@ namespace OvCore::ECS::Components
 	/**
 	* Emits particles drawn by the GPU in one draw per mesh: a record per particle at its birth, from which the
 	* shader works out where it is, how big, and its colour, at any time. Billboards by default, or any model with a
-	* material whose shader reads the particles (Common/Particles.ovfxh)
+	* material whose shader reads the particles (Common/Particles.lofxh)
 	*/
 	class CParticleSystem : public AComponent
 	{
 	public:
-		static constexpr const char* kDefaultMaterialPath = ":Materials/Particle.ovmat";
+		static constexpr const char* kDefaultMaterialPath = ":Materials/Particle.lomat";
 
 		/**
 		* Constructor
@@ -108,7 +108,7 @@ namespace OvCore::ECS::Components
 		OvRendering::Resources::Model* GetModel() const;
 
 		/**
-		* Sets the material the particles are drawn with, or nullptr for the engine's (:Materials/Particle.ovmat)
+		* Sets the material the particles are drawn with, or nullptr for the engine's (:Materials/Particle.lomat)
 		* @param p_material
 		*/
 		void SetMaterial(OvCore::Resources::Material* p_material);

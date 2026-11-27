@@ -46,7 +46,7 @@
 ## Animator
 
 The `Animator` component plays an animation graph on its actor's skinned mesh: a JSON file of the project
-(`.loanim`, or Overload's `.ovanim`) whose layers hold states and the transitions between them, driven by parameters a script
+(`.loanim`, or Overload's `.loanim`) whose layers hold states and the transitions between them, driven by parameters a script
 sets.
 
 - **Setting it up**: `SetGraphPath("Animations/Hero.loanim")`, and the model whose clips the graph plays

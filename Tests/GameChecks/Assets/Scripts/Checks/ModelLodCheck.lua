@@ -25,7 +25,7 @@ local function MakeRock(sName, vPosition, sModel)
 	oActor:GetTransform():SetLocalPosition(vPosition)
 	local oRenderer = oActor:AddModelRenderer()
 	oRenderer:SetModel(Resources.GetModel(sModel))
-	oActor:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial(":Materials/Default.ovmat"))
+	oActor:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial(":Materials/Default.lomat"))
 	return oRenderer
 end
 

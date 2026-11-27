@@ -11,7 +11,7 @@
 namespace OvCore::Rendering
 {
 	/**
-	* Distance fog, set on a post process stack and applied by the shaders that include Fog.ovfxh.
+	* Distance fog, set on a post process stack and applied by the shaders that include Fog.lofxh.
 	* Past start meters from the eye, a surface fades towards the fog colour by 1 - exp(-(distance * density)^2),
 	* never beyond maxOpacity
 	*/

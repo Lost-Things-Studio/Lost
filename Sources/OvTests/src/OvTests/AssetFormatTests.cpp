@@ -14,6 +14,7 @@
 #include <OvCore/Animation/AnimationGraph.h>
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/Helpers/AssetFormat.h>
+#include <OvCore/Helpers/FormatConversion.h>
 #include <OvCore/ResourceManagement/AResourceManager.h>
 #include <OvCore/Resources/Loaders/MaterialLoader.h>
 #include <OvCore/SceneSystem/PrefabOperations.h>
@@ -395,5 +396,104 @@ TEST_SUITE("Asset formats")
 		CHECK_FALSE(manager.GetResource("Materials/Missing.lomat"));
 
 		manager.UnloadResources();
+	}
+
+	TEST_CASE("a project converted to the Lost formats: each file under its Lost name, each reference following")
+	{
+		namespace FormatConversion = OvCore::Helpers::FormatConversion;
+
+		OvTests::TempFolder folder;
+		const auto project = folder.GetPath() / "Game";
+		const auto engine = folder.GetPath() / "Engine";
+		folder.WriteFile("Engine/Materials/Default.lomat", "");
+		folder.WriteFile("Engine/Shaders/Common/Fog.lofxh", "");
+
+		folder.WriteFile("Game/Game.ovproject", "executable_name=Game\nstart_scene=Scenes/Level.ovscene\n");
+		folder.WriteFile("Game/Assets/Scenes/Level.ovscene",
+			"<root><scene>"
+			"<material>Materials/Rock.ovmat</material>"
+			"<prefab>Prefabs/Crate.ovprefab</prefab>"
+			"<graph>Animations/Hero.ovanim</graph>"
+			"<engine>:Materials\\Default.ovmat</engine>"
+			"<missing>:Materials/Missing.ovmat</missing>"
+			"<embedded>Models/Rock.fbx:embedded_material_0.ovmat</embedded>"
+			"<spaced>Materials/Rock Old.ovmat</spaced>"
+			"</scene></root>");
+		folder.WriteFile("Game/Assets/Materials/Rock.ovmat", "<root><shader>Shaders/Custom.ovfx</shader></root>");
+		folder.WriteFile("Game/Assets/Materials/Rock.ovmat.meta", "");
+		folder.WriteFile("Game/Assets/Materials/Rock Old.ovmat", "<root/>");
+		folder.WriteFile("Game/Assets/Shaders/Custom.ovfx", "#include \":Shaders/Common/Fog.ovfxh\"\n#include \"Shaders/Part.ovfxh\"\n");
+		folder.WriteFile("Game/Assets/Shaders/Part.ovfxh", "");
+		folder.WriteFile("Game/Assets/Prefabs/Crate.ovprefab", "<root/>");
+		folder.WriteFile("Game/Assets/Animations/Hero.ovanim", "{ \"layers\": [] }");
+		folder.WriteFile("Game/Assets/Scripts/Spawn.lua",
+			"local crate = Prefabs.Spawn(\"Prefabs/Crate.ovprefab\")\n"
+			"local built = \"Prefabs/\" .. name .. \".ovprefab\"\n"
+			"-- Opens 'Scenes/Level.ovscene'\n"
+			"local missing = \"Prefabs/Missing.ovprefab\"\n");
+		folder.WriteFile("Game/Assets/Scripts/Windows.lua", "-- Written on Windows\r\nlocal level = \"Scenes/Level.ovscene\"\r\n");
+		folder.WriteFile("Game/Assets/Both.ovscene", "<root/>");
+		folder.WriteFile("Game/Assets/Both.loscene", "<root/>");
+
+		const auto report = FormatConversion::ConvertProject(project, engine);
+		CAPTURE(FormatConversion::Describe(report));
+
+		CHECK(report.renamed.size() == 8);
+		CHECK_FALSE(std::filesystem::exists(project / "Game.ovproject"));
+		CHECK(ReadText(project / "Game.loproject") == "executable_name=Game\nstart_scene=Scenes/Level.loscene\n");
+
+		CHECK(ReadText(project / "Assets/Scenes/Level.loscene") ==
+			"<root><scene>"
+			"<material>Materials/Rock.lomat</material>"
+			"<prefab>Prefabs/Crate.loprefab</prefab>"
+			"<graph>Animations/Hero.loanim</graph>"
+			"<engine>:Materials\\Default.lomat</engine>"
+			"<missing>:Materials/Missing.ovmat</missing>"
+			"<embedded>Models/Rock.fbx:embedded_material_0.ovmat</embedded>"
+			"<spaced>Materials/Rock Old.lomat</spaced>"
+			"</scene></root>");
+		CHECK(ReadText(project / "Assets/Materials/Rock.lomat") == "<root><shader>Shaders/Custom.lofx</shader></root>");
+		CHECK(std::filesystem::exists(project / "Assets/Materials/Rock.lomat.meta"));
+		CHECK_FALSE(std::filesystem::exists(project / "Assets/Materials/Rock.ovmat.meta"));
+		CHECK(ReadText(project / "Assets/Shaders/Custom.lofx") == "#include \":Shaders/Common/Fog.lofxh\"\n#include \"Shaders/Part.lofxh\"\n");
+		CHECK(std::filesystem::exists(project / "Assets/Shaders/Part.lofxh"));
+		CHECK(std::filesystem::exists(project / "Assets/Animations/Hero.loanim"));
+
+		// In a script, a string that is a path, and only such a string, each line reported
+		CHECK(ReadText(project / "Assets/Scripts/Spawn.lua") ==
+			"local crate = Prefabs.Spawn(\"Prefabs/Crate.loprefab\")\n"
+			"local built = \"Prefabs/\" .. name .. \".ovprefab\"\n"
+			"-- Opens 'Scenes/Level.loscene'\n"
+			"local missing = \"Prefabs/Missing.ovprefab\"\n");
+		REQUIRE(report.luaChanges.size() == 3);
+		CHECK(report.luaChanges[0].line == 1);
+		CHECK(report.luaChanges[0].before == "local crate = Prefabs.Spawn(\"Prefabs/Crate.ovprefab\")");
+		CHECK(report.luaChanges[0].after == "local crate = Prefabs.Spawn(\"Prefabs/Crate.loprefab\")");
+		CHECK(report.luaChanges[1].line == 3);
+
+		// A file written on Windows keeps its line ends, and its report has none
+		CHECK(ReadText(project / "Assets/Scripts/Windows.lua") == "-- Written on Windows\r\nlocal level = \"Scenes/Level.loscene\"\r\n");
+		CHECK(report.luaChanges[2].file == std::filesystem::path("Assets/Scripts/Windows.lua"));
+		CHECK(report.luaChanges[2].line == 2);
+		CHECK(report.luaChanges[2].before == "local level = \"Scenes/Level.ovscene\"");
+		CHECK(report.luaChanges[2].after == "local level = \"Scenes/Level.loscene\"");
+
+		// A Lost name taken already: the file keeps its name
+		REQUIRE(report.problems.size() == 1);
+		CHECK(report.problems[0] == "Assets/Both.ovscene keeps its name: Assets/Both.loscene exists already");
+		CHECK(std::filesystem::exists(project / "Assets/Both.ovscene"));
+
+		const std::string text = FormatConversion::Describe(report);
+		CHECK(text.starts_with("8 files renamed, 6 rewritten, 3 lines of Lua changed, 1 left as they were\n"));
+		CHECK(text.find("  Assets/Scripts/Spawn.lua:1\n") != std::string::npos);
+
+		// Again: nothing more to do
+		const auto again = FormatConversion::ConvertProject(project, engine);
+		CHECK_FALSE(again.HasChanges());
+		CHECK(again.problems.size() == 1);
+
+		// The project file reads as the engine reads it
+		OvTools::Filesystem::IniFile settings((project / "Game.loproject").string());
+		CHECK(settings.Get<std::string>("start_scene") == "Scenes/Level.loscene");
 	}
 }

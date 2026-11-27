@@ -80,7 +80,7 @@ void OvCore::SceneSystem::Scene::AddDefaultSkysphere()
 	auto& modelRenderer = skysphere.AddComponent<ECS::Components::CModelRenderer>();
 	modelRenderer.SetFrustumBehaviour(ECS::Components::CModelRenderer::EFrustumBehaviour::DISABLED);
 
-	auto skysphereMaterial = Global::ServiceLocator::Get<ResourceManagement::MaterialManager>().GetResource(":Materials\\Skysphere.ovmat");
+	auto skysphereMaterial = Global::ServiceLocator::Get<ResourceManagement::MaterialManager>().GetResource(":Materials\\Skysphere.lomat");
 	auto sphereModel = Global::ServiceLocator::Get<ResourceManagement::ModelManager>().GetResource(":Models\\Sphere.fbx");
 	
 	if (skysphereMaterial)
@@ -101,7 +101,7 @@ void OvCore::SceneSystem::Scene::AddDefaultAtmosphere()
 	auto& modelRenderer = atmosphere.AddComponent<ECS::Components::CModelRenderer>();
 	modelRenderer.SetFrustumBehaviour(ECS::Components::CModelRenderer::EFrustumBehaviour::DISABLED);
 
-	auto atmosphereMaterial = Global::ServiceLocator::Get<ResourceManagement::MaterialManager>().GetResource(":Materials\\Atmosphere.ovmat");
+	auto atmosphereMaterial = Global::ServiceLocator::Get<ResourceManagement::MaterialManager>().GetResource(":Materials\\Atmosphere.lomat");
 	auto sphereModel = Global::ServiceLocator::Get<ResourceManagement::ModelManager>().GetResource(":Models\\Sphere.fbx");
 
 	if (atmosphereMaterial)

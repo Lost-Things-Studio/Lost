@@ -37,7 +37,7 @@ namespace OvCore::Rendering::UIRenderingUtils { class UIFrameResolver; }
 */
 namespace OvCore::Rendering::FrameBuilder
 {
-	// Declared by a shader (#engine_capability INSTANCING) reading its matrices through Common/Instancing.ovfxh: its
+	// Declared by a shader (#engine_capability INSTANCING) reading its matrices through Common/Instancing.lofxh: its
 	// drawables can then be drawn several at once, in one instanced draw
 	constexpr std::string_view kInstancingCapabilityName = "INSTANCING";
 

@@ -86,7 +86,7 @@ namespace
 
 		while (std::getline(file, line))
 		{
-			if (!line.starts_with("| `") || line.find(".ovfxh`") == std::string::npos)
+			if (!line.starts_with("| `") || line.find(".lofxh`") == std::string::npos)
 				continue;
 
 			std::vector<std::string> cells;
@@ -151,12 +151,12 @@ TEST_SUITE("Shader API")
 		const auto resources = OvTests::FindEngineResources();
 		REQUIRE(!resources.empty());
 
-		const auto version = ReadDeclaredNames(resources / "Shaders" / "Common" / "ShaderApi.ovfxh");
+		const auto version = ReadDeclaredNames(resources / "Shaders" / "Common" / "ShaderApi.lofxh");
 		CHECK(version == std::set<std::string>{ "SHADER_API_VERSION_MAJOR", "SHADER_API_VERSION_MINOR" });
 
-		std::ifstream engineBuffer(resources / "Shaders" / "Common" / "Buffers" / "EngineUBO.ovfxh");
+		std::ifstream engineBuffer(resources / "Shaders" / "Common" / "Buffers" / "EngineUBO.lofxh");
 		std::string firstLine;
 		std::getline(engineBuffer, firstLine);
-		CHECK(firstLine == "#include \":Shaders/Common/ShaderApi.ovfxh\"");
+		CHECK(firstLine == "#include \":Shaders/Common/ShaderApi.lofxh\"");
 	}
 }

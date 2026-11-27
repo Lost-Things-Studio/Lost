@@ -26,7 +26,7 @@ local function Block(sName, vCenter, vHalf, qRotation)
 	oBody:SetStatic(true)
 
 	oActor:AddModelRenderer():SetModel(Resources.GetModel(":Models/Cube.fbx"))
-	oActor:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial("Materials/Ground.ovmat"))
+	oActor:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial("Materials/Ground.lomat"))
 	return oActor
 end
 
@@ -136,14 +136,14 @@ function NavigationCheck:OnUpdate()
 		local oOverlay = Scenes.GetCurrentScene():CreateActor("Navigation Mesh", "")
 		oOverlay:GetTransform():SetLocalPosition(Vector3.new(0, 0.03, 0))
 		oOverlay:AddModelRenderer():SetModel(oModel)
-		oOverlay:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial("Materials/NavOverlay.ovmat"))
+		oOverlay:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial("Materials/NavOverlay.lomat"))
 
 		for i, vCorner in ipairs(t.tCorners or {}) do
 			local oMark = Scenes.GetCurrentScene():CreateActor("Corner " .. i, "")
 			oMark:GetTransform():SetLocalPosition(vCorner + Vector3.new(0, 0.2, 0))
 			oMark:GetTransform():SetLocalScale(Vector3.new(0.4, 0.4, 0.4))
 			oMark:AddModelRenderer():SetModel(Resources.GetModel(":Models/Sphere.fbx"))
-			oMark:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial("Materials/Standard.ovmat"))
+			oMark:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial("Materials/Standard.lomat"))
 		end
 	elseif nFrame == 30 then
 		oCheck:Finish()

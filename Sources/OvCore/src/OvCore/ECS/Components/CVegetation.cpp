@@ -40,7 +40,7 @@ namespace
 	constexpr uint32_t kDefaultChunkCells = 32;
 	constexpr uint32_t kMaxDensityMapSize = 4096;
 	constexpr float kHeightLimit = 10000.0f;
-	constexpr std::string_view kDefaultMaterial = ":Materials/Default.ovmat";
+	constexpr std::string_view kDefaultMaterial = ":Materials/Default.lomat";
 
 	OvMaths::FVector3 Transform(const OvMaths::FMatrix4& p_matrix, const OvMaths::FVector3& p_point)
 	{

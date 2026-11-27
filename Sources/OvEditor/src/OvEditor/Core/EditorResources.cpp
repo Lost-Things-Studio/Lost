@@ -155,11 +155,11 @@ OvEditor::Core::EditorResources::EditorResources(const std::string& p_editorAsse
 	};
 
 	m_shaders = {
-		{"Grid", CreateShader(shadersFolder / "Grid.ovfx", editorAssetsPath)},
-		{"Gizmo", CreateShader(shadersFolder / "Gizmo.ovfx", editorAssetsPath)},
-		{"Billboard", CreateShader(shadersFolder / "Billboard.ovfx", editorAssetsPath)},
-		{"PickingFallback", CreateShader(shadersFolder / "PickingFallback.ovfx", editorAssetsPath)},
-		{"OutlineFallback", CreateShader(shadersFolder / "OutlineFallback.ovfx", editorAssetsPath)}
+		{"Grid", CreateShader(shadersFolder / "Grid.lofx", editorAssetsPath)},
+		{"Gizmo", CreateShader(shadersFolder / "Gizmo.lofx", editorAssetsPath)},
+		{"Billboard", CreateShader(shadersFolder / "Billboard.lofx", editorAssetsPath)},
+		{"PickingFallback", CreateShader(shadersFolder / "PickingFallback.lofx", editorAssetsPath)},
+		{"OutlineFallback", CreateShader(shadersFolder / "OutlineFallback.lofx", editorAssetsPath)}
 	};
 
 	// Ensure that all resources have been loaded successfully

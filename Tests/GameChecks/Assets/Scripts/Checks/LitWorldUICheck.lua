@@ -64,7 +64,7 @@ local function AddBox(sName, vPosition, vScale)
 	oBox:GetTransform():SetWorldPosition(vPosition)
 	oBox:GetTransform():SetLocalScale(vScale)
 	oBox:AddModelRenderer():SetModel(Resources.GetModel(":Models/Cube.fbx"))
-	oBox:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial(":Materials/Default.ovmat"))
+	oBox:AddMaterialRenderer():SetMaterial(0, Resources.GetMaterial(":Materials/Default.lomat"))
 	return oBox
 end
 

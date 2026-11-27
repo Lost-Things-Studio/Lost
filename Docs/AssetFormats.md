@@ -3,9 +3,8 @@
 The rules every Lost file format follows: its name, how it says its version, how it is written, and how an older file
 is read. Each format's content is described on its own page; this page is what they share.
 
-> **Status**: the engine reads both names of each format and writes Lost's, in version 1. Two things are still to come:
-> the engine's own resources (`Resources/Engine`, `Resources/Editor`) keep Overload's names for now, and so does a
-> project until the command that converts it ([#5](https://github.com/Lost-Things-Studio/Lost/issues/5)). The prepared
+> **Status**: the engine reads both names of each format and writes Lost's, in version 1. Its own resources
+> (`Resources/Engine`, `Resources/Editor`) have Lost's names, and a command converts a project (below). The prepared
 > model and the package come with the builds' packages ([#7](https://github.com/Lost-Things-Studio/Lost/issues/7),
 > [#8](https://github.com/Lost-Things-Studio/Lost/issues/8)).
 
@@ -111,19 +110,32 @@ sounds and fonts.
 - **GUIDs** are unsigned 64-bit numbers, in decimal.
 - **Paths**:
   - relative to the project's `Assets` folder, or to the engine's resources with a leading `:`
-    (`:Shaders/Standard.ovfx`);
+    (`:Shaders/Standard.lofx`);
   - written with `/`, both `/` and `\` read;
   - an asset inside a model is named after it with `:` (`Models/Rock.fbx:embedded_material_0`).
 
 ## Moving a project to the Lost formats
 
-- **Overload's files keep working**: the engine reads both names, and a project may mix them.
+- **Overload's files keep working**: the engine reads both names, and a project may mix them. A project that names
+  the engine's resources by Overload's names (`:Shaders/Standard.ovfx`) still finds them under Lost's.
 - **What the editor saves** takes the latest version. What it makes takes the Lost extension: a new scene, prefab,
   material, shader, shader include, animation graph or project, and Save As. A file opened keeps its name when saved.
-- **A command converts a whole project** (to come with [#5](https://github.com/Lost-Things-Studio/Lost/issues/5)):
-  - it renames each `.ovX` file to `.loX`;
-  - it rewrites every reference to them in scenes, prefabs, materials, graphs and the project file;
-  - it reports the Lua strings it changed, line by line, since a script may build a path the command cannot see.
+- **A command converts a whole project**: File > Convert Project to Lost Formats, in the editor
+  (`OvCore::Helpers::FormatConversion`).
+  - It asks to save the scene's changes first, then whether to go on.
+  - It renames each `.ovX` file of the project's `Assets` folder, and its project file, to `.loX`, with its metadata
+    (`<asset>.meta`).
+  - It rewrites the references to them, and to the engine's resources, in the project file, scenes, prefabs,
+    materials, shaders and animation graphs. Only the extension of a reference changes: a path keeps its folders and
+    its separators.
+  - In Lua scripts, it changes a string that is exactly such a path, comments included, and lists each line it
+    changed. A path a script builds itself (`"Shaders/" .. sName .. ".ovfx"`) is not seen: it still works, through the
+    other name, and is the reader's to change.
+  - A file whose Lost name is taken already keeps its name, and so do the references to it; the report says so.
+  - The files keep their version: they take the latest when the editor saves them.
+  - The report goes to `LostFormatsConversion.txt` in the project's folder, and the editor closes, since the files it
+    has open have new names. Running it again changes nothing.
+  - The command changes files on disk at once: a project under version control can be looked over, and set back, there.
 - **Save files are not assets**: their envelope versions them, and no conversion touches them.
 
 ## Adding a format

@@ -104,7 +104,7 @@ it placed the model on, or nil when it had nothing to do, so the class doesn't c
 -- A slab one unit wide and tall standing behind the whole menu, 1 cm thick
 local back = menu:Add("DModelPanel")
 back:SetSize(menu:GetSize())
-back:SetModelPrefab("Prefabs/UI/Slab.ovprefab")
+back:SetModelPrefab("Prefabs/UI/Slab.loprefab")
 back:SetFillRect(true)
 back:SetModelScale(Vector3.new(1, 1, 0.01))
 back:SetDepth(-0.006)
@@ -113,7 +113,7 @@ back:SetZPos(-1)
 -- An item model standing out of its slot
 local item = slot:Add("DModelPanel")
 item:SetSize(slot:GetSize())
-item:SetModelPrefab("Prefabs/Items/Sword.ovprefab")
+item:SetModelPrefab("Prefabs/Items/Sword.loprefab")
 item:SetModelRotation(Quaternion.new(Vector3.new(0, 0, 45)))
 item:SetModelScale(0.4)
 item:SetDepth(0.02)

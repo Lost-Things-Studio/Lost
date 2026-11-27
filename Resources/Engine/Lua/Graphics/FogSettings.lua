@@ -1,6 +1,6 @@
 ---@meta
 
---- Contains all the settings for the distance fog, drawn by the shaders that include Common/Fog.ovfxh
+--- Contains all the settings for the distance fog, drawn by the shaders that include Common/Fog.lofxh
 ---@class FogSettings
 ---@field Enabled boolean Defines if the fog is drawn
 ---@field Color Vector3 Colour the surfaces fade towards

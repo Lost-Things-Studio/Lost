@@ -13,7 +13,7 @@
 namespace OvCore::Rendering
 {
 	/**
-	* The matrices of one instance as the GPU reads them (std430 layout, see InstancesSSBO.ovfxh): the model matrix
+	* The matrices of one instance as the GPU reads them (std430 layout, see InstancesSSBO.lofxh): the model matrix
 	* transposed, the normal matrix worked out from it, and the user matrix
 	*/
 	struct PreparedInstance
@@ -34,7 +34,7 @@ namespace OvCore::Rendering
 	/**
 	* Descriptor attached to a drawable standing for several drawables of the same mesh and material, drawn as one
 	* instanced draw (see FrameBuilder). The EngineBufferRenderFeature uploads the matrices of every instance, which
-	* shaders declaring the instancing capability read by gl_InstanceID (see Common/Instancing.ovfxh).
+	* shaders declaring the instancing capability read by gl_InstanceID (see Common/Instancing.lofxh).
 	* The instances are only referenced: they must outlive the draw.
 	* A drawable can give its instances already prepared (prepared, count) instead of their descriptors, as a vegetation
 	* layer does for thousands of instances that seldom move.

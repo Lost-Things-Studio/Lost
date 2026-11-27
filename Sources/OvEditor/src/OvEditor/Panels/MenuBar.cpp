@@ -230,6 +230,7 @@ void OvEditor::Panels::MenuBar::CreateFileMenu()
 	fileMenu.CreateWidget<MenuItem>("New Scene", "CTRL + N").ClickedEvent					+= EDITOR_BIND(LoadEmptyScene);
 	fileMenu.CreateWidget<MenuItem>("Save Scene", "CTRL + S").ClickedEvent					+= EDITOR_BIND(SaveSceneChanges);
 	fileMenu.CreateWidget<MenuItem>("Save Scene As...", "CTRL + SHIFT + S").ClickedEvent	+= EDITOR_BIND(SaveAs);
+	fileMenu.CreateWidget<MenuItem>("Convert Project to Lost Formats...").ClickedEvent		+= EDITOR_BIND(ConvertProjectToLostFormats);
 	fileMenu.CreateWidget<MenuItem>("Exit", "ALT + F4").ClickedEvent						+= [] { EDITOR_CONTEXT(window)->SetShouldClose(true); };
 }
 

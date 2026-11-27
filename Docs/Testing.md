@@ -56,7 +56,7 @@ It covers:
 | Character controller | Landing and standing, slopes it walks and slopes it slides down, walls and the real velocity, steps, drops and ledges, jumps and ceilings, queries, triggers and collision events, layers, teleports, impulses and pushes |
 | Scene | GUIDs, destroyed actors and their children freed at garbage collection |
 | Scene history | An actor's edit undone and redone, the actor keeping its id, GUID and place; a deleted actor back with its children, their GUIDs and order, and selected again; a move and a duplicate undone with the whole scene; a new edit dropping what could be redone, the limits, the saved mark; an edit whose actor is gone passed over; the generic history's cursor, saved mark, limits and clear |
-| Asset formats | Each format a file type under both names; a format's other name, a file found under it, a resource kept under the name of the file that exists; project files, the Lost one first; versions in XML, INI and JSON, 0 without one and a newer one refused; a scene, a prefab and a material of each version read or refused; metadata of a newer version left aside; INI keys written by name |
+| Asset formats | Each format a file type under both names; a format's other name, a file found under it, a resource kept under the name of the file that exists; project files, the Lost one first; versions in XML, INI and JSON, 0 without one and a newer one refused; a scene, a prefab and a material of each version read or refused; metadata of a newer version left aside; INI keys written by name; a project converted to the Lost formats, each file renamed and each reference following, Lua strings changed only when they are a whole path, a taken name left alone, a second run changing nothing |
 | Lua API | The bindings and the definitions of `Resources/Engine/Lua` hold the same names, inherited members included |
 | Shader API | `Docs/Shaders.md` lists every name of each public shader include, and the version is defined for every shader |
 | Lua modules | `require` from the project and the engine's resources, its cache shared with `Resources.GetScript`, and the error for each failure; the global frame events (order, removal, a failing callback); the game's end (once, in order, a failure left alone, a removal and an addition while it runs); a Behaviour from the engine's resources |
@@ -78,9 +78,10 @@ capture of the logs.
 
 ## In-game checks
 
-`Tests/run_game_checks.sh` runs each scene of `Tests/GameChecks` with a built `OvGame`, hidden, for 20000 frames at
-most, with `--fail-on-error`. A check ends the game itself, and the cap only stops one that never does: the physics
-steps in real time, so a check that waits on it takes as many frames as the game draws meanwhile.
+`Tests/run_game_checks.sh` runs each scene of `Tests/GameChecks` (a `.loscene`, or `LegacyFormats.ovscene`) with a
+built `OvGame`, hidden, for 20000 frames at most, with `--fail-on-error`. A check ends the game itself, and the cap only
+stops one that never does: the physics steps in real time, so a check that waits on it takes as many frames as the game
+draws meanwhile.
 
 ```sh
 Tests/run_game_checks.sh Bin/Release/OvGame/OvGame            # every check
@@ -95,6 +96,7 @@ default language, whatever the machine's.
 | Check | What it checks |
 | --- | --- |
 | `Destroy` | A destroyed actor and its children leave the scene at the end of the frame |
+| `LegacyFormats` | Overload's files still read: its own scene (`LegacyFormats.ovscene`), and a material, a prefab and an animation graph under Overload's names and without a version (`Assets/Legacy`), by either name; the project's and the engine's files, now under Lost's names, asked for by Overload's |
 | `PrefabRefs` | In each instance of a prefab, a reference between two of its actors names the instance's own actor; a reference to an actor of the scene is kept |
 | `Queries` | `Physics.CastRay`, `CastSphere`, `OverlapSphere`, `OverlapBox`, layer masks and triggers, from Lua |
 | `Settings` | The project file reaches the game: layer names and ignored pairs, `json_max_depth`, `storage_max_file_mib`, `max_frame_delta` |

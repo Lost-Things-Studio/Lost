@@ -32,7 +32,7 @@
 
 namespace
 {
-	constexpr std::string_view kDefaultMaterialPath = ":Materials/Terrain.ovmat";
+	constexpr std::string_view kDefaultMaterialPath = ":Materials/Terrain.lomat";
 	constexpr std::string_view kAlbedoMapUniform = "u_AlbedoMap";
 
 	uint8_t ToByte(float p_value)

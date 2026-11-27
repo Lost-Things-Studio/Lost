@@ -266,7 +266,7 @@ OvCore::Particles::ParticleState OvCore::Particles::ParticleEmitter::Evaluate(co
 
 OvCore::Particles::ParticleState OvCore::Particles::ParticleEmitter::Evaluate(const ParticleRecord& p_record, const ParticleSettings& p_settings, float p_time)
 {
-	// Common/Particles.ovfxh works these out the same way: keep them in step
+	// Common/Particles.lofxh works these out the same way: keep them in step
 	ParticleState state;
 
 	const float age = p_time - p_record.birth;

@@ -39,11 +39,11 @@ function ParticleSystem:Emit(count, overrides) end
 function ParticleSystem:GetModel() end
 
 --- Sets the model each particle is drawn as, or nil for a billboard. Its material's shader must place the particles
---- (Common/Particles.ovfxh)
+--- (Common/Particles.lofxh)
 ---@param model Model|nil
 function ParticleSystem:SetModel(model) end
 
---- Returns the material set, or nil while the engine's (:Materials/Particle.ovmat) is used
+--- Returns the material set, or nil while the engine's (:Materials/Particle.lomat) is used
 ---@return Material|nil
 function ParticleSystem:GetMaterial() end
 

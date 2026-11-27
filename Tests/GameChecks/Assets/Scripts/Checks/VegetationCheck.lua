@@ -126,7 +126,7 @@ function VegetationCheck:OnUpdate()
 		oCheck:Equal(oVegetation:GetLayerCount(), 2, "a refused call adds no layer")
 
 		-- A material whose shader cannot draw instances
-		local nUnlit = oVegetation:AddLayer({ model = Resources.GetModel(":Models/Cone.fbx"), material = Resources.GetMaterial("Materials/UnlitFog.ovmat") })
+		local nUnlit = oVegetation:AddLayer({ model = Resources.GetModel(":Models/Cone.fbx"), material = Resources.GetMaterial("Materials/UnlitFog.lomat") })
 		oCheck:Equal(nUnlit, 2, "a third layer")
 		oCheck:Expect(Mentions(oVegetation:GetError(), "INSTANCING"), "an unlit material cannot draw instances: " .. tostring(oVegetation:GetError()))
 		oVegetation:RemoveLayer(2)

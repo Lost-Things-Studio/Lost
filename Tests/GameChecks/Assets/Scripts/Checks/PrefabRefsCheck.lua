@@ -36,7 +36,7 @@ function PrefabRefsCheck:OnUpdate(nDelta)
 	if nFrame == 2 then
 		local oScene = Scenes.GetCurrentScene()
 		local oPrefab = Prefab()
-		oPrefab.path = "Prefabs/Pair.ovprefab"
+		oPrefab.path = "Prefabs/Pair.loprefab"
 
 		local nFirst = CheckInstance(oScene:InstantiatePrefab(oPrefab), "first")
 		local nSecond = CheckInstance(oScene:InstantiatePrefab(oPrefab), "second")

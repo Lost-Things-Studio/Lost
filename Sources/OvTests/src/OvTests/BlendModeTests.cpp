@@ -34,7 +34,7 @@ namespace
 	}
 
 	/**
-	* Saves a material's settings to a document, as a .ovmat holds them
+	* Saves a material's settings to a document, as a material file holds them
 	*/
 	void Save(OvCore::Resources::Material& p_material, tinyxml2::XMLDocument& p_document)
 	{

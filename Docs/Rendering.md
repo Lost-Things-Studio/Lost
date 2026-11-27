@@ -117,7 +117,7 @@ rules of a custom shader are in [Shaders](Shaders.md).
   drawn at all.
 - **A custom image or text shader** clips when it declares `uniform mat4 u_ClipMatrix` and `uniform bool
   u_ClipEnabled`, takes `(u_ClipMatrix * ubo_Model * vec4(geo_Pos, 1.0)).xy` to the fragment stage, and discards there
-  when it is enabled and either coordinate is beyond -1 or 1, as `Image.ovfx` does. Without them, its drawables are
+  when it is enabled and either coordinate is beyond -1 or 1, as `Image.lofx` does. Without them, its drawables are
   only left out when entirely outside.
 - **Limit**: the editor's picking still sees the clipped part of an element.
 
@@ -130,7 +130,7 @@ rules of a custom shader are in [Shaders](Shaders.md).
 - **Under a screen space canvas** the setting is kept and has no effect: the HUD stays drawn over the scene, unlit,
   also when the editor's scene view shows such a canvas in the world.
 - **How it is drawn**:
-  - with a copy of the host's lit material, `:Materials/TextLit.ovmat` or `:Materials/ImageLit.ovmat`
+  - with a copy of the host's lit material, `:Materials/TextLit.lomat` or `:Materials/ImageLit.lomat`
     (`UIResourceRegistry::Definition::litTextMaterialPath` and `litImageMaterialPath`), given the text's atlas and
     colour, or the image's texture and tint. The copy is made again when the material manager's resources change. A
     host that gives no lit material draws a lit element as any other;
@@ -139,8 +139,8 @@ rules of a custom shader are in [Shaders](Shaders.md).
     a canvas nearer the camera is drawn over a farther one.
   - before every unlit element, which the UI pass draws after the post processing: an unlit element covers a lit one
     wherever they meet. Light a text and the background it stands on together (`DLabel:SetLit` does).
-- **The shaders**, `TextLit.ovfx` and `ImageLit.ovfx`, light through `PBRLightingModel` (`Lighting/PBR.ovfxh`) and keep
-  the clip of `Text.ovfx` and `Image.ovfx`. The side the camera sees is lit as the front. Their materials set:
+- **The shaders**, `TextLit.lofx` and `ImageLit.lofx`, light through `PBRLightingModel` (`Lighting/PBR.lofxh`) and keep
+  the clip of `Text.lofx` and `Image.lofx`. The side the camera sees is lit as the front. Their materials set:
   - `u_Metallic` (0) and `u_Roughness` (0.8);
   - `u_EmissiveIntensity` (0): how much of its own colour the element gives off whatever the light, for a sign that
     stays readable in the dark;

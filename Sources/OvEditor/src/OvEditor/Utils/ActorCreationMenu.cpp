@@ -67,7 +67,7 @@ namespace
 		auto& modelRenderer = instance.AddComponent<OvCore::ECS::Components::CModelRenderer>();
 		modelRenderer.SetFrustumBehaviour(OvCore::ECS::Components::CModelRenderer::EFrustumBehaviour::DISABLED);
 
-		auto skysphereMaterial = EDITOR_CONTEXT(materialManager).GetResource(":Materials\\Skysphere.ovmat");
+		auto skysphereMaterial = EDITOR_CONTEXT(materialManager).GetResource(":Materials\\Skysphere.lomat");
 		auto sphereModel = EDITOR_CONTEXT(modelManager).GetResource(":Models\\Sphere.fbx");
 
 		if (skysphereMaterial)
@@ -93,7 +93,7 @@ namespace
 		auto& modelRenderer = instance.AddComponent<OvCore::ECS::Components::CModelRenderer>();
 		modelRenderer.SetFrustumBehaviour(OvCore::ECS::Components::CModelRenderer::EFrustumBehaviour::DISABLED);
 
-		auto atmosphereMaterial = EDITOR_CONTEXT(materialManager).GetResource(":Materials\\Atmosphere.ovmat");
+		auto atmosphereMaterial = EDITOR_CONTEXT(materialManager).GetResource(":Materials\\Atmosphere.lomat");
 		auto sphereModel = EDITOR_CONTEXT(modelManager).GetResource(":Models\\Sphere.fbx");
 
 		if (atmosphereMaterial)
@@ -143,7 +143,7 @@ namespace
 		auto& modelRenderer = instance.AddComponent<OvCore::ECS::Components::CModelRenderer>();
 		auto& skinnedMeshRenderer = instance.AddComponent<OvCore::ECS::Components::CSkinnedMeshRenderer>();
 
-		auto defaultMaterial = EDITOR_CONTEXT(materialManager).GetResource(":Materials/Default.ovmat");
+		auto defaultMaterial = EDITOR_CONTEXT(materialManager).GetResource(":Materials/Default.lomat");
 		auto mannequin = EDITOR_CONTEXT(modelManager).GetResource(":Models/Mannequin.fbx");
 
 		if (mannequin)

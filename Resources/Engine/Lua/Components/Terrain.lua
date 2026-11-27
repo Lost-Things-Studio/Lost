@@ -35,7 +35,7 @@ function Terrain:SetLodDistance(distance) end
 ---@return number
 function Terrain:GetLodDistance() end
 
---- Sets the material the terrain is drawn with (":Materials/Terrain.ovmat" by default); its albedo map gets the colour
+--- Sets the material the terrain is drawn with (":Materials/Terrain.lomat" by default); its albedo map gets the colour
 --- map, if any. An empty path brings the default back
 ---@param path string
 function Terrain:SetMaterialPath(path) end

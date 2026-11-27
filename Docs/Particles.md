@@ -76,8 +76,8 @@ sparks:SetColor(Vector4.new(1, 0.75, 0.3, 1), Vector4.new(1, 0.2, 0.05, 0))
 
 ## Drawing
 
-- **Billboards**, by default: a quad facing the camera, drawn with `:Materials/Particle.ovmat` (alpha blended, no
-  depth written) and its shader, `:Shaders/Particle.ovfx`:
+- **Billboards**, by default: a quad facing the camera, drawn with `:Materials/Particle.lomat` (alpha blended, no
+  depth written) and its shader, `:Shaders/Particle.lofx`:
   - `u_Texture`, white without one, times the particle's colour and `u_Tint`;
   - `u_Disc` (on) draws a round particle whose edge is soft over `u_Softness` of its radius; off, the whole texture;
   - `u_Stretch` stretches a particle along its way by that many seconds of travel, as seen from the camera: sparks,
@@ -86,7 +86,7 @@ sparks:SetColor(Vector4.new(1, 0.75, 0.3, 1), Vector4.new(1, 0.2, 0.05, 0))
 - **A material of your own** for sparks, fire and glows uses the additive blend mode (see
   [Rendering](Rendering.md#blend-modes)).
 - **Models**: `SetModel(model)` draws each particle as the model, with a material whose shader places it. Any shader can,
-  through the public include `Common/Particles.ovfxh` (see [Shaders](Shaders.md)): `ParticleAt(gl_InstanceID)` gives the
+  through the public include `Common/Particles.lofxh` (see [Shaders](Shaders.md)): `ParticleAt(gl_InstanceID)` gives the
   particle, and `ParticleModelMatrix(particle)` places a model as it, turned around an axis of its own. On `Standard`,
   one extension point is enough, and the model is lit:
 
@@ -94,8 +94,8 @@ sparks:SetColor(Vector4.new(1, 0.75, 0.3, 1), Vector4.new(1, 0.2, 0.05, 0))
   #shader vertex
   #version 450 core
   #define STANDARD_VERTEX
-  #include ":Shaders/Standard/StandardVertex.ovfxh"
-  #include ":Shaders/Common/Particles.ovfxh"
+  #include ":Shaders/Standard/StandardVertex.lofxh"
+  #include ":Shaders/Common/Particles.lofxh"
 
   void StandardVertex(inout vec3 worldPosition, inout vec3 worldNormal, vec2 texCoords)
   {
@@ -107,11 +107,11 @@ sparks:SetColor(Vector4.new(1, 0.75, 0.3, 1), Vector4.new(1, 0.2, 0.05, 0))
 
   #shader fragment
   #version 450 core
-  #include ":Shaders/Standard/StandardFragment.ovfxh"
+  #include ":Shaders/Standard/StandardFragment.lofxh"
   ```
 
   The engine draws a system's meshes with an identity model matrix: the vertex the shader receives is the model's own.
-  A dead particle's matrix is zero, which leaves nothing to draw. `Tests/GameChecks/Assets/Shaders/ParticleMesh.ovfx`
+  A dead particle's matrix is zero, which leaves nothing to draw. `Tests/GameChecks/Assets/Shaders/ParticleMesh.lofx`
   is this shader.
 - **One draw per mesh**: a system is drawn as one instanced draw of its quad, or of each mesh of its model, with as many
   instances as there are slots from its oldest particle alive to its newest. A dead particle's instance is drawn out of
