@@ -4,9 +4,9 @@ The rules every Lost file format follows: its name, how it says its version, how
 is read. Each format's content is described on its own page; this page is what they share.
 
 > **Status**: the engine reads both names of each format and writes Lost's, in version 1. Its own resources
-> (`Resources/Engine`, `Resources/Editor`) have Lost's names, and a command converts a project (below). The prepared
-> model and the package come with the builds' packages ([#7](https://github.com/Lost-Things-Studio/Lost/issues/7),
-> [#8](https://github.com/Lost-Things-Studio/Lost/issues/8)).
+> (`Resources/Engine`, `Resources/Editor`) have Lost's names, and a command converts a project (below). The package
+> format is in, with `LostPack` (see [Packages](Packages.md)); the prepared model comes with the builds' packages
+> ([#8](https://github.com/Lost-Things-Studio/Lost/issues/8)).
 
 ## The formats
 
@@ -21,7 +21,10 @@ is read. Each format's content is described on its own page; this page is what t
 | Animation graph | `.loanim` | `.ovanim` | JSON (see [Animation](Animation.md#the-graph-file)) | the member `"version"` | 1 |
 | Asset metadata | `<asset>.meta` | | INI, next to the asset it describes | the key `format_version` | 1 |
 | Prepared model | `.lomodel` | | binary, made by a build ([#8](https://github.com/Lost-Things-Studio/Lost/issues/8), to come) | a header | |
-| Package | `.lopak` | | binary, made by a build ([#7](https://github.com/Lost-Things-Studio/Lost/issues/7), to come) | a header | |
+| Package | `.lopak` | | binary, a project's files compressed (see [Packages](Packages.md)) | a header | 1 |
+
+**A package is not an asset**: it is what a build makes of a project's files, never a file inside its `Assets`, so it
+has no file type in the editor.
 
 **Formats that already have their own rules** keep them:
 - Lua scripts (`.lua`) are code, with the Lua API's version (see [Scripting](Scripting.md));
