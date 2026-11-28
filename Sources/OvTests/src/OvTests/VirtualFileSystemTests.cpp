@@ -77,6 +77,30 @@ namespace
 	{
 		return p_folder.GetPath() / "Game" / "Assets";
 	}
+
+	// The working folder, changed for as long as it lives. A path relative to it holds on any drive, which a path made
+	// relative to another folder does not on Windows: between two drives, std::filesystem::relative gives nothing
+	class WorkingFolder final
+	{
+	public:
+		explicit WorkingFolder(const std::filesystem::path& p_folder) :
+			m_previous(std::filesystem::current_path())
+		{
+			std::filesystem::current_path(p_folder);
+		}
+
+		~WorkingFolder()
+		{
+			std::error_code error;
+			std::filesystem::current_path(m_previous, error);
+		}
+
+		WorkingFolder(const WorkingFolder&) = delete;
+		WorkingFolder& operator=(const WorkingFolder&) = delete;
+
+	private:
+		std::filesystem::path m_previous;
+	};
 }
 
 TEST_SUITE("Virtual filesystem")
@@ -102,7 +126,11 @@ TEST_SUITE("Virtual filesystem")
 
 		// Normalised: a "..", a separator of Windows, a path relative to the working folder
 		CHECK(ReadText(assets / "Sub" / ".." / "Both.txt") == "package");
-		CHECK(ReadText(std::filesystem::relative(assets / "Sub/Packed.txt")) == "packed");
+		{
+			// Given back before the temporary folder is removed, which Windows refuses for a working folder
+			WorkingFolder working(folder.GetPath());
+			CHECK(ReadText(std::filesystem::path("Game") / "Assets" / "Sub" / "Packed.txt") == "packed");
+		}
 
 		std::vector<char> bytes;
 		std::string error;
