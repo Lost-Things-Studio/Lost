@@ -57,3 +57,7 @@ jobs:
     # The same checks, their assets and the engine's resources read from packages alone, as a built game reads them
     - name: Run the in-game checks from packages
       run: xvfb-run -a -s "-screen 0 1280x720x24" Tests/run_game_checks.sh --packed Bin/${{ matrix.configuration }}/OvGame/OvGame
+
+    # The checks once more, in the game the editor builds of their project: its packages, its prepared models, its executable
+    - name: Run the in-game checks in a game built by the editor
+      run: xvfb-run -a -s "-screen 0 1280x720x24" Tests/run_game_checks.sh --built Build/${{ matrix.configuration }}/OvEditor

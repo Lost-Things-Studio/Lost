@@ -23,6 +23,9 @@ project "OvTests"
 
 		-- The package tool's commands
 		"%{wks.location}/Sources/LostPack/src/LostPack/Commands.cpp",
+
+		-- The editor's game builder, which needs no window either
+		"%{wks.location}/Sources/OvEditor/src/OvEditor/Core/GameBuilder.cpp",
 	}
 
 	includedirs {
@@ -40,6 +43,7 @@ project "OvTests"
 		"%{wks.location}/Sources/OvAudio/include",
 		"%{wks.location}/Sources/OvCore/include",
 		"%{wks.location}/Sources/OvDebug/include",
+		"%{wks.location}/Sources/OvEditor/include",
 		"%{wks.location}/Sources/OvGame/include",
 		"%{wks.location}/Sources/LostPack/include",
 		"%{wks.location}/Sources/OvMaths/include",
