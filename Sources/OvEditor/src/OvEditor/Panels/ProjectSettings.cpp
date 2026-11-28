@@ -74,6 +74,9 @@ OvEditor::Panels::ProjectSettings::ProjectSettings(const std::string & p_title, 
 		auto& dispatcher = comboBox.AddPlugin<OvUI::Plugins::DataDispatcher<int>>();
 		dispatcher.RegisterGatherer(GenerateGatherer<int>("build_type"));
 		dispatcher.RegisterProvider(GenerateProvider<int>("build_type"));
+
+		// Off: the assets are copied as folders, without prepared models (see Docs/Building.md)
+		GUIDrawer::DrawBoolean(columns, "Packages", GenerateGatherer<bool>("build_packages"), GenerateProvider<bool>("build_packages"));
 	}
 
 	{

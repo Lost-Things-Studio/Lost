@@ -13,6 +13,7 @@
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/SceneSystem/SceneHistory.h>
 #include <OvEditor/Core/Context.h>
+#include <OvEditor/Core/GameBuilder.h>
 #include <OvEditor/Core/PanelsManager.h>
 #include <OvTools/Filesystem/IniFile.h>
 #include <OvTools/Utils/PathParser.h>
@@ -31,19 +32,6 @@ namespace tinyxml2
 namespace OvEditor::Core
 {
 	enum class EGizmoOperation;
-
-	enum class EBuildType : int
-	{
-		Debug = 0,
-		Release = 1,
-		Publish = 2
-	};
-
-	/**
-	* Returns the name of a build type
-	* @param p_buildType
-	*/
-	std::string GetBuildTypeName(EBuildType p_buildType);
 
 	/**
 	* A set of editor actions
