@@ -15,6 +15,7 @@
 #include <OvDebug/Logger.h>
 
 #include <OvGame/Core/Context.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvTools/Utils/PathParser.h>
 
 using namespace OvCore::Global;
@@ -50,8 +51,8 @@ std::array<int, 4> CalculateOptimalWindowSizeAndPosition(
 }
 
 OvGame::Core::Context::Context(const LaunchOptions& p_options) :
-	engineAssetsPath(p_options.engineAssets.value_or(std::filesystem::current_path() / "Data" / "Engine")),
-	projectAssetsPath(p_options.projectFile ? p_options.projectFile->parent_path() / "Assets" : std::filesystem::current_path() / "Data" / "User" / "Assets"),
+	engineAssetsPath(p_options.GetEngineAssetsFolder()),
+	projectAssetsPath(p_options.GetProjectAssetsFolder()),
 	projectSettings(p_options.GetProjectSettingsFile().string()),
 	sceneManager(projectAssetsPath.string(), engineAssetsPath.string())
 {
@@ -129,7 +130,7 @@ OvGame::Core::Context::Context(const LaunchOptions& p_options) :
 			projectAssetsPath
 		);
 
-		useFallbackWindowIcon = !std::filesystem::exists(realPath) || !window->SetIcon(realPath.string());
+		useFallbackWindowIcon = !OvTools::Filesystem::VirtualFileSystem::Exists(realPath) || !window->SetIcon(realPath.string());
 	}
 	if (useFallbackWindowIcon)
 	{

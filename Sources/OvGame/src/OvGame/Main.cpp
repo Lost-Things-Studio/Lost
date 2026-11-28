@@ -66,6 +66,23 @@ namespace
 			}
 		}
 
+		// The packages next to the asset folders, mounted before anything is read from them. A package that cannot be
+		// read is not run around: the game would miss its files one by one
+		for (const auto& folder : { result.options->GetProjectAssetsFolder(), result.options->GetEngineAssetsFolder() })
+		{
+			std::string message;
+			if (!OvGame::Core::MountAssetPackage(folder, message))
+			{
+				std::cerr << "OvGame: " << message << '\n';
+				return EXIT_FAILURE;
+			}
+
+			if (!message.empty())
+			{
+				OVLOG_INFO(message);
+			}
+		}
+
 		// Errors are counted over the whole run, from the start scene's loading to the game's destruction
 		std::atomic<uint32_t> errorCount = 0;
 		const auto logListener = OvDebug::Logger::LogEvent += [&errorCount](const OvDebug::LogData& p_log)
