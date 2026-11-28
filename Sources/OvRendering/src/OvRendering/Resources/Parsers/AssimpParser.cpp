@@ -945,7 +945,7 @@ namespace
 		}
 	}
 
-	OvRendering::Resources::Mesh* ProcessMesh(
+	std::optional<OvRendering::Resources::MeshData> ProcessMesh(
 		const aiMatrix4x4& p_transform,
 		aiMesh* p_mesh,
 		OvRendering::Animation::Skeleton* p_skeleton,
@@ -980,8 +980,12 @@ namespace
 
 		if (p_mesh->mNumVertices == 0 || indices.empty())
 		{
-			return nullptr;
+			return std::nullopt;
 		}
+
+		OvRendering::Resources::MeshData result;
+		result.indices = std::move(indices);
+		result.materialIndex = p_mesh->mMaterialIndex;
 
 		// Directions take the node's rotation and scale, never its translation. Normals take its cofactors, the inverse
 		// transpose times the determinant: no division, so a node flattened or scaled down to nothing still gives them
@@ -1031,14 +1035,15 @@ namespace
 
 		if (p_rigidBone)
 		{
-			std::vector<OvRendering::Geometry::SkinnedVertex> vertices(p_mesh->mNumVertices);
+			auto& vertices = result.skinnedVertices;
+			vertices.resize(p_mesh->mNumVertices);
 			for (uint32_t i = 0; i < p_mesh->mNumVertices; ++i)
 			{
 				fillGeometry(vertices[i], i);
 				AddBoneData(vertices[i], *p_rigidBone, 1.0f);
 			}
 
-			return new OvRendering::Resources::Mesh(std::span(vertices), std::span(indices), p_mesh->mMaterialIndex);
+			return result;
 		}
 
 		if (p_skeleton && p_mesh->HasBones())
@@ -1055,7 +1060,8 @@ namespace
 				meshGlobalBindTransformInverse = std::nullopt;
 			}
 
-			std::vector<OvRendering::Geometry::SkinnedVertex> vertices(p_mesh->mNumVertices);
+			auto& vertices = result.skinnedVertices;
+			vertices.resize(p_mesh->mNumVertices);
 			for (uint32_t i = 0; i < p_mesh->mNumVertices; ++i)
 			{
 				fillGeometry(vertices[i], i);
@@ -1131,16 +1137,17 @@ namespace
 				}
 			}
 
-			return new OvRendering::Resources::Mesh(std::span(vertices), std::span(indices), p_mesh->mMaterialIndex);
+			return result;
 		}
 
-		std::vector<OvRendering::Geometry::Vertex> vertices(p_mesh->mNumVertices);
+		auto& vertices = result.vertices;
+		vertices.resize(p_mesh->mNumVertices);
 		for (uint32_t i = 0; i < p_mesh->mNumVertices; ++i)
 		{
 			fillGeometry(vertices[i], i);
 		}
 
-		return new OvRendering::Resources::Mesh(std::span(vertices), std::span(indices), p_mesh->mMaterialIndex);
+		return result;
 	}
 
 	struct RigidMesh
@@ -1168,7 +1175,7 @@ namespace
 	* nearest bone above it. It joins no new bone, so the animation sources stay compatible, and it is baked so
 	* that this bone at rest puts it exactly where it stood. Without such a bone it stays static.
 	*/
-	OvRendering::Resources::Mesh* ProcessRigidMesh(
+	std::optional<OvRendering::Resources::MeshData> ProcessRigidMesh(
 		const RigidMesh& p_rigid,
 		const OvRendering::Animation::Skeleton& p_skeleton,
 		const std::unordered_map<const aiNode*, uint32_t>& p_nodeIndexByPointer
@@ -1206,7 +1213,7 @@ namespace
 		const aiMatrix4x4& p_transform,
 		aiNode* p_node,
 		const aiScene* p_scene,
-		std::vector<OvRendering::Resources::Mesh*>& p_meshes,
+		std::vector<std::optional<OvRendering::Resources::MeshData>>& p_meshes,
 		OvRendering::Animation::Skeleton* p_skeleton,
 		const std::unordered_map<const aiNode*, uint32_t>* p_nodeIndexByPointer,
 		std::vector<RigidMesh>* p_rigidMeshes
@@ -1222,18 +1229,13 @@ namespace
 			if (p_skeleton && p_rigidMeshes && !mesh->HasBones())
 			{
 				p_rigidMeshes->push_back({ p_meshes.size(), mesh, p_node, nodeTransform });
-				p_meshes.push_back(nullptr);
+				p_meshes.push_back(std::nullopt);
 				continue;
 			}
 
-			if (OvRendering::Resources::Mesh* result = ProcessMesh(
-				nodeTransform,
-				mesh,
-				p_skeleton,
-				p_nodeIndexByPointer
-			))
+			if (auto result = ProcessMesh(nodeTransform, mesh, p_skeleton, p_nodeIndexByPointer))
 			{
-				p_meshes.push_back(result); // The model will handle mesh destruction
+				p_meshes.push_back(std::move(result));
 			}
 		}
 
@@ -1252,18 +1254,15 @@ namespace
 	}
 }
 
-bool OvRendering::Resources::Parsers::AssimpParser::LoadModel(
+bool OvRendering::Resources::Parsers::AssimpParser::Import(
 	const std::string& p_fileName,
-	std::vector<Mesh*>& p_meshes,
-	std::vector<std::string>& p_materials,
-	std::optional<Animation::Skeleton>& p_skeleton,
-	std::vector<Animation::SkeletalAnimation>& p_animations,
-	std::vector<Resources::EmbeddedMaterialData>& p_embeddedMaterials,
-	std::vector<Resources::EmbeddedTextureData>& p_embeddedTextures,
 	EModelParserFlags p_parserFlags,
-	bool p_generateEmbeddedAssets
+	bool p_generateEmbeddedAssets,
+	ModelData& p_model
 )
 {
+	p_model = ModelData{};
+
 	Assimp::Importer import;
 	import.SetIOHandler(new VirtualIOSystem()); // The importer owns it
 
@@ -1283,17 +1282,13 @@ bool OvRendering::Resources::Parsers::AssimpParser::LoadModel(
 		return false;
 	}
 
-	p_materials.clear();
-	p_embeddedMaterials.clear();
-	p_embeddedTextures.clear();
-
 	const auto modelDirectory = std::filesystem::path{ p_fileName }.parent_path();
 	ProcessMaterials(
 		scene,
 		modelDirectory,
-		p_materials,
-		p_embeddedMaterials,
-		p_embeddedTextures,
+		p_model.materialNames,
+		p_model.embeddedMaterials,
+		p_model.embeddedTextures,
 		p_generateEmbeddedAssets
 	);
 
@@ -1304,45 +1299,52 @@ bool OvRendering::Resources::Parsers::AssimpParser::LoadModel(
 	}
 	const bool hasAnimations = scene->mNumAnimations > 0;
 
-	p_skeleton.reset();
-	p_animations.clear();
+	auto& skeleton = p_model.skeleton;
 	std::unordered_map<const aiNode*, uint32_t> nodeIndexByPointer;
 
 	if (hasBones || hasAnimations)
 	{
-		p_skeleton.emplace();
+		skeleton.emplace();
 		nodeIndexByPointer.reserve(512);
-		AddSkeletonNodeRecursive(p_skeleton.value(), scene->mRootNode, -1, &nodeIndexByPointer);
+		AddSkeletonNodeRecursive(skeleton.value(), scene->mRootNode, -1, &nodeIndexByPointer);
 	}
 
+	// A rigid mesh of a skinned model keeps its slot, filled once every bone exists
+	std::vector<std::optional<MeshData>> meshes;
 	std::vector<RigidMesh> rigidMeshes;
 
 	ProcessNode(
 		aiMatrix4x4{},
 		scene->mRootNode,
 		scene,
-		p_meshes,
-		p_skeleton ? &p_skeleton.value() : nullptr,
-		p_skeleton ? &nodeIndexByPointer : nullptr,
+		meshes,
+		skeleton ? &skeleton.value() : nullptr,
+		skeleton ? &nodeIndexByPointer : nullptr,
 		&rigidMeshes
 	);
 
 	for (const auto& rigid : rigidMeshes)
 	{
-		p_meshes[rigid.slot] = ProcessRigidMesh(rigid, p_skeleton.value(), nodeIndexByPointer);
+		meshes[rigid.slot] = ProcessRigidMesh(rigid, skeleton.value(), nodeIndexByPointer);
 	}
 
-	std::erase(p_meshes, nullptr);
-
-	if (hasAnimations && p_skeleton.has_value())
+	for (auto& mesh : meshes)
 	{
-		ProcessAnimations(scene, p_skeleton.value(), p_animations);
+		if (mesh)
+		{
+			p_model.meshes.push_back(std::move(*mesh));
+		}
 	}
 
-	if (p_skeleton && p_skeleton->bones.empty() && p_animations.empty())
+	if (hasAnimations && skeleton.has_value())
 	{
-		p_skeleton.reset();
-		p_animations.clear();
+		ProcessAnimations(scene, skeleton.value(), p_model.animations);
+	}
+
+	if (skeleton && skeleton->bones.empty() && p_model.animations.empty())
+	{
+		skeleton.reset();
+		p_model.animations.clear();
 	}
 
 	return true;

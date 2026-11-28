@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "OvRendering/Resources/Model.h"
+#include "OvRendering/Resources/ModelData.h"
 #include "OvRendering/Resources/Parsers/AssimpParser.h"
 
 namespace OvRendering::Resources::Loaders
@@ -49,6 +50,34 @@ namespace OvRendering::Resources::Loaders
 			const std::string& p_filePath,
 			Parsers::EModelParserFlags p_parserFlags = Parsers::EModelParserFlags::NONE,
 			bool p_generateEmbeddedAssets = true
+		);
+
+		/**
+		* Create a model from a model in memory (an import, a prepared model): its meshes are sent to the GPU here
+		* @param p_path
+		* @param p_data
+		*/
+		static Model* Create(const std::string& p_path, ModelData&& p_data);
+
+		/**
+		* Reload a model from a model in memory, as Reload does from its file
+		* @param p_model
+		* @param p_data
+		*/
+		static void Reload(Model& p_model, ModelData&& p_data);
+
+		/**
+		* Import a model file into memory through Assimp, without a graphics context. Returns true on success
+		* @param p_filepath
+		* @param p_parserFlags
+		* @param p_generateEmbeddedAssets
+		* @param p_data
+		*/
+		static bool Import(
+			const std::string& p_filepath,
+			Parsers::EModelParserFlags p_parserFlags,
+			bool p_generateEmbeddedAssets,
+			ModelData& p_data
 		);
 
 		/**
