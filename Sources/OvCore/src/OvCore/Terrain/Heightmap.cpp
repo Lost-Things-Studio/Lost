@@ -14,6 +14,7 @@
 #include <stb_image/stb_image.h>
 
 #include <OvCore/Terrain/Heightmap.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 
 std::optional<std::string> OvCore::Terrain::DecodeHeightmap(const uint8_t* p_data, size_t p_size, HeightmapImage& p_image)
 {
@@ -78,14 +79,15 @@ std::optional<std::string> OvCore::Terrain::DecodeHeightmap(const uint8_t* p_dat
 
 std::optional<std::string> OvCore::Terrain::LoadHeightmap(const std::filesystem::path& p_file, HeightmapImage& p_image)
 {
-	std::ifstream file(p_file, std::ios::binary);
-	if (!file)
+	// From a mounted package, or the disk
+	std::vector<char> bytes;
+	std::string error;
+	if (!OvTools::Filesystem::VirtualFileSystem::Read(p_file, bytes, error))
 	{
 		return std::format("cannot read '{}'", p_file.generic_string());
 	}
 
-	const std::vector<uint8_t> bytes{ std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
-	return DecodeHeightmap(bytes.data(), bytes.size(), p_image);
+	return DecodeHeightmap(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size(), p_image);
 }
 
 bool OvCore::Terrain::IsHole(float p_height)

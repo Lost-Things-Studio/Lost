@@ -30,6 +30,7 @@
 #include <OvUI/Widgets/Layout/Group.h>
 #include <OvUI/Widgets/Texts/TextColored.h>
 #include <OvUI/Widgets/Texts/TextWrapped.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 
 namespace
 {
@@ -390,18 +391,17 @@ void OvCore::ECS::Components::CAnimator::Load(const SceneSystem::Scene& p_scene)
 		return;
 	}
 
-	std::ifstream stream(p_scene.GetRealAssetPath(m_graphPath), std::ios::binary);
-	if (!stream)
+	// From a mounted package, or the disk
+	std::string text;
+	std::string readError;
+	if (!OvTools::Filesystem::VirtualFileSystem::ReadText(p_scene.GetRealAssetPath(m_graphPath), text, readError))
 	{
 		Fail(std::format("cannot read '{}'", m_graphPath));
 		return;
 	}
 
-	std::stringstream text;
-	text << stream.rdbuf();
-
 	Animation::GraphDefinition definition;
-	if (const auto error = Animation::GraphDefinition::Parse(text.str(), definition))
+	if (const auto error = Animation::GraphDefinition::Parse(text, definition))
 	{
 		Fail(std::format("'{}': {}", m_graphPath, *error));
 		return;

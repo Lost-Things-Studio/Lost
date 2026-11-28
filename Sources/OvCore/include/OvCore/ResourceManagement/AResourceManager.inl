@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <system_error>
 
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvTools/Utils/PathParser.h>
 
 #include "OvCore/ResourceManagement/AResourceManager.h"
@@ -219,9 +220,10 @@ namespace OvCore::ResourceManagement
 			return alias;
 		}
 
-		std::error_code error;
-		const bool found = std::filesystem::exists(MapPath(p_path), error);
-		return !found && std::filesystem::exists(MapPath(alias), error) ? std::filesystem::path(alias) : p_path;
+		// In a mounted package as on the disk
+		using OvTools::Filesystem::VirtualFileSystem;
+		const bool found = VirtualFileSystem::Exists(MapPath(p_path));
+		return !found && VirtualFileSystem::Exists(MapPath(alias)) ? std::filesystem::path(alias) : p_path;
 	}
 
 	template<typename T>

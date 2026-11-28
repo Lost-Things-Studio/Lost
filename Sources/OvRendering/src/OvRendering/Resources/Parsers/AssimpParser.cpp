@@ -22,7 +22,9 @@
 #include <utility>
 #include <vector>
 
+#include <assimp/IOSystem.hpp>
 #include <assimp/Importer.hpp>
+#include <assimp/MemoryIOWrapper.h>
 #include <assimp/material.h>
 #include <assimp/matrix4x4.h>
 #include <assimp/postprocess.h>
@@ -31,6 +33,7 @@
 #include <OvDebug/Logger.h>
 #include <OvRendering/Data/Image.h>
 #include <OvRendering/Resources/Parsers/AssimpParser.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvTools/Utils/PathParser.h>
 
 namespace
@@ -234,6 +237,49 @@ namespace
 		return SanitizeTextureExtension(hint);
 	}
 
+	/**
+	* Assimp's files, the model and those it names (a glTF's buffers, an OBJ's materials), read from a mounted package
+	* or the disk
+	*/
+	class VirtualIOSystem final : public Assimp::IOSystem
+	{
+	public:
+		bool Exists(const char* p_file) const override
+		{
+			return OvTools::Filesystem::VirtualFileSystem::Exists(p_file);
+		}
+
+		char getOsSeparator() const override
+		{
+			return '/';
+		}
+
+		Assimp::IOStream* Open(const char* p_file, const char* p_mode = "rb") override
+		{
+			// Read only: the engine never writes a model through Assimp
+			if (p_mode && (std::strchr(p_mode, 'w') || std::strchr(p_mode, 'a') || std::strchr(p_mode, '+')))
+			{
+				return nullptr;
+			}
+
+			std::vector<char> bytes;
+			std::string error;
+			if (!OvTools::Filesystem::VirtualFileSystem::Read(p_file, bytes, error))
+			{
+				return nullptr;
+			}
+
+			auto* buffer = new uint8_t[bytes.size()];
+			std::memcpy(buffer, bytes.data(), bytes.size());
+			return new Assimp::MemoryIOStream(buffer, bytes.size(), true);
+		}
+
+		void Close(Assimp::IOStream* p_file) override
+		{
+			delete p_file;
+		}
+	};
+
 	std::string ResolveExternalTexturePath(
 		const std::string& p_texturePath,
 		const std::filesystem::path& p_modelDirectory
@@ -404,11 +450,11 @@ namespace
 			// One channel of a file next to the model is kept in a copy of its own; the file itself stays shared
 			if (p_singleChannelChannelId != 0)
 			{
-				if (std::ifstream file{ sourceKey, std::ios::binary })
+				std::vector<char> encoded;
+				std::string error;
+				if (OvTools::Filesystem::VirtualFileSystem::Read(sourceKey, encoded, error))
 				{
-					const std::vector<uint8_t> encoded{ std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
-
-					if (DecodeToRawRGBA8(encoded.data(), encoded.size(), textureData))
+					if (DecodeToRawRGBA8(reinterpret_cast<const uint8_t*>(encoded.data()), encoded.size(), textureData))
 					{
 						textureData.sourcePath.clear();
 						KeepChannel(textureData.rawRGBAData, p_singleChannelChannelId);
@@ -1219,6 +1265,7 @@ bool OvRendering::Resources::Parsers::AssimpParser::LoadModel(
 )
 {
 	Assimp::Importer import;
+	import.SetIOHandler(new VirtualIOSystem()); // The importer owns it
 
 	// Fix the flags to avoid conflicts/invalid scenarios.
 	// This is a workaround, ideally the editor UI should not allow this to happen.

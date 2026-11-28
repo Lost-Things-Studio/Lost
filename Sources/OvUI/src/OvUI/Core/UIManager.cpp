@@ -9,9 +9,14 @@
 #include <OvUI/Core/UIManager.h>
 #include <OvUI/Styling/Style.h>
 #include <OvWindowing/Window.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 
 #include <imgui.h>
+#include <cstring>
+#include <limits>
 #include <optional>
+#include <string>
+#include <vector>
 
 OvUI::Core::UIManager::UIManager(OvWindowing::Window& p_window, Styling::EStyle p_style, std::string_view p_glslVersion) :
 	m_window(p_window)
@@ -66,8 +71,21 @@ bool OvUI::Core::UIManager::LoadFont(const std::string& p_id, const std::string 
 {
 	if (m_fonts.find(p_id) == m_fonts.end())
 	{
+		// From a mounted package, or the disk
+		std::vector<char> bytes;
+		std::string error;
+		if (!OvTools::Filesystem::VirtualFileSystem::Read(p_path, bytes, error) || bytes.empty() ||
+			bytes.size() > static_cast<size_t>(std::numeric_limits<int>::max()))
+		{
+			return false;
+		}
+
+		// The atlas owns the copy it is given, and frees it with ImGui's allocator
+		void* data = IM_ALLOC(bytes.size());
+		std::memcpy(data, bytes.data(), bytes.size());
+
 		auto& io = ImGui::GetIO();
-		ImFont* fontInstance = io.Fonts->AddFontFromFileTTF(p_path.c_str(), p_fontSize.value_or(0.0f));
+		ImFont* fontInstance = io.Fonts->AddFontFromMemoryTTF(data, static_cast<int>(bytes.size()), p_fontSize.value_or(0.0f));
 
 		if (fontInstance)
 		{

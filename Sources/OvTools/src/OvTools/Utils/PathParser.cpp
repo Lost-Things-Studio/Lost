@@ -9,6 +9,7 @@
 #include <string_view>
 #include <utility>
 
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvTools/Utils/PathParser.h>
 
 std::string OvTools::Utils::PathParser::MakeWindowsStyle(const std::string & p_path)
@@ -203,13 +204,19 @@ std::string OvTools::Utils::PathParser::GetFormatAlias(const std::string& p_path
 
 std::filesystem::path OvTools::Utils::PathParser::FindFileToRead(const std::filesystem::path& p_file)
 {
-	std::error_code error;
-	if (std::filesystem::exists(p_file, error))
+	// In a mounted package as on the disk
+	const auto isThere = [](const std::filesystem::path& p_path)
+	{
+		std::error_code error;
+		return OvTools::Filesystem::VirtualFileSystem::Exists(p_path) || std::filesystem::exists(p_path, error);
+	};
+
+	if (isThere(p_file))
 	{
 		return p_file;
 	}
 
-	if (const std::string alias = GetFormatAlias(p_file.string()); !alias.empty() && std::filesystem::exists(alias, error))
+	if (const std::string alias = GetFormatAlias(p_file.string()); !alias.empty() && isThere(alias))
 	{
 		return alias;
 	}

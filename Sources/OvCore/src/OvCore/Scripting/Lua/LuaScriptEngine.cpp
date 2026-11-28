@@ -19,6 +19,7 @@
 
 #include <OvDebug/Logger.h>
 #include <OvDebug/Assertion.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvCore/Scripting/Lua/LuaApi.h>
 #include <OvCore/Scripting/ScriptEngine.h>
@@ -172,8 +173,13 @@ namespace
 		}
 		else
 		{
-			// Text only, as for shared scripts: a precompiled chunk could corrupt the Lua state
-			sol::load_result loaded = p_luaState.load_file(p_scriptName, sol::load_mode::text);
+			// Text only, as for shared scripts: a precompiled chunk could corrupt the Lua state. From a mounted
+			// package or the disk, under the same chunk name as a file, so that errors name the script's path
+			std::string source;
+			std::string readError;
+			sol::load_result loaded = OvTools::Filesystem::VirtualFileSystem::ReadText(p_scriptName, source, readError) ?
+				p_luaState.load_buffer(source.data(), source.size(), "@" + p_scriptName, sol::load_mode::text) :
+				p_luaState.load_file(p_scriptName, sol::load_mode::text);
 
 			if (!loaded.valid())
 			{
@@ -620,9 +626,16 @@ sol::object OvCore::Scripting::LuaScriptEngine::LoadModule(const std::string& p_
 		return loaded;
 	}
 
-	if (std::error_code error; !std::filesystem::is_regular_file(realPath, error))
+	if (!OvTools::Filesystem::VirtualFileSystem::Exists(realPath))
 	{
 		p_error = "'" + p_path + "' not found";
+		return nil;
+	}
+
+	// From a mounted package or the disk, under the same chunk name as a file
+	std::string source;
+	if (!OvTools::Filesystem::VirtualFileSystem::ReadText(realPath, source, p_error))
+	{
 		return nil;
 	}
 
@@ -635,7 +648,7 @@ sol::object OvCore::Scripting::LuaScriptEngine::LoadModule(const std::string& p_
 	}
 
 	loadingScripts[key] = true;
-	const auto result = luaState.safe_script_file(key, &sol::script_pass_on_error, sol::load_mode::text);
+	const auto result = luaState.safe_script(source, &sol::script_pass_on_error, "@" + key, sol::load_mode::text);
 	loadingScripts[key] = sol::lua_nil;
 
 	if (!result.valid())
