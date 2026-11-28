@@ -3,9 +3,9 @@
 A package (`.lopak`) holds a game's files in one file, each compressed when that makes it smaller. This page sets out
 the format, what a reader checks, and `LostPack`, the tool that makes and reads packages.
 
-> **Status**: the format, its library (`OvTools::Filesystem::Package`) and `LostPack` are in. The engine does not load
-> assets from a package yet ([#9](https://github.com/Lost-Things-Studio/Lost/issues/9)), and a build does not write
-> one yet ([#8](https://github.com/Lost-Things-Studio/Lost/issues/8)).
+> **Status**: the format, its library (`OvTools::Filesystem::Package`), `LostPack`, and a game that reads its assets
+> from packages (below) are in. A build does not write packages yet
+> ([#8](https://github.com/Lost-Things-Studio/Lost/issues/8)): they are made with `LostPack` for now.
 
 ## What a package is
 
@@ -83,6 +83,39 @@ A package is checked when it is opened, and each file when it is read. Each refu
 
 A later version of the format can add a method, an encryption for instance, which this version refuses.
 
+## A game reads its packages
+
+`OvGame` mounts the package of each of its two asset folders when there is one: the folder's name followed by
+`.lopak`, next to the folder.
+
+| Folder | Its package |
+| --- | --- |
+| `Data/User/Assets`, the project's assets | `Data/User/Assets.lopak` |
+| `Data/Engine`, the engine's resources | `Data/Engine.lopak` |
+
+With `--project` and `--engine` the rule is the same: `--project Game` reads `Game/Assets.lopak`, `--engine Engine`
+reads `Engine.lopak` (see [Command line](CommandLine.md)). The project file, `Data/User/Game.ini`, stays a file of its
+own.
+
+**How a path is read** (`OvTools::Filesystem::VirtualFileSystem`):
+- A path under a folder a package is mounted on is looked for in the package, under its path relative to the folder.
+- A path the package does not hold, or outside every mounted folder, is read from the disk, as before. A game may so
+  ship loose files next to its packages, which the packages do not hide.
+- A file a package holds but cannot read (damaged) is an error, not looked for on the disk.
+- **Case counts** in a package, even on Windows, whose disk does not care: a scene that names `textures/rock.png` does
+  not find `Textures/Rock.png`.
+
+Every read of an asset goes through it: textures, models and the files they name (a glTF's buffers), shaders and their
+includes, materials, scenes, prefabs, sounds, fonts, scripts and `require`, input actions, translations, animation
+graphs, height and density maps, and each asset's `.meta`. Each format's other name (`.ovscene` for `.loscene`) is
+found in a package as on the disk.
+
+**A package that cannot be read** (a newer version, a damaged index) stops the game before it opens its window, with
+exit code 1 and the reason on the error output. The log names each package mounted, its number of files and its
+content hash.
+
+The editor mounts nothing: it reads and writes the project's files on the disk.
+
 ## LostPack
 
 `LostPack` is built with the engine, as `Bin/<configuration>/LostPack/LostPack`:
@@ -110,6 +143,11 @@ It ends with 0 when it is done, 1 when the package or a file is at fault, and 2 
 - `PackageReader::Open` checks a package, then `GetManifest`, `GetEntries`, `Find`, `Read` and `Verify` read it;
 - `PackageFormat::IsValidPath` says whether a package may hold a path.
 
+`OvTools/Filesystem/VirtualFileSystem.h`:
+- `Mount(folder, package)`, `Unmount`, `UnmountAll`, and `ScopedMount`, which unmounts when it goes;
+- `Read`, `ReadText`, `Exists`, `IsDirectory` and `List`, for a package's files and the disk's alike. They may be called
+  from any thread.
+
 **Limits of this version**:
 - each file is read whole into memory, when it is packed and when it is read;
-- a `PackageReader` is not to be shared between threads.
+- a `PackageReader` is not to be shared between threads: the virtual file system holds a lock while it reads one.
