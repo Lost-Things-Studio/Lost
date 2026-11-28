@@ -12,6 +12,7 @@
 #include <zlib.h>
 
 #include <OvTools/Filesystem/Package.h>
+#include <OvTools/Utils/Checksum.h>
 #include <OvTools/Utils/Json.h>
 
 namespace
@@ -20,6 +21,7 @@ namespace
 	using OvTools::Filesystem::PackageEntry;
 	namespace PackageFormat = OvTools::Filesystem::PackageFormat;
 	namespace Json = OvTools::Utils::Json;
+	using OvTools::Utils::Crc32;
 
 	constexpr std::array<char, 4> kMagic = { 'L', 'O', 'P', 'K' };
 	constexpr int kCompressionLevel = 9;
@@ -52,13 +54,6 @@ namespace
 		}
 		p_at += sizeof(T);
 		return true;
-	}
-
-	uint32_t Crc32(const char* p_data, size_t p_size)
-	{
-		uLong crc = crc32_z(0L, Z_NULL, 0);
-		crc = crc32_z(crc, reinterpret_cast<const Bytef*>(p_data), p_size);
-		return static_cast<uint32_t>(crc);
 	}
 
 	// FNV-1a, 64 bits: unlike a CRC, wide enough to tell two packages' contents apart
