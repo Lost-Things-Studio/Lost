@@ -76,10 +76,29 @@ namespace OvGame::Core
 		std::filesystem::path GetProjectSettingsFile() const;
 
 		/**
+		* The project's assets: the Assets folder next to the project file given, or a built game's Data/User/Assets
+		*/
+		std::filesystem::path GetProjectAssetsFolder() const;
+
+		/**
+		* The engine's resources: the folder given, or a built game's Data/Engine
+		*/
+		std::filesystem::path GetEngineAssetsFolder() const;
+
+		/**
 		* The options, as --help prints them
 		*/
 		static std::string GetUsage();
 	};
+
+	/**
+	* Mounts the package of an asset folder, if there is one: the folder's name followed by ".lopak", next to it
+	* (Data/User/Assets.lopak, Data/Engine.lopak). True when there is none, or when it is mounted, with what was
+	* mounted in the message; false when the package is refused, with why
+	* @param p_folder
+	* @param p_message
+	*/
+	bool MountAssetPackage(const std::filesystem::path& p_folder, std::string& p_message);
 
 	/**
 	* The outcome of reading a command line: options, or an error message, or a request for the usage

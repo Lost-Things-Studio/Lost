@@ -6,13 +6,16 @@
 
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <numbers>
 #include <vector>
 
 #include <doctest/doctest.h>
 #include <soloud.h>
+#include <soloud_wav.h>
 
 #include <OvAudio/Core/AudioEngine.h>
 #include <OvAudio/Data/SoundInstance.h>
@@ -24,6 +27,8 @@
 #include <OvMaths/FTransform.h>
 #include <OvTests/AudioTestUtils.h>
 #include <OvTests/TestUtils.h>
+#include <OvTools/Filesystem/Package.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvTools/Utils/PathParser.h>
 
 using OvAudio::Core::AudioEngine;
@@ -251,5 +256,40 @@ TEST_SUITE("Audio")
 		using OvTools::Utils::PathParser;
 		CHECK(PathParser::GetFileType("Music.flac") == PathParser::EFileType::SOUND);
 		CHECK(PathParser::GetFileType("Hit.wav") == PathParser::EFileType::SOUND);
+	}
+
+	TEST_CASE("a sound is read from a mounted package, decoded whole, and its bytes not kept")
+	{
+		OvTests::TempFolder folder;
+		const auto wav = folder.GetPath() / "Tone.wav";
+		WriteWav(wav, Sine(440.0f, 0.25f));
+
+		std::ifstream file(wav, std::ios::binary);
+		std::vector<char> bytes{ std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
+		file.close();
+		std::filesystem::remove(wav);
+
+		OvTools::Filesystem::PackageBuilder builder;
+		std::string error;
+		REQUIRE(builder.AddData("Sounds/Tone.wav", std::move(bytes), error));
+		REQUIRE_MESSAGE(builder.Write(folder.GetPath() / "Assets.lopak", {}, error), error);
+		auto reader = OvTools::Filesystem::PackageReader::Open(folder.GetPath() / "Assets.lopak", error);
+		REQUIRE_MESSAGE(reader, error);
+
+		const auto assets = folder.GetPath() / "Assets";
+		{
+			OvTools::Filesystem::ScopedMount mount(assets, std::move(reader));
+			Sound* sound = SoundLoader::Create((assets / "Sounds/Tone.wav").string());
+			REQUIRE(sound);
+			CHECK(sound->audioData->getLength() == doctest::Approx(0.25).epsilon(0.01));
+
+			// Reloaded from the package too
+			SoundLoader::Reload(*sound, (assets / "Sounds/Tone.wav").string());
+			CHECK(sound->audioData->getLength() == doctest::Approx(0.25).epsilon(0.01));
+			SoundLoader::Destroy(sound);
+		}
+
+		// Unmounted, the file is nowhere
+		CHECK(SoundLoader::Create((assets / "Sounds/Tone.wav").string()) == nullptr);
 	}
 }

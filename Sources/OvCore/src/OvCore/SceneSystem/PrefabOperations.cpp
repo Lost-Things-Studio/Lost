@@ -17,6 +17,7 @@
 #include <OvDebug/Logger.h>
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/Helpers/AssetFormat.h>
+#include <OvCore/Helpers/XmlFile.h>
 #include <OvCore/Helpers/Serializer.h>
 #include <OvCore/SceneSystem/PrefabOperations.h>
 #include <OvTools/Utils/PathParser.h>
@@ -143,7 +144,7 @@ OvCore::ECS::Actor* OvCore::SceneSystem::PrefabOperations::InstantiateFromFile(
 	const std::filesystem::path prefabPath = OvTools::Utils::PathParser::FindFileToRead(p_prefabPath);
 
 	tinyxml2::XMLDocument doc;
-	const auto loadResult = doc.LoadFile(prefabPath.string().c_str());
+	const auto loadResult = OvCore::Helpers::LoadXmlFile(doc, prefabPath);
 	if (loadResult != tinyxml2::XML_SUCCESS)
 	{
 		OVLOG_ERROR("Failed to instantiate prefab \"" + p_prefabPath.string() + "\": XML parsing failed (code " + std::to_string(loadResult) + ").");

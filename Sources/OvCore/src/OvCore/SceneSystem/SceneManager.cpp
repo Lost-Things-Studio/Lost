@@ -7,6 +7,7 @@
 #include <tinyxml2.h>
 
 #include <OvCore/Helpers/AssetFormat.h>
+#include <OvCore/Helpers/XmlFile.h>
 #include <OvCore/SceneSystem/SceneManager.h>
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CAmbientSphereLight.h>
@@ -82,7 +83,7 @@ bool OvCore::SceneSystem::SceneManager::LoadScene(const std::string& p_path, boo
 	path = OvTools::Utils::PathParser::FindFileToRead(path);
 
 	tinyxml2::XMLDocument doc;
-	if (doc.LoadFile(path.string().c_str()) != tinyxml2::XMLError::XML_SUCCESS)
+	if (OvCore::Helpers::LoadXmlFile(doc, path) != tinyxml2::XMLError::XML_SUCCESS)
 	{
 		OVLOG_ERROR(std::format("Failed to load scene: {}", path.string()));
 		return false;

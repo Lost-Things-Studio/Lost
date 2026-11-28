@@ -5,10 +5,12 @@
 */
 
 #include <OvTools/Filesystem/IniFile.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvTools/Utils/String.h>
 
 #include <algorithm>
 #include <fstream>
+#include <sstream>
 #include <vector>
 
 namespace
@@ -103,23 +105,30 @@ void OvTools::Filesystem::IniFile::RegisterPair(const AttributePair& p_pair)
 
 void OvTools::Filesystem::IniFile::Load()
 {
-	std::fstream iniFile;
-	iniFile.open(m_filePath);
-
-	if (iniFile.is_open())
+	// Through the virtual file system: a project's settings or an asset's metadata may be in a package
+	std::string text;
+	std::string error;
+	if (!OvTools::Filesystem::VirtualFileSystem::ReadText(m_filePath, text, error))
 	{
-		std::string currentLine;
+		return;
+	}
 
-		while (std::getline(iniFile, currentLine))
+	std::istringstream lines(text);
+	std::string currentLine;
+
+	while (std::getline(lines, currentLine))
+	{
+		// Read as bytes: a line written on Windows keeps its "\r"
+		if (!currentLine.empty() && currentLine.back() == '\r')
 		{
-			if (IsValidLine(currentLine))
-			{
-				OvTools::Utils::String::Trim(currentLine);
-				RegisterPair(ExtractKeyAndValue(currentLine));
-			}
+			currentLine.pop_back();
 		}
 
-		iniFile.close();
+		if (IsValidLine(currentLine))
+		{
+			OvTools::Utils::String::Trim(currentLine);
+			RegisterPair(ExtractKeyAndValue(currentLine));
+		}
 	}
 }
 

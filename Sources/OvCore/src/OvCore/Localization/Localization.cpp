@@ -18,6 +18,7 @@
 #include <OvTools/Filesystem/IniFile.h>
 #include <OvTools/Filesystem/SaveStorage.h>
 #include <OvTools/Utils/Json.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -703,41 +704,35 @@ void OvCore::Localization::LoadProjectTranslations(const OvTools::Filesystem::In
 	if (!folder.empty())
 	{
 		const std::filesystem::path directory = p_projectAssetsPath / folder;
-		std::error_code error;
+		using OvTools::Filesystem::VirtualFileSystem;
 
-		if (!std::filesystem::is_directory(directory, error))
+		// In a mounted package as on the disk
+		if (!VirtualFileSystem::IsDirectory(directory))
 		{
 			OVLOG_WARNING("translations: \"" + folder + "\" is not a folder of the project's assets, the project has no translation");
 		}
 		else
 		{
-			// Walked without exceptions: a file that cannot be read is left out, and the folder's other files are read
+			// A file that cannot be read is left out, and the folder's other files are read
 			std::vector<std::filesystem::path> files;
-			for (std::filesystem::directory_iterator it(directory, error), end; !error && it != end; it.increment(error))
+			for (const std::string& fileName : VirtualFileSystem::List(directory))
 			{
-				std::error_code fileError;
-				if (it->is_regular_file(fileError) && it->path().extension() == ".json")
+				const std::filesystem::path file = directory / std::filesystem::path(std::u8string(fileName.begin(), fileName.end()));
+				if (file.extension() == ".json")
 				{
-					files.push_back(it->path());
+					files.push_back(file);
 				}
 			}
-
-			if (error)
-			{
-				OVLOG_WARNING("translations: \"" + folder + "\" cannot be read through (" + error.message() + "), its other files are left out");
-			}
-
-			std::sort(files.begin(), files.end());
 
 			for (const auto& file : files)
 			{
 				const std::string name = folder + "/" + file.filename().string();
-				std::ifstream stream(file, std::ios::binary);
-				std::stringstream text;
-				text << stream.rdbuf();
+				std::string text;
+				std::string readError;
+				VirtualFileSystem::ReadText(file, text, readError);
 
 				std::vector<std::string> warnings;
-				auto table = ParseTable(file.stem().string(), text.str(), warnings);
+				auto table = ParseTable(file.stem().string(), text, warnings);
 
 				for (const std::string& warning : warnings)
 				{

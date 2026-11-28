@@ -7,6 +7,7 @@
 #include <tinyxml2.h>
 
 #include <OvCore/Helpers/AssetFormat.h>
+#include <OvCore/Helpers/XmlFile.h>
 #include <OvCore/Resources/Loaders/MaterialLoader.h>
 #include <OvDebug/Logger.h>
 
@@ -31,7 +32,7 @@ namespace
 OvCore::Resources::Material * OvCore::Resources::Loaders::MaterialLoader::Create(const std::string & p_path)
 {
 	tinyxml2::XMLDocument doc;
-	doc.LoadFile(p_path.c_str());
+	OvCore::Helpers::LoadXmlFile(doc, p_path);
 	if (!doc.Error())
 	{
 		tinyxml2::XMLNode* root = doc.FirstChild();
@@ -56,7 +57,7 @@ OvCore::Resources::Material * OvCore::Resources::Loaders::MaterialLoader::Create
 void OvCore::Resources::Loaders::MaterialLoader::Reload(Material& p_material, const std::string& p_path)
 {
 	tinyxml2::XMLDocument doc;
-	doc.LoadFile(p_path.c_str());
+	OvCore::Helpers::LoadXmlFile(doc, p_path);
 	if (!doc.Error())
 	{
 		tinyxml2::XMLNode* root = doc.FirstChild();

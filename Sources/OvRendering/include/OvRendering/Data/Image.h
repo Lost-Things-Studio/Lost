@@ -21,7 +21,7 @@ namespace OvRendering::Data
 		void* data = nullptr;
 
 		/**
-		* Creates an image from a file on disk
+		* Creates an image from a file, in a mounted package or on the disk
 		* @param p_filepath
 		* @param p_flipVertically
 		*/
@@ -47,5 +47,8 @@ namespace OvRendering::Data
 		* Alias for IsValid()
 		*/
 		operator bool() const;
+
+	private:
+		void Decode(const uint8_t* p_data, size_t p_size, bool p_flipVertically);
 	};
 }

@@ -293,6 +293,10 @@ Lost's first version: Overload 1.9 and the changes below.
   each file, and the same bytes for the same files. Not encrypted. In C++, `OvTools::Filesystem::PackageBuilder` and
   `PackageReader`. See [Docs/Packages.md](Docs/Packages.md).
 - **LostPack**, a tool built with the engine: `pack`, `list`, `verify` and `extract` a package.
+- **A game reads its assets from packages**: `OvGame` mounts `Data/User/Assets.lopak` and `Data/Engine.lopak` when they
+  are there (the package of a folder, next to it, with `--project` and `--engine` too), and every asset it reads goes
+  through `OvTools::Filesystem::VirtualFileSystem`: a mounted package first, then the disk. A package that cannot be
+  read stops the game with exit code 1. `Tests/run_game_checks.sh --packed` runs the checks from packages.
 
 ### Changed
 

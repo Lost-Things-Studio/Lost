@@ -23,6 +23,7 @@
 #include <baregl/ShaderProgram.h>
 #include <baregl/ShaderStage.h>
 #include <OvRendering/Resources/Loaders/ShaderLoader.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvRendering/Resources/Shader.h>
 #include <OvRendering/Utils/ShaderUtil.h>
 
@@ -336,19 +337,27 @@ void main()
 		OvRendering::Resources::Loaders::ShaderLoader::FilePathParserCallback p_pathParser
 	)
 	{
-		std::ifstream file(p_filePath);
-
-		if (!file.is_open())
+		// From a mounted package, or the disk
+		std::string text;
+		std::string readError;
+		if (!OvTools::Filesystem::VirtualFileSystem::ReadText(p_filePath, text, readError))
 		{
 			OVLOG_ERROR(std::format("[Shader Loading] Could not open shader file: \"{}\"", p_filePath));
 			return {};
 		}
 
+		std::istringstream file(text);
 		std::stringstream buffer;
 		std::string line;
 
 		while (std::getline(file, line))
 		{
+			// Read as bytes: a line written on Windows keeps its "\r"
+			if (!line.empty() && line.back() == '\r')
+			{
+				line.pop_back();
+			}
+
 			const std::string trimmedLine = Trim(line);
 
 			if (trimmedLine.starts_with(Grammar::kIncludeToken))

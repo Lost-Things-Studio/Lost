@@ -5,8 +5,10 @@
 */
 
 #include <charconv>
+#include <format>
 
 #include <OvGame/Core/LaunchOptions.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvTools/Utils/PathParser.h>
 
 namespace
@@ -117,11 +119,18 @@ OvGame::Core::LaunchOptions::ParseResult OvGame::Core::LaunchOptions::Parse(cons
 			}
 			else if (argument == "--engine")
 			{
+				// A folder, or only its package next to it
 				std::error_code error;
-				options.engineAssets = std::filesystem::absolute(*value);
-				if (!std::filesystem::is_directory(*options.engineAssets, error))
+				options.engineAssets = std::filesystem::absolute(*value).lexically_normal();
+				if (!options.engineAssets->has_filename())
 				{
-					result.error = "--engine: no folder " + *value;
+					options.engineAssets = options.engineAssets->parent_path(); // "Engine/" is "Engine"
+				}
+				auto package = *options.engineAssets;
+				package += ".lopak";
+				if (!std::filesystem::is_directory(*options.engineAssets, error) && !std::filesystem::is_regular_file(package, error))
+				{
+					result.error = "--engine: no folder or package " + *value;
 					return result;
 				}
 			}
@@ -171,15 +180,57 @@ std::filesystem::path OvGame::Core::LaunchOptions::GetProjectSettingsFile() cons
 	return projectFile.value_or(std::filesystem::current_path() / "Data" / "User" / "Game.ini");
 }
 
+std::filesystem::path OvGame::Core::LaunchOptions::GetProjectAssetsFolder() const
+{
+	return projectFile ? projectFile->parent_path() / "Assets" : std::filesystem::current_path() / "Data" / "User" / "Assets";
+}
+
+std::filesystem::path OvGame::Core::LaunchOptions::GetEngineAssetsFolder() const
+{
+	return engineAssets.value_or(std::filesystem::current_path() / "Data" / "Engine");
+}
+
+bool OvGame::Core::MountAssetPackage(const std::filesystem::path& p_folder, std::string& p_message)
+{
+	auto folder = std::filesystem::absolute(p_folder).lexically_normal();
+	if (!folder.has_filename())
+	{
+		folder = folder.parent_path();
+	}
+
+	auto package = folder;
+	package += ".lopak";
+
+	p_message.clear();
+	std::error_code error;
+	if (!std::filesystem::is_regular_file(package, error))
+	{
+		return true;
+	}
+
+	std::string reason;
+	auto reader = OvTools::Filesystem::PackageReader::Open(package, reason);
+	if (!reader)
+	{
+		p_message = package.string() + ": " + reason;
+		return false;
+	}
+
+	p_message = std::format("Mounted {} on {} ({} files, {})", package.string(), folder.string(), reader->GetEntries().size(), reader->GetManifest().contentHash);
+	OvTools::Filesystem::VirtualFileSystem::Mount(folder, std::move(reader));
+	return true;
+}
+
 std::string OvGame::Core::LaunchOptions::GetUsage()
 {
 	return
 		"Usage: OvGame [options]\n"
 		"Without options, runs the built game: its project in Data/User, the engine in Data/Engine.\n"
 		"An argument that does not start with -- is left aside.\n"
+		"An asset folder's package next to it, its name followed by .lopak (Data/User/Assets.lopak), is read before it.\n"
 		"  --project <folder or file>  run this project (a .loproject or .ovproject file, or the folder holding it), its assets in\n"
 		"                              the Assets folder next to it\n"
-		"  --engine <folder>           the engine's resources (a Lost checkout's Resources/Engine)\n"
+		"  --engine <folder>           the engine's resources (a Lost checkout's Resources/Engine, or Engine.lopak alone)\n"
 		"  --scene <path>              start on this scene, relative to the project's assets\n"
 		"  --frames <n>                quit after n frames\n"
 		"  --screenshot <file.png>     write the last frame to a PNG image (with --frames)\n"
@@ -188,6 +239,6 @@ std::string OvGame::Core::LaunchOptions::GetUsage()
 		"                              default): the system's device, else the null driver\n"
 		"  --fail-on-error             end with exit code 2 if an error was logged\n"
 		"  --dump-lua-api              print the engine's Lua API, one name per line, and quit\n"
-		"Exit codes: 0 on success, 1 for bad options, or a project or scene that cannot be read, 2 for logged errors\n"
-		"(with --fail-on-error), 3 when the screenshot was not written.\n";
+		"Exit codes: 0 on success, 1 for bad options, or a project, package or scene that cannot be read, 2 for logged\n"
+		"errors (with --fail-on-error), 3 when the screenshot was not written.\n";
 }

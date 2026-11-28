@@ -16,6 +16,7 @@
 #include <OvDebug/Logger.h>
 #include <OvRendering/Resources/Font.h>
 #include <OvRendering/Resources/Loaders/TextureLoader.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 
 #include <baregl/types/ETextureFilteringMode.h>
 #include <baregl/types/ETextureWrapMode.h>
@@ -58,23 +59,15 @@ namespace
 
 	std::vector<uint8_t> ReadFile(const std::filesystem::path& p_path)
 	{
-		std::ifstream file{ p_path, std::ios::binary | std::ios::ate };
-		if (!file)
+		// From a mounted package, or the disk
+		std::vector<char> bytes;
+		std::string error;
+		if (!OvTools::Filesystem::VirtualFileSystem::Read(p_path, bytes, error) || bytes.empty())
 		{
 			return {};
 		}
 
-		const auto size = file.tellg();
-		if (size <= std::streampos{ 0 })
-		{
-			return {};
-		}
-
-		std::vector<uint8_t> data(static_cast<size_t>(size));
-		file.seekg(0, std::ios::beg);
-		file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
-
-		return file ? data : std::vector<uint8_t>{};
+		return std::vector<uint8_t>(bytes.begin(), bytes.end());
 	}
 
 	/**

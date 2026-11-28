@@ -17,6 +17,7 @@
 #include <OvTools/Filesystem/IniFile.h>
 #include <OvTools/Filesystem/SaveStorage.h>
 #include <OvWindowing/Inputs/InputManager.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 
 using OvCore::Helpers::InputHelpers;
 using OvWindowing::Inputs::EGamepadAxis;
@@ -133,19 +134,18 @@ void OvCore::Input::LoadProjectActions(const OvTools::Filesystem::IniFile& p_pro
 
 	if (p_projectSettings.TryGet("input_actions", file) && !file.empty())
 	{
-		std::ifstream stream(p_projectAssetsPath / file, std::ios::binary);
+		// From a mounted package, or the disk
+		std::string text;
+		std::string error;
 
-		if (!stream)
+		if (!OvTools::Filesystem::VirtualFileSystem::ReadText(p_projectAssetsPath / file, text, error))
 		{
 			OVLOG_WARNING("input_actions: cannot read \"" + file + "\", the project has no input action");
 		}
 		else
 		{
-			std::stringstream text;
-			text << stream.rdbuf();
-
 			std::vector<std::string> warnings;
-			definitions = InputActions::ParseDefinitions(text.str(), warnings);
+			definitions = InputActions::ParseDefinitions(text, warnings);
 
 			for (const std::string& warning : warnings)
 			{
