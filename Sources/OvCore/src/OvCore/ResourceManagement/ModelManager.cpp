@@ -4,29 +4,30 @@
 * @licence: MIT
 */
 
+#include <format>
+
 #include "OvCore/ResourceManagement/ModelManager.h"
 
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Helpers/AssetFormat.h>
 #include <OvCore/ResourceManagement/MaterialManager.h>
 #include <OvCore/ResourceManagement/TextureManager.h>
+#include <OvDebug/Logger.h>
+#include <OvRendering/Resources/PreparedModel.h>
 #include <OvRendering/Resources/Parsers/EmbeddedAssetPath.h>
 #include <OvTools/Filesystem/IniFile.h>
+#include <OvTools/Filesystem/VirtualFileSystem.h>
 #include <OvTools/Utils/PathParser.h>
 
 namespace
 {
-	struct ModelMetadata
-	{
-		OvRendering::Resources::Parsers::EModelParserFlags parserFlags = OvRendering::Resources::Parsers::EModelParserFlags::NONE;
-		bool generateEmbeddedAssets = true;
-	};
+	using OvCore::ResourceManagement::ModelImportSettings;
 
-	ModelMetadata GetAssetMetadata(const std::string& p_path)
+	ModelImportSettings GetAssetMetadata(const std::string& p_path)
 	{
 		auto metaFile = OvTools::Filesystem::IniFile(p_path + ".meta");
 		OvCore::Helpers::AssetFormat::CheckMetadata(metaFile, p_path + ".meta");
-		ModelMetadata modelMetadata;
+		ModelImportSettings modelMetadata;
 
 		if (metaFile.GetOrDefault("CALC_TANGENT_SPACE",			true))	modelMetadata.parserFlags |= OvRendering::Resources::Parsers::EModelParserFlags::CALC_TANGENT_SPACE;
 		if (metaFile.GetOrDefault("JOIN_IDENTICAL_VERTICES",		true))	modelMetadata.parserFlags |= OvRendering::Resources::Parsers::EModelParserFlags::JOIN_IDENTICAL_VERTICES;
@@ -111,20 +112,44 @@ namespace
 	}
 }
 
+OvCore::ResourceManagement::ModelImportSettings OvCore::ResourceManagement::ModelManager::ReadImportSettings(const std::string& p_realPath)
+{
+	return GetAssetMetadata(p_realPath);
+}
+
+bool OvCore::ResourceManagement::ModelManager::LoadModelData(const std::string& p_realPath, OvRendering::Resources::ModelData& p_data)
+{
+	namespace PreparedModel = OvRendering::Resources::PreparedModel;
+	using OvTools::Filesystem::VirtualFileSystem;
+
+	// A built game's model, prepared by its build: no import
+	if (const std::string preparedPath = PreparedModel::GetPath(p_realPath); VirtualFileSystem::Exists(preparedPath))
+	{
+		std::vector<char> bytes;
+		std::string error;
+		if (VirtualFileSystem::Read(preparedPath, bytes, error) && PreparedModel::Read(bytes, p_data, error))
+		{
+			return true;
+		}
+
+		OVLOG_ERROR(std::format("Cannot read the prepared model \"{}\": {}. The model's file is imported instead", preparedPath, error));
+	}
+
+	const auto settings = GetAssetMetadata(p_realPath);
+	return OvRendering::Resources::Loaders::ModelLoader::Import(p_realPath, settings.parserFlags, settings.generateEmbeddedAssets, p_data);
+}
+
 OvRendering::Resources::Model* OvCore::ResourceManagement::ModelManager::CreateResource(const std::filesystem::path& p_path)
 {
 	std::string realPath = GetRealPath(p_path).string();
-	const auto metadata = GetAssetMetadata(realPath);
-	auto model = OvRendering::Resources::Loaders::ModelLoader::Create(
-		realPath,
-		metadata.parserFlags,
-		metadata.generateEmbeddedAssets
-	);
-	if (model)
+	OvRendering::Resources::ModelData data;
+	if (!LoadModelData(realPath, data))
 	{
-		const_cast<std::string&>(model->path) = p_path.string(); // Force the resource path to fit the given path
+		return nullptr;
 	}
 
+	auto model = OvRendering::Resources::Loaders::ModelLoader::Create(realPath, std::move(data));
+	const_cast<std::string&>(model->path) = p_path.string(); // Force the resource path to fit the given path
 	return model;
 }
 
@@ -143,13 +168,11 @@ void OvCore::ResourceManagement::ModelManager::ReloadResource(OvRendering::Resou
 	}
 
 	std::string realPath = GetRealPath(p_path).string();
-	const auto metadata = GetAssetMetadata(realPath);
-	OvRendering::Resources::Loaders::ModelLoader::Reload(
-		*p_resource,
-		realPath,
-		metadata.parserFlags,
-		metadata.generateEmbeddedAssets
-	);
+	OvRendering::Resources::ModelData data;
+	if (LoadModelData(realPath, data))
+	{
+		OvRendering::Resources::Loaders::ModelLoader::Reload(*p_resource, std::move(data));
+	}
 
 	ReloadEmbeddedModelResources(p_path.string());
 }

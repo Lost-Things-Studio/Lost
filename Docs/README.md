@@ -18,7 +18,8 @@ it. Each page states the behaviour of the current version; [`CHANGELOG.md`](../C
 | [Particles](Particles.md) | Particle systems: their settings, bursts from a script, time, billboards and models, the cost |
 | [Shaders](Shaders.md) | The shader API and its version, public includes, `Standard`'s extension points, the fog option, custom shaders |
 | [Animation](Animation.md) | Bones, layers and masks, clips on other rigs, extra bones, attachments, animation graphs, look at, spring bones, when the pose is worked out |
-| [Packages](Packages.md) | The `.lopak` format, what a reader checks, and `LostPack` |
+| [Building](Building.md) | Building a game: what a build holds, its packages and prepared models, building from the command line |
+| [Packages](Packages.md) | The `.lopak` format, what a reader checks, how a game reads its packages, and `LostPack` |
 | [Saving](Saving.md) | The save folder, `Storage` and `Json` |
 | [Input](Input.md) | Keys, mouse, the editor's focus rules |
 | [Audio](Audio.md) | Sounds and their formats, sources, sounds played once, buses and volumes, the listener and how sounds fade in the world, many sounds, playing without an audio device |

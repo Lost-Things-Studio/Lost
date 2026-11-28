@@ -7,8 +7,8 @@ benchmark, without building the game first.
 
 A built game runs as before: the project in `Data/User` (its settings in `Data/User/Game.ini`, its assets in
 `Data/User/Assets`), the engine's resources in `Data/Engine`, the window shown, until the game quits. When
-`Data/User/Assets.lopak` or `Data/Engine.lopak` is there, the game reads the assets from that package (see
-[Packages](Packages.md#a-game-reads-its-packages)).
+`Data/User/Assets.lopak` or `Data/Engine.lopak` is there, as the editor's build writes them, the game reads the assets
+from that package (see [Packages](Packages.md#a-game-reads-its-packages) and [Building](Building.md)).
 
 ## Options
 

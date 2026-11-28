@@ -17,6 +17,15 @@
 namespace OvCore::ResourceManagement
 {
 	/**
+	* How a model file is imported: what its metadata (<model>.meta) sets, or the defaults
+	*/
+	struct ModelImportSettings
+	{
+		OvRendering::Resources::Parsers::EModelParserFlags parserFlags = OvRendering::Resources::Parsers::EModelParserFlags::NONE;
+		bool generateEmbeddedAssets = true;
+	};
+
+	/**
 	* ResourceManager of models
 	*/
 	class ModelManager : public AResourceManager<OvRendering::Resources::Model>
@@ -40,6 +49,21 @@ namespace OvCore::ResourceManagement
 		* @param p_path
 		*/
 		virtual void ReloadResource(OvRendering::Resources::Model* p_resource, const std::filesystem::path& p_path) override;
+
+		/**
+		* Reads how a model file is imported, from its metadata (<model>.meta) or the defaults
+		* @param p_realPath
+		*/
+		static ModelImportSettings ReadImportSettings(const std::string& p_realPath);
+
+		/**
+		* Loads a model file into memory, without a graphics context: its prepared version (<model>.lomodel, written by a
+		* game's build) when there is one, else an import of the file with its settings. A prepared version that cannot be
+		* read is an error, and the file is imported instead
+		* @param p_realPath
+		* @param p_data
+		*/
+		static bool LoadModelData(const std::string& p_realPath, OvRendering::Resources::ModelData& p_data);
 
 		/**
 		* Registers a model made of the given meshes under the given path, which needs no file. A model made this way

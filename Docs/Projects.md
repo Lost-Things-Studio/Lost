@@ -28,7 +28,8 @@ the editor and the built game read. An Overload project's `<name>.ovproject` is 
 | `translations` | empty | The project's translations, a folder of `<language>.json` tables relative to `Assets` (see [Localization](Localization.md)); none when empty |
 | `default_language` | `en` | The language a text missing from the current one is taken from, and the first one when neither the player nor the system chose |
 | `audio_buses` | `Music,Effects,Interface,Ambience` | The project's audio buses, comma-separated, 8 at most, each with a volume of its own beside the Master's (see [Audio](Audio.md)); none when empty. A name given twice, and `Master`, are left out with a warning |
-| `build_type` | the platform's | The editor's build configuration |
+| `build_type` | the platform's | The build's configuration: 0 Debug, 1 Release, 2 Publish, the most optimized one the editor has by default (see [Building](Building.md)) |
+| `build_packages` | `true` | A build's assets in packages, its models prepared; `false` copies them as folders (see [Building](Building.md#without-packages)) |
 
 ## Optional keys
 
