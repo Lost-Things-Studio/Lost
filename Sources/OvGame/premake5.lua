@@ -58,7 +58,10 @@ project "OvGame"
 		"OvRendering",
 		"OvTools",
 		"OvUI",
-		"OvWindowing"
+		"OvWindowing",
+
+		-- Used by assimp and OvTools: after both, as Linux links in one pass
+		"zlib"
 	}
 
 	filter { "configurations:Debug" }

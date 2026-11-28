@@ -62,6 +62,7 @@ project "OvEditor"
 
 		-- Dependencies that others depend on - must come after
 		"assimp",
+		"zlib", -- Used by assimp and OvTools, so after both
 		"glfw",
 	}
 

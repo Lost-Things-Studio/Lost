@@ -57,6 +57,7 @@ It covers:
 | Scene | GUIDs, destroyed actors and their children freed at garbage collection |
 | Scene history | An actor's edit undone and redone, the actor keeping its id, GUID and place; a deleted actor back with its children, their GUIDs and order, and selected again; a move and a duplicate undone with the whole scene; a new edit dropping what could be redone, the limits, the saved mark; an edit whose actor is gone passed over; the generic history's cursor, saved mark, limits and clear |
 | Asset formats | Each format a file type under both names; a format's other name, a file found under it, a resource kept under the name of the file that exists; project files, the Lost one first; versions in XML, INI and JSON, 0 without one and a newer one refused; a scene, a prefab and a material of each version read or refused; metadata of a newer version left aside; INI keys written by name; a project converted to the Lost formats, each file renamed and each reference following, Lua strings changed only when they are a whole path, a taken name left alone, a second run changing nothing |
+| Packages | A folder packed and read back, file by file, links left out; a file compressed only when it gains by it; the same files giving the same bytes and the content hash following the content only; a damaged file found when it is read and by a verification; a header or an index that is not right refused, an index whose CRC is right but which lies refused; the paths a package refuses; a package written whole or not at all; LostPack's commands, its refusals and its exit codes |
 | Lua API | The bindings and the definitions of `Resources/Engine/Lua` hold the same names, inherited members included |
 | Shader API | `Docs/Shaders.md` lists every name of each public shader include, and the version is defined for every shader |
 | Lua modules | `require` from the project and the engine's resources, its cache shared with `Resources.GetScript`, and the error for each failure; the global frame events (order, removal, a failing callback); the game's end (once, in order, a failure left alone, a removal and an addition while it runs); a Behaviour from the engine's resources |
@@ -153,3 +154,6 @@ exit code 2, and quits. A check that never reaches `Finish` fails too: it logs n
 
 The in-game checks need OpenGL 4.5. The CI runs them on Linux, with Mesa's software renderer under Xvfb; a Windows
 runner has no OpenGL 4.5, so on Windows the CI runs `OvTests` only.
+
+On Linux, the CI also packs the checks' assets with `LostPack`, verifies the package, extracts it and compares what
+comes out with what went in (see [Packages](Packages.md)).

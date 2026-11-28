@@ -288,6 +288,11 @@ Lost's first version: Overload 1.9 and the changes below.
   (`LostFormatsConversion.txt`). In C++, `OvCore::Helpers::FormatConversion`.
 - **Create > Animation Graph** in the asset browser: a graph of one layer and one empty state, to fill in. A graph's
   `editor` member is left for the graph editor.
+- **Packages** (`.lopak`, version 1): a project's files in one file, each compressed with deflate when that makes it
+  smaller, with a manifest (the Lost version, the `project_id`, a hash of the content), a CRC-32 for the index and for
+  each file, and the same bytes for the same files. Not encrypted. In C++, `OvTools::Filesystem::PackageBuilder` and
+  `PackageReader`. See [Docs/Packages.md](Docs/Packages.md).
+- **LostPack**, a tool built with the engine: `pack`, `list`, `verify` and `extract` a package.
 
 ### Changed
 
@@ -327,6 +332,8 @@ Lost's first version: Overload 1.9 and the changes below.
   asset's metadata, the editor's settings), are written sorted by name. They came in a map's order, which could differ
   from one save to the next.
 - **The import dialogs** show `.gltf` models, and shaders under both names.
+- **zlib is its own library** (`Dependencies/zlib`, 1.2.13), which Assimp and the packages share. It was built inside
+  Assimp's.
 - **Unreadable properties are reported**: a property written in a file with an unknown type (`type="boolean"`) is
   logged as an error, and one whose type the script no longer declares as a warning. Both were ignored silently.
 
