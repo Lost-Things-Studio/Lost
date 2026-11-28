@@ -3,9 +3,8 @@
 A package (`.lopak`) holds a game's files in one file, each compressed when that makes it smaller. This page sets out
 the format, what a reader checks, and `LostPack`, the tool that makes and reads packages.
 
-> **Status**: the format, its library (`OvTools::Filesystem::Package`), `LostPack`, and a game that reads its assets
-> from packages (below) are in. A build does not write packages yet
-> ([#8](https://github.com/Lost-Things-Studio/Lost/issues/8)): they are made with `LostPack` for now.
+> **Status**: the format, its library (`OvTools::Filesystem::Package`), `LostPack`, a game that reads its assets from
+> packages (below) and a build that writes them (see [Building](Building.md)) are in.
 
 ## What a package is
 
@@ -95,7 +94,8 @@ A later version of the format can add a method, an encryption for instance, whic
 
 With `--project` and `--engine` the rule is the same: `--project Game` reads `Game/Assets.lopak`, `--engine Engine`
 reads `Engine.lopak` (see [Command line](CommandLine.md)). The project file, `Data/User/Game.ini`, stays a file of its
-own.
+own. The editor's build writes these packages, its models prepared (see [Building](Building.md)); `LostPack` packs a
+folder as it is.
 
 **How a path is read** (`OvTools::Filesystem::VirtualFileSystem`):
 - A path under a folder a package is mounted on is looked for in the package, under its path relative to the folder.
@@ -105,7 +105,8 @@ own.
 - **Case counts** in a package, even on Windows, whose disk does not care: a scene that names `textures/rock.png` does
   not find `Textures/Rock.png`.
 
-Every read of an asset goes through it: textures, models and the files they name (a glTF's buffers), shaders and their
+Every read of an asset goes through it: textures, models and the files they name (a glTF's buffers) or their prepared
+versions (`<model>.lomodel`, read instead of the model when there is one), shaders and their
 includes, materials, scenes, prefabs, sounds, fonts, scripts and `require`, input actions, translations, animation
 graphs, height and density maps, and each asset's `.meta`. Each format's other name (`.ovscene` for `.loscene`) is
 found in a package as on the disk.

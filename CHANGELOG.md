@@ -297,9 +297,18 @@ Lost's first version: Overload 1.9 and the changes below.
   are there (the package of a folder, next to it, with `--project` and `--engine` too), and every asset it reads goes
   through `OvTools::Filesystem::VirtualFileSystem`: a mounted package first, then the disk. A package that cannot be
   read stops the game with exit code 1. `Tests/run_game_checks.sh --packed` runs the checks from packages.
+- **A build writes packages and prepared models**: the editor's build writes `Data/User/Assets.lopak`, every asset of
+  the project, and `Data/Engine.lopak`, without the engine's editor-only files. Each model is written as a prepared
+  model (`<model>.lomodel`, see `Docs/AssetFormats.md`), its import, which the game loads without importing the model
+  again; its file is left out. **Packages** in Project Settings > Build (`build_packages`) turns them off, for folders
+  as before. `OvEditor --build <project> <folder> [--type <type>]` builds a game without a window, and
+  `Tests/run_game_checks.sh --built` runs the checks in a game the editor builds. See `Docs/Building.md`.
 
 ### Changed
 
+- **A build that fails says why and leaves nothing behind**: the game executable of the build type and the start scene
+  (under either name of its format) are checked before anything is written, the message box gives the reason, and a
+  failed step no longer goes on to the next one.
 - **Behaviours run in their declared order**, the order of the prefab or the scene file, for every callback.
 - **The Lua state is kept across scene changes**: removing a Behaviour no longer rebuilds it, so modules and what they
   hold survive `Scenes.Load`. The editor still rebuilds it on play and on stop.
